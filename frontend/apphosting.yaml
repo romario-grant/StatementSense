@@ -14,7 +14,7 @@ env:
   # Backend API URL — set this to your Cloud Run URL after deploying
   # Example: https://statementsense-api-xxxx-uc.a.run.app
   - variable: BACKEND_URL
-    value: "http://localhost:8000"
+    value: "https://statementsense-backend-430268251728.us-central1.run.app"
 
   # Firebase Client Config (NEXT_PUBLIC_ = available in browser)
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY

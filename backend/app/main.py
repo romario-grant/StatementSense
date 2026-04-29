@@ -13,7 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent  # backend/app/main
 load_dotenv(PROJECT_ROOT / ".env")
 
 # Store project root in env so engines can find credential files
-os.environ["STATEMENTSENSE_ROOT"] = str(PROJECT_ROOT)
+os.environ.setdefault("STATEMENTSENSE_ROOT", str(PROJECT_ROOT))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,10 +28,17 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Allow frontend to connect (Vite on 5173, Next.js on 3000)
+# Allow frontend to connect — local dev + Cloud Run / Firebase App Hosting
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://statementsense-84a99.web.app",
+        "https://statementsense-84a99.firebaseapp.com",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -51,3 +58,13 @@ def root():
         "features": ["RenewalSense", "ScreentimeSense", "CalendarSense"],
         "docs": "/docs"
     }
+
+
+# ── Cloud Run entry point ──
+# When run directly (not via `uvicorn backend.app.main:app`), start the server
+# bound to 0.0.0.0 on the PORT that Cloud Run provides.
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
+

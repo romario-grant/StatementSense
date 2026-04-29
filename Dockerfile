@@ -31,9 +31,11 @@ COPY models/ ./models/
 # The GEMINI_API_KEY is injected at runtime via Secret Manager
 # (configured in Cloud Run service settings)
 
-# Cloud Run sets PORT env var — uvicorn listens on it
+# Cloud Run sets the PORT env var — default to 8080
 ENV PORT=8080
 
 EXPOSE 8080
 
-CMD ["python", "-m", "uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Use shell form so $PORT is expanded at runtime by Cloud Run
+# Host MUST be 0.0.0.0 for Cloud Run to route external traffic
+CMD exec uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
