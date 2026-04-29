@@ -88,20 +88,6 @@ export default function LoginPage() {
       )}
       <SignInPage
         heroImageSrc="/bank.jpg"
-        testimonials={[
-          {
-            avatarSrc: "https://i.pravatar.cc/80?img=47",
-            name: "Sarah Chen",
-            handle: "@sarahdigital",
-            text: "Amazing platform! The user experience is seamless and the features are exactly what I needed.",
-          },
-          {
-            avatarSrc: "https://i.pravatar.cc/80?img=68",
-            name: "Marcus Johnson",
-            handle: "@marcustech",
-            text: "This service has transformed how I work. Clean design, powerful features, and excellent support.",
-          },
-        ]}
         title={
           <span className="font-light text-foreground tracking-tighter">
             {mode === "login" ? "Welcome" : "Create Account"}
