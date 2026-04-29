@@ -20,7 +20,7 @@ function friendlyError(code: string): string {
     "auth/popup-closed-by-user": "Google sign-in was cancelled.",
     "auth/network-request-failed": "Network error. Check your connection.",
   };
-  return map[code] || "Something went wrong. Please try again.";
+  return map[code] || `Something went wrong. (${code || 'Unknown error'})`;
 }
 
 /* ── Particle positions (pre-generated) ── */
