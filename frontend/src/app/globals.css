@@ -242,8 +242,10 @@ h1, h2, h3, h4, h5, h6 {
 h1 { font-weight: 700; }
 h2, h3 { font-weight: 600; }
 
-/* ── Buttons ── */
-button {
+/* -- Buttons (scoped to avoid overriding component libraries) -- */
+:not(.signin-page) > button,
+.card button,
+nav button {
   border-radius: 12px;
   border: 1px solid var(--border-subtle);
   padding: 0.6em 1.4em;
@@ -255,14 +257,20 @@ button {
   cursor: pointer;
   transition: all 0.2s ease;
 }
-button:hover {
+:not(.signin-page) > button:hover,
+.card button:hover,
+nav button:hover {
   background: var(--bg-card-hover);
   border-color: var(--border-default);
 }
-button:active {
+:not(.signin-page) > button:active,
+.card button:active,
+nav button:active {
   transform: scale(0.98);
 }
-button:disabled {
+:not(.signin-page) > button:disabled,
+.card button:disabled,
+nav button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -297,8 +305,11 @@ button:disabled {
   border-color: var(--border-default);
 }
 
-/* ── Form Elements ── */
-input, select, textarea {
+/* -- Form Elements (scoped to avoid overriding component libraries) -- */
+.card input, .card select, .card textarea,
+form:not(.space-y-5) input,
+form:not(.space-y-5) select,
+form:not(.space-y-5) textarea {
   width: 100%;
   padding: 0.7rem 1rem;
   border-radius: 10px;
@@ -309,12 +320,17 @@ input, select, textarea {
   font-family: inherit;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
-input:focus, select:focus, textarea:focus {
+.card input:focus, .card select:focus, .card textarea:focus,
+form:not(.space-y-5) input:focus,
+form:not(.space-y-5) select:focus,
+form:not(.space-y-5) textarea:focus {
   outline: none;
   border-color: var(--accent-teal);
   box-shadow: 0 0 0 3px var(--accent-teal-glow);
 }
-input::placeholder, textarea::placeholder {
+.card input::placeholder, .card textarea::placeholder,
+form:not(.space-y-5) input::placeholder,
+form:not(.space-y-5) textarea::placeholder {
   color: var(--text-muted);
 }
 
