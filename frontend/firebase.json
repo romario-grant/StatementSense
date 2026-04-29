@@ -1,0 +1,11 @@
+{
+  "apphosting": {
+    "rootDir": ".",
+    "ignore": [
+      "node_modules",
+      ".git",
+      "firebase-debug.*",
+      ".env.local"
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+# Ignore everything not needed for Cloud Run build
+.git
+.gitignore
+.env
+.env.*
+frontend/
+datasets/
+*.pdf
+__pycache__/
+*.pyc
+.vscode/
+node_modules/
+.next/
+*.md

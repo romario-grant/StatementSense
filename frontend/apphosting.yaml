@@ -1,0 +1,37 @@
+# ═══════════════════════════════════════════════════════════
+# StatementSense — Firebase App Hosting Configuration
+# https://firebase.google.com/docs/app-hosting/configure
+# ═══════════════════════════════════════════════════════════
+
+runConfig:
+  minInstances: 0          # Scale to zero when idle (saves cost)
+  maxInstances: 10         # Adjust based on traffic
+  cpu: 1
+  memoryMiB: 512
+  concurrency: 80
+
+env:
+  # Backend API URL — set this to your Cloud Run URL after deploying
+  # Example: https://statementsense-api-xxxx-uc.a.run.app
+  - variable: BACKEND_URL
+    value: "http://localhost:8000"
+
+  # Firebase Client Config (NEXT_PUBLIC_ = available in browser)
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: "AIzaSyBwIiQmYkCWoLuqulhg2-UMHS3on1w-m5k"
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: "statementsense-84a99.firebaseapp.com"
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: "statementsense-84a99"
+  - variable: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    value: "statementsense-84a99.firebasestorage.app"
+  - variable: NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    value: "386551127503"
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: "1:386551127503:web:c709de74058905a30686ba"
+  - variable: NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+    value: "G-W5PVNPF7X8"
+
+  # Gemini API Key — pulled securely from Google Cloud Secret Manager
+  - variable: GEMINI_API_KEY
+    secret: gemini-api-key

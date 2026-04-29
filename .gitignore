@@ -1,0 +1,58 @@
+# ═══════════════════════════════════════════════════
+# StatementSense — Root .gitignore
+# ═══════════════════════════════════════════════════
+
+# ── Environment & Secrets ──
+.env
+.env.local
+.env.*.local
+*.pem
+token.json
+credentials.json
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+*.whl
+
+# ── Node.js ──
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ── Next.js ──
+frontend/.next/
+frontend/out/
+frontend/build/
+*.tsbuildinfo
+next-env.d.ts
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Firebase ──
+.firebase/
+firebase-debug.*
+.firebaserc
+
+# ── Misc ──
+*.log
+*.pdf
+datasets/
+models/__pycache__/
