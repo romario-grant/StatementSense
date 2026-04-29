@@ -17,7 +17,8 @@ from google import genai
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 
 class CalendarReader:
-    def __init__(self):
+    def __init__(self, access_token: str | None = None):
+        self.access_token = access_token
         self.service = self._authenticate()
     
     def _authenticate(self):
@@ -29,6 +30,12 @@ class CalendarReader:
         
         creds = None
         
+        # 1. Serverless web flow: Use the access token passed from the frontend
+        if self.access_token:
+            creds = Credentials(token=self.access_token)
+            return build('calendar', 'v3', credentials=creds)
+
+        # 2. Local CLI flow: Fallback to token.json / credentials.json
         # Use the project root set by main.py to find credential files
         project_root = os.environ.get("STATEMENTSENSE_ROOT", "")
         if project_root:
@@ -53,6 +60,7 @@ class CalendarReader:
                     raise FileNotFoundError(
                         f"CRITICAL: {creds_path} not found.\n"
                         "Download it from Google Cloud Console → APIs & Services → Credentials.\n"
+                        "Note: For web usage, please log in via the frontend."
                     )
                 flow = InstalledAppFlow.from_client_secrets_file(creds_path, SCOPES)
                 # This will open a local browser window to authenticate
@@ -338,13 +346,13 @@ class CalendarSenseEngine:
         return recommendations
 
 
-def analyze_calendar(home_location: str, subscriptions_list: list):
+def analyze_calendar(home_location: str, subscriptions_list: list, access_token: str | None = None):
     """
     Main entry point for API.
     Connects to calendar, fetches events, queries Gemini, returns savings recommendations.
     """
     try:
-        calendar = CalendarReader()
+        calendar = CalendarReader(access_token)
     except Exception as e:
         return {"error": f"Calendar connection failed: {e}"}
         

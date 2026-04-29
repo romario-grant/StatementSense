@@ -1,5 +1,5 @@
 "use client";
-
+import { GoogleAuthProvider } from "firebase/auth";
 import {
   createContext,
   useContext,
@@ -92,11 +92,17 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loginWithGoogle = useCallback(async () => {
-    await signInWithPopup(auth, googleProvider);
+    const result = await signInWithPopup(auth, googleProvider);
+    // Extract the OAuth access token to use for Google Calendar API
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (credential?.accessToken) {
+      localStorage.setItem("google_access_token", credential.accessToken);
+    }
   }, []);
 
   const logout = useCallback(async () => {
     await firebaseSignOut(auth);
+    localStorage.removeItem("google_access_token");
     router.replace("/login");
   }, [router]);
 

@@ -28,9 +28,14 @@ export default function CalendarSensePage() {
     if (validSubs.length === 0) return setError("Please add at least one subscription");
     setLoading(true); setError(null); setResult(null);
     try {
+      const payload = {
+        home_location: homeLocation,
+        subscriptions: validSubs.map(s => ({ name: s.name, cost: parseFloat(s.cost) })),
+        access_token: localStorage.getItem("google_access_token") || "",
+      };
       const res = await fetch("/api/calendar/analyze", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ home_location: homeLocation, subscriptions: validSubs.map(s => ({ name: s.name, cost: parseFloat(s.cost) })) }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Analysis failed");

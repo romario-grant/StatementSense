@@ -15,15 +15,13 @@ class SubscriptionInput(BaseModel):
 class CalendarRequest(BaseModel):
     home_location: str
     subscriptions: List[SubscriptionInput]
+    access_token: str | None = None
 
 @router.post("/analyze")
 async def analyze_user_calendar(request: CalendarRequest):
     """
     Connect to Google Calendar via OAuth, grab future travel dates, 
     and compare against local subscriptions.
-    
-    The OAuth flow (run_local_server) is blocking, so we run the entire
-    analysis in a thread pool to avoid blocking the FastAPI event loop.
     """
     try:
         if not request.home_location:
@@ -31,14 +29,15 @@ async def analyze_user_calendar(request: CalendarRequest):
             
         subs_list = [{"name": s.name, "cost": s.cost} for s in request.subscriptions]
         
-        # Run in thread pool because Google OAuth's run_local_server() blocks
+        # Run in thread pool because it's a synchronous blocking operation
         loop = asyncio.get_event_loop()
         with concurrent.futures.ThreadPoolExecutor() as pool:
             result = await loop.run_in_executor(
                 pool, 
                 analyze_calendar, 
                 request.home_location, 
-                subs_list
+                subs_list,
+                request.access_token
             )
         
         if "error" in result:
