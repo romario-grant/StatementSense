@@ -10,10 +10,9 @@ from datetime import datetime, timedelta, timezone
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google import genai
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
+# NOTE: Google Calendar OAuth imports (google_auth_oauthlib, googleapiclient)
+# are loaded lazily inside CalendarReader._authenticate() to prevent
+# the container from crashing on startup when credentials are missing.
 
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 
@@ -22,6 +21,12 @@ class CalendarReader:
         self.service = self._authenticate()
     
     def _authenticate(self):
+        # Lazy imports — only load when calendar is actually needed
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        from google.auth.transport.requests import Request
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+        
         creds = None
         
         # Use the project root set by main.py to find credential files
