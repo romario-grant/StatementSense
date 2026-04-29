@@ -4,8 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sun, Moon } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
+import { useAuth } from "./AuthProvider";
 
 const navLinks = [
   { path: "/renewal", label: "RenewalSense" },
@@ -17,6 +18,7 @@ export default function Navbar() {
   const pathname = usePathname();
   const [hovered, setHovered] = useState<string | null>(null);
   const { theme, toggleTheme } = useTheme();
+  const { logout } = useAuth();
   const isDark = theme === "dark";
   const isHomePage = pathname === "/";
 
@@ -121,67 +123,88 @@ export default function Navbar() {
         })}
       </motion.div>
 
-      {/* ── Theme Toggle — absolute right ── */}
+      {/* ── Right Controls ── */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.25, 0.1, 0.25, 1] as const }}
-        style={{ position: "absolute", right: "3rem", top: "2rem", pointerEvents: "auto" }}
+        style={{ position: "absolute", right: "3rem", top: "2rem", pointerEvents: "auto", display: "flex", gap: "1rem", alignItems: "center" }}
       >
+        {/* Theme Toggle */}
         <button
           onClick={toggleTheme}
           aria-label="Toggle theme"
           style={{
-            background: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
-            border: isDark ? "1px solid rgba(255,255,255,0.2)" : "1px solid rgba(0,0,0,0.15)",
-            borderRadius: "50%",
-            width: "38px",
-            height: "38px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            background: "transparent",
+            border: "none",
             cursor: "pointer",
-            color: "var(--text-primary)",
-            transition: "border-color 0.3s, color 0.3s, background 0.3s",
-            backdropFilter: "blur(12px)",
-            WebkitBackdropFilter: "blur(12px)",
+            color: "var(--text-muted)",
+            fontSize: "0.82rem",
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            transition: "color 0.25s ease",
+            padding: "0.25rem 0",
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = "var(--accent-teal)";
-            e.currentTarget.style.color = "var(--accent-teal)";
-            e.currentTarget.style.background = "var(--accent-teal-light)";
+            e.currentTarget.style.color = "var(--text-primary)";
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = isDark ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.15)";
-            e.currentTarget.style.color = "var(--text-primary)";
-            e.currentTarget.style.background = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+            e.currentTarget.style.color = "var(--text-muted)";
           }}
         >
           <AnimatePresence mode="wait" initial={false}>
             {!isDark ? (
-              <motion.div
-                key="sun"
-                initial={{ rotate: -90, opacity: 0 }}
-                animate={{ rotate: 0, opacity: 1 }}
-                exit={{ rotate: 90, opacity: 0 }}
-                transition={{ duration: 0.3 }}
-                style={{ display: "flex" }}
+              <motion.span
+                key="dark-text"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
               >
-                <Sun size={18} strokeWidth={2} />
-              </motion.div>
+                Dark Mode
+              </motion.span>
             ) : (
-              <motion.div
-                key="moon"
-                initial={{ rotate: 90, opacity: 0 }}
-                animate={{ rotate: 0, opacity: 1 }}
-                exit={{ rotate: -90, opacity: 0 }}
-                transition={{ duration: 0.3 }}
-                style={{ display: "flex" }}
+              <motion.span
+                key="light-text"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
               >
-                <Moon size={18} strokeWidth={2} />
-              </motion.div>
+                Light Mode
+              </motion.span>
             )}
           </AnimatePresence>
+        </button>
+
+        {/* Sign Out */}
+        <button
+          onClick={logout}
+          aria-label="Sign out"
+          style={{
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--status-danger)",
+            fontSize: "0.82rem",
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            transition: "color 0.25s ease",
+            padding: "0.25rem 0",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.35rem",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = "#ff6b6b";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = "var(--status-danger)";
+          }}
+        >
+          <LogOut size={14} /> Sign Out
         </button>
       </motion.div>
     </nav>
