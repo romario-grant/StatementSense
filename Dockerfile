@@ -36,6 +36,5 @@ ENV PORT=8080
 
 EXPOSE 8080
 
-# Use shell form so $PORT is expanded at runtime by Cloud Run
-# Host MUST be 0.0.0.0 for Cloud Run to route external traffic
-CMD exec uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+# Use standard python execution with shell expansion for $PORT
+CMD ["sh", "-c", "python -m uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
