@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
         source: "/api/:path*",
         destination: process.env.NODE_ENV === "development"
           ? "http://127.0.0.1:8000/api/:path*"
-          : `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/:path*`,
+          : "https://statementsense-backend-430268251728.us-central1.run.app/api/:path*",
       },
     ];
   },
