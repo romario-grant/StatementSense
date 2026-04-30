@@ -57,14 +57,32 @@ export default function CalendarSensePage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ access_token: token }),
     })
-      .then(res => res.json())
+      .then(async (res) => {
+        const text = await res.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error(`Server returned invalid response: ${res.status} ${text.slice(0, 50)}`);
+        }
+        if (!res.ok) {
+          throw new Error(data.detail || data.error || `Failed to fetch events: ${res.status}`);
+        }
+        return data;
+      })
       .then(data => {
         if (data.error) { setError(data.error); return; }
+        if (!data.events || !Array.isArray(data.events)) {
+          throw new Error("Invalid events format received from server");
+        }
         setEvents(data.events);
         setEventsPreview(data.events_preview || []);
         setEventsCount(data.events_scanned || 0);
       })
-      .catch(err => setError(err.message))
+      .catch(err => {
+        console.error("Phase 1 Error:", err);
+        setError(err.message);
+      })
       .finally(() => setEventsLoading(false));
   }, []);
 
