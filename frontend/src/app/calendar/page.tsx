@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Calendar as CalendarIcon, MapPin, Plus, Trash2, Plane, Activity, CheckCircle, AlertTriangle, Search, Loader2 } from "lucide-react";
 import Navbar from "@/components/Navbar";
@@ -12,45 +12,112 @@ interface SubInput { id: number; name: string; cost: string; }
 export default function CalendarSensePage() {
   const [homeLocation, setHomeLocation] = useState("Kingston, Jamaica");
   const [subscriptions, setSubscriptions] = useState<SubInput[]>([{ id: 1, name: "", cost: "" }]);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Phase 1: Calendar events (fetched on mount)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [result, setResult] = useState<any>(null);
+  const [events, setEvents] = useState<any[] | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [eventsPreview, setEventsPreview] = useState<any[]>([]);
+  const [eventsCount, setEventsCount] = useState(0);
+  const [eventsLoading, setEventsLoading] = useState(false);
+
+  // Phase 2: Classification + Travel detection
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [classifyResult, setClassifyResult] = useState<any>(null);
+  const [classifyLoading, setClassifyLoading] = useState(false);
+
+  // Phase 3: Savings + Alternatives
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [savingsResult, setSavingsResult] = useState<any>(null);
+  const [savingsLoading, setSavingsLoading] = useState(false);
+
+  // Legacy compat: build a combined result object for the existing render code
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result: any = classifyResult ? {
+    events_scanned: eventsCount,
+    events_preview: eventsPreview,
+    away_periods: classifyResult.away_periods || [],
+    processed_subscriptions: classifyResult.processed_subscriptions || [],
+    local_count: classifyResult.local_count || 0,
+    portable_count: classifyResult.portable_count || 0,
+    recommendations: savingsResult?.recommendations || [],
+    total_savings: savingsResult?.total_savings || 0,
+  } : null;
+
+  const phase3Fired = useRef(false);
+
+  // ── Phase 1: Auto-fetch calendar events on mount ──
+  useEffect(() => {
+    const token = localStorage.getItem("google_access_token") || "";
+    if (!token) return;
+    setEventsLoading(true);
+    fetch("/api/calendar/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ access_token: token }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) { setError(data.error); return; }
+        setEvents(data.events);
+        setEventsPreview(data.events_preview || []);
+        setEventsCount(data.events_scanned || 0);
+      })
+      .catch(err => setError(err.message))
+      .finally(() => setEventsLoading(false));
+  }, []);
+
+  // ── Phase 3: Auto-fire when Phase 2 reveals local subs + travel ──
+  useEffect(() => {
+    if (!classifyResult || phase3Fired.current) return;
+    const hasLocal = (classifyResult.local_count || 0) > 0;
+    const hasTravel = (classifyResult.away_periods || []).length > 0;
+    if (hasLocal && hasTravel) {
+      phase3Fired.current = true;
+      setSavingsLoading(true);
+      fetch("/api/calendar/savings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          away_periods: classifyResult.away_periods,
+          processed_subscriptions: classifyResult.processed_subscriptions,
+        }),
+      })
+        .then(res => res.json())
+        .then(data => { if (!data.error) setSavingsResult(data); })
+        .catch(() => {})
+        .finally(() => setSavingsLoading(false));
+    }
+  }, [classifyResult]);
 
   const handleAddSub = () => setSubscriptions([...subscriptions, { id: Date.now(), name: "", cost: "" }]);
   const handleRemoveSub = (id: number) => setSubscriptions(subscriptions.filter(s => s.id !== id));
   const handleChangeSub = (id: number, field: string, value: string) => setSubscriptions(subscriptions.map(s => s.id === id ? { ...s, [field]: value } : s));
 
+  // ── Phase 2: Classify + Detect (on Analyze click) ──
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!homeLocation) return setError("Home location is required");
     const validSubs = subscriptions.filter(s => s.name.trim() && s.cost);
     if (validSubs.length === 0) return setError("Please add at least one subscription");
-    setLoading(true); setError(null); setResult(null);
-    try {
-      const payload = {
-        home_location: homeLocation,
-        subscriptions: validSubs.map(s => ({ name: s.name, cost: parseFloat(s.cost) })),
-        access_token: localStorage.getItem("google_access_token") || "",
-      };
-      const res = await fetch("/api/calendar/analyze", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      let data;
-      const text = await res.text();
-      try {
-        data = JSON.parse(text);
-      } catch (e) {
-        throw new Error(`Server returned an invalid response: ${res.status} ${res.statusText}. Details: ${text.slice(0, 100)}`);
-      }
+    if (!events || events.length === 0) return setError("Calendar events not loaded yet. Please wait or reconnect.");
 
-      if (!res.ok) {
-        throw new Error(data?.detail || data?.error || "Failed to analyze calendar.");
-      }
-      setResult(data);
+    setClassifyLoading(true); setError(null); setClassifyResult(null); setSavingsResult(null); phase3Fired.current = false;
+    try {
+      const res = await fetch("/api/calendar/classify", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          events,
+          home_location: homeLocation,
+          subscriptions: validSubs.map(s => ({ name: s.name, cost: parseFloat(s.cost) })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || data?.error || "Classification failed.");
+      setClassifyResult(data);
     } catch (err) { setError(err instanceof Error ? err.message : "An error occurred"); }
-    finally { setLoading(false); }
+    finally { setClassifyLoading(false); }
   };
 
   return (
@@ -105,10 +172,14 @@ export default function CalendarSensePage() {
 
             <MotionCard hover={false} delay={0.1} className="text-center bg-secondary border-border">
               <CalendarIcon size={28} className="text-foreground mx-auto mb-3" />
-              <h3 className="font-medium tracking-tight text-base mb-2">Connect &amp; Scan</h3>
-              <p className="text-[0.85rem] text-muted-foreground mb-4">Securely analyze the next 6 months of your Google Calendar.</p>
-              <button onClick={handleAnalyze} disabled={loading} className="w-full py-3 flex justify-center items-center gap-2 font-medium bg-primary text-primary-foreground rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors shadow-sm">
-                {loading ? (<><Loader2 size={18} className="animate-spin" /> Analyzing...</>) : "Scan Calendar for Travel"}
+              <h3 className="font-medium tracking-tight text-base mb-2">
+                {eventsLoading ? "Connecting..." : events ? `${eventsCount} Events Loaded` : "Connect & Scan"}
+              </h3>
+              <p className="text-[0.85rem] text-muted-foreground mb-4">
+                {events ? "Enter subscriptions above and analyze for travel overlaps." : "Securely analyze the next 6 months of your Google Calendar."}
+              </p>
+              <button onClick={handleAnalyze} disabled={classifyLoading || eventsLoading || !events} className="w-full py-3 flex justify-center items-center gap-2 font-medium bg-primary text-primary-foreground rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors shadow-sm">
+                {classifyLoading ? (<><Loader2 size={18} className="animate-spin" /> Classifying...</>) : eventsLoading ? (<><Loader2 size={18} className="animate-spin" /> Loading Calendar...</>) : "Analyze Subscriptions"}
               </button>
             </MotionCard>
           </div>
@@ -118,14 +189,52 @@ export default function CalendarSensePage() {
             <AnimatePresence mode="wait">
               {!result ? (
                 <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full">
-                  <MotionCard hover={false} className="relative overflow-hidden h-full min-h-[400px] flex flex-col items-center justify-center border-none shadow-none bg-transparent">
+                  <MotionCard hover={false} className="relative overflow-hidden h-full min-h-[400px] flex flex-col border-none shadow-none bg-transparent">
                     <div className="absolute inset-0 bg-cover bg-center pointer-events-none" style={{ backgroundImage: 'url(/PLANE.jpg)' }} />
-                    <div className="relative z-10 flex flex-col items-center">
-                      <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}>
-                        <Plane size={48} className="text-white mb-4" />
-                      </motion.div>
-                      <p className="text-base font-medium tracking-wide uppercase text-white">Ready to Scan</p>
-                      <p className="text-[0.85rem] text-white text-center max-w-[18rem] mt-2 font-medium">Enter your details and connect your calendar to find travel overlaps.</p>
+                    <div className="absolute inset-0 bg-black/40 pointer-events-none" />
+                    <div className="relative z-10 flex flex-col h-full p-2">
+                      {/* Header */}
+                      <div className="flex items-center justify-between mb-4">
+                        <p className="text-sm font-medium text-white/90 tracking-wide uppercase">Your Calendar</p>
+                        {eventsLoading && <Loader2 size={16} className="animate-spin text-white/70" />}
+                        {events && <span className="text-xs text-white/60">{eventsCount} events</span>}
+                      </div>
+
+                      {/* Events List or Empty State */}
+                      {eventsLoading ? (
+                        <div className="flex flex-col gap-2 flex-1 justify-center">
+                          {[1,2,3,4,5].map(i => (
+                            <div key={i} className="h-8 rounded-lg bg-white/10 animate-pulse" style={{ animationDelay: `${i * 0.1}s` }} />
+                          ))}
+                        </div>
+                      ) : eventsPreview.length > 0 ? (
+                        <div className="flex flex-col gap-1 flex-1 overflow-y-auto pr-1" style={{ maxHeight: '340px' }}>
+                          {eventsPreview.map((ev: { date: string; summary: string; location: string }, i: number) => (
+                            <motion.div
+                              key={i}
+                              initial={{ opacity: 0, x: -12 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: 0.1 + i * 0.05 }}
+                              className="flex gap-3 text-sm py-2 px-3 rounded-lg bg-white/10 backdrop-blur-sm"
+                            >
+                              <span className="text-white/50 font-mono text-[0.7rem] w-20 shrink-0 pt-0.5">{ev.date}</span>
+                              <span className="text-white font-medium truncate">{ev.summary}</span>
+                              {ev.location && <span className="text-white/40 text-[0.7rem] ml-auto shrink-0 truncate max-w-[8rem]">📍 {ev.location}</span>}
+                            </motion.div>
+                          ))}
+                          {eventsCount > 15 && <p className="text-xs text-white/40 text-center mt-2">... and {eventsCount - 15} more</p>}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center flex-1">
+                          <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}>
+                            <Plane size={48} className="text-white mb-4" />
+                          </motion.div>
+                          <p className="text-base font-medium tracking-wide uppercase text-white">Ready to Scan</p>
+                          <p className="text-[0.85rem] text-white/70 text-center max-w-[18rem] mt-2">
+                            {events === null ? "Sign in with Google to load your calendar." : "No upcoming events found."}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </MotionCard>
                 </motion.div>
@@ -335,15 +444,31 @@ export default function CalendarSensePage() {
                     </MotionCard>
                   )}
 
+                  {/* SAVINGS LOADING SKELETON */}
+                  {savingsLoading && (
+                    <MotionCard hover={false} delay={0.3} className="border-border">
+                      <div className="flex items-center gap-3 mb-4">
+                        <Loader2 size={20} className="animate-spin text-foreground" />
+                        <h2 className="text-lg font-medium">Calculating Savings...</h2>
+                      </div>
+                      <hr className="border-t border-border my-0" />
+                      <div className="flex flex-col gap-3 mt-4">
+                        {[1,2,3].map(i => (
+                          <div key={i} className="h-16 rounded-xl bg-secondary animate-pulse" style={{ animationDelay: `${i * 0.15}s` }} />
+                        ))}
+                      </div>
+                    </MotionCard>
+                  )}
+
                   {/* NO-RESULT STATES */}
-                  {result.recommendations.length === 0 && result.away_periods.length === 0 && (
+                  {result.recommendations.length === 0 && !savingsLoading && result.away_periods.length === 0 && (
                     <MotionCard hover={false} className="text-center py-12 px-8">
                       <CheckCircle size={48} className="text-green-600 dark:text-green-400 mx-auto mb-4" />
                       <h3 className="text-lg font-medium mb-2">No Travel Detected</h3>
                       <p className="text-muted-foreground">No travel or away periods detected for the next 6 months.</p>
                     </MotionCard>
                   )}
-                  {result.recommendations.length === 0 && result.away_periods.length > 0 && (result.local_count || 0) === 0 && (
+                  {result.recommendations.length === 0 && !savingsLoading && result.away_periods.length > 0 && (result.local_count || 0) === 0 && (
                     <MotionCard hover={false} className="text-center py-12 px-8">
                       <CheckCircle size={48} className="text-green-600 dark:text-green-400 mx-auto mb-4" />
                       <h3 className="text-lg font-medium mb-2">All Subscriptions Are Global</h3>

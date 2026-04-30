@@ -458,3 +458,158 @@ def analyze_calendar(home_location: str, subscriptions_list: list, access_token:
         traceback.print_exc()
         return {"error": f"Internal Engine Error: {str(e)}"}
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Progressive Loading API — composable functions for phased frontend loading
+# ══════════════════════════════════════════════════════════════════════════════
+
+def fetch_events(access_token: str | None = None):
+    """
+    Phase 1: Fetch calendar events only. Fast (~2s).
+    Returns events list + preview for immediate display.
+    """
+    try:
+        calendar = CalendarReader(access_token)
+        events = calendar.get_upcoming_events(months_ahead=6)
+        print(f"[CalendarSense:Phase1] Fetched {len(events)} events.")
+
+        events_preview = []
+        for ev in events[:15]:
+            start_str = ev.get('start', '')[:10] if ev.get('start') else '?'
+            events_preview.append({
+                "date": start_str,
+                "summary": ev.get('summary', 'No Title'),
+                "location": ev.get('location', ''),
+            })
+
+        return {
+            "events": events,
+            "events_scanned": len(events),
+            "events_preview": events_preview,
+        }
+    except Exception as e:
+        print(f"[CalendarSense:Phase1] ERROR: {e}")
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+def classify_and_detect(events: list, home_location: str, subscriptions_list: list):
+    """
+    Phase 2: Classify subscriptions + detect travel periods in parallel.
+    Receives the raw events from Phase 1.
+    """
+    try:
+        analyzer = GeminiCalendarAnalyzer()
+    except Exception as e:
+        return {"error": f"Gemini initialization failed: {e}"}
+
+    results = {"away_periods": [], "processed_subscriptions": []}
+
+    # Fire travel detection and subscription classification in parallel
+    def _detect_travel():
+        return analyzer.detect_away_periods(events, home_location)
+
+    def _classify_one(sub):
+        sub_name = sub.get("name")
+        sub_cost = float(sub.get("cost", 0))
+        classification = analyzer.classify_subscription(sub_name, sub_cost, home_location)
+        classification["name"] = sub_name
+        return classification
+
+    try:
+        with ThreadPoolExecutor(max_workers=min(len(subscriptions_list) + 1, 100)) as pool:
+            # Submit travel detection
+            travel_future = pool.submit(_detect_travel)
+
+            # Submit all subscription classifications
+            classify_futures = {pool.submit(_classify_one, sub): sub for sub in subscriptions_list}
+
+            # Collect travel results
+            try:
+                results["away_periods"] = travel_future.result()
+            except Exception as e:
+                print(f"[CalendarSense:Phase2] Travel detection failed: {e}")
+                results["away_periods"] = []
+
+            # Collect classification results
+            processed_subs = []
+            for future in as_completed(classify_futures):
+                try:
+                    processed_subs.append(future.result())
+                except Exception as e:
+                    sub = classify_futures[future]
+                    processed_subs.append({
+                        "name": sub.get("name"), "is_local": False,
+                        "location_type": "portable", "reason": f"Classification error: {e}"
+                    })
+
+            results["processed_subscriptions"] = processed_subs
+
+        local_subs = [s for s in processed_subs if s.get("is_local")]
+        results["local_count"] = len(local_subs)
+        results["portable_count"] = len(processed_subs) - len(local_subs)
+
+        print(f"[CalendarSense:Phase2] Classified {len(processed_subs)} subs "
+              f"({results['local_count']} local), detected {len(results['away_periods'])} away periods.")
+
+        return results
+    except Exception as e:
+        print(f"[CalendarSense:Phase2] ERROR: {e}")
+        traceback.print_exc()
+        return {"error": str(e)}
+
+
+def compute_savings(away_periods: list, processed_subscriptions: list):
+    """
+    Phase 3: Calculate savings + search destination alternatives.
+    Only called when local subs AND away periods exist.
+    """
+    try:
+        analyzer = GeminiCalendarAnalyzer()
+    except Exception as e:
+        return {"error": f"Gemini initialization failed: {e}"}
+
+    local_subs = [s for s in processed_subscriptions if s.get("is_local")]
+
+    if not local_subs or not away_periods:
+        return {"recommendations": [], "total_savings": 0.0}
+
+    engine = CalendarSenseEngine()
+    recommendations = engine.calculate_savings(away_periods, local_subs)
+
+    # Parallel alternatives search
+    def _search_one(rec):
+        dest = rec.get("destination", "")
+        loc_type = rec.get("location_type", "")
+        sub_name = rec.get("subscription", "")
+        if dest and dest != "Unknown" and loc_type != "portable":
+            try:
+                print(f"[CalendarSense:Phase3] Searching alternatives for '{sub_name}' in {dest}...")
+                alternatives = analyzer.search_destination_alternatives(
+                    sub_name, loc_type, dest,
+                    sub_reason=next((s.get('reason', '') for s in processed_subscriptions if s.get('name') == sub_name), '')
+                )
+                if alternatives:
+                    rec["alternatives"] = alternatives
+                else:
+                    rec["alternatives"] = {"alternatives_found": False, "options": [], "tip": "Could not find alternatives."}
+            except Exception as e:
+                print(f"[CalendarSense:Phase3] Alternatives search failed for '{sub_name}': {e}")
+                rec["alternatives"] = {"alternatives_found": False, "options": [], "tip": f"Search failed: {str(e)[:100]}"}
+        return rec
+
+    if recommendations:
+        with ThreadPoolExecutor(max_workers=min(len(recommendations), 100)) as pool:
+            futures = [pool.submit(_search_one, rec) for rec in recommendations]
+            recommendations = [f.result() for f in futures]
+
+    total_savings = sum(r.get("net_savings", 0) for r in recommendations)
+
+    print(f"[CalendarSense:Phase3] {len(recommendations)} recommendations, total savings: ${total_savings:.2f}")
+
+    return {
+        "recommendations": recommendations,
+        "total_savings": round(total_savings, 2),
+    }
+
+
