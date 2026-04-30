@@ -208,10 +208,10 @@ export default function RenewalSensePage() {
                         <div
                           key={day.day}
                           title={`Day ${day.day}: ${day.zone.toUpperCase()} ZONE`}
-                          className={`w-[calc(10%-3px)] h-7 rounded flex items-center justify-center relative cursor-pointer ${bg} ${day.is_payday ? 'border-2 border-cyan-500' : ''}`}
+                          className={`w-[calc(10%-3px)] h-7 rounded flex items-center justify-center relative cursor-pointer ${bg} ${day.is_payday ? 'border-2 border-border' : ''}`}
                         >
                           {day.is_payday && (
-                            <span className="absolute -top-4 text-[0.5rem] font-bold bg-cyan-500 text-white px-1 py-px rounded-[3px] whitespace-nowrap">
+                            <span className="absolute -top-4 text-[0.5rem] font-bold bg-primary text-white px-1 py-px rounded-[3px] whitespace-nowrap">
                               PAY
                             </span>
                           )}
@@ -251,7 +251,7 @@ export default function RenewalSensePage() {
               <div className="flex flex-col gap-6 md:col-span-2">
                 {/* Renewal Predictions */}
                 {results.renewal_predictions && results.renewal_predictions.length > 0 && (
-                  <MotionCard hover={false} delay={0.15} className="border-cyan-500/30 bg-cyan-500/5">
+                  <MotionCard hover={false} delay={0.15} className="border-border bg-secondary">
                     <div className="flex items-center justify-between mb-4">
                       <h2 className="text-lg font-bold m-0">Upcoming Charges</h2>
                       <Badge variant="info">PREDICTED</Badge>

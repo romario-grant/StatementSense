@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Calendar as CalendarIcon, MapPin, Plus, Trash2, Plane, Activity, CheckCircle, AlertTriangle, Search } from "lucide-react";
+import { Calendar as CalendarIcon, MapPin, Plus, Trash2, Plane, Activity, CheckCircle, AlertTriangle, Search, Loader2 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
@@ -37,8 +37,17 @@ export default function CalendarSensePage() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Analysis failed");
+      let data;
+      const text = await res.text();
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        throw new Error(`Server returned an invalid response: ${res.status} ${res.statusText}. Details: ${text.slice(0, 100)}`);
+      }
+
+      if (!res.ok) {
+        throw new Error(data?.detail || data?.error || "Failed to analyze calendar.");
+      }
       setResult(data);
     } catch (err) { setError(err instanceof Error ? err.message : "An error occurred"); }
     finally { setLoading(false); }
@@ -58,7 +67,7 @@ export default function CalendarSensePage() {
           <div className="flex flex-col gap-6">
             <MotionCard hover={false}>
               <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-                <MapPin size={18} className="text-cyan-500" /> Travel Details
+                Travel Details
               </h2>
               <div>
                 <label className="block text-[0.85rem] font-medium mb-1.5">Your Home Location</label>
@@ -70,7 +79,7 @@ export default function CalendarSensePage() {
             <MotionCard hover={false} delay={0.05}>
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-bold m-0">Subscriptions</h2>
-                <button type="button" onClick={handleAddSub} className="flex items-center gap-1 text-xs px-3 py-1.5 text-cyan-600 dark:text-cyan-400 bg-cyan-500/10 rounded-full border-none cursor-pointer hover:bg-cyan-500/20 transition-colors">
+                <button type="button" onClick={handleAddSub} className="flex items-center gap-1 text-xs px-3 py-1.5 text-foreground bg-primary/10 rounded-full border-none cursor-pointer hover:bg-primary/90 transition-colors">
                   <Plus size={14} /> Add
                 </button>
               </div>
@@ -79,9 +88,9 @@ export default function CalendarSensePage() {
                 {subscriptions.map((sub, index) => (
                   <div key={sub.id} className="flex items-center gap-2">
                     <span className="text-muted-foreground text-xs w-4 shrink-0">{index + 1}.</span>
-                    <input type="text" placeholder="Name" className="flex-1 text-sm px-3 py-2" value={sub.name} onChange={e => handleChangeSub(sub.id, "name", e.target.value)} />
-                    <input type="number" step="0.01" placeholder="$ Cost" className="w-24 text-sm px-3 py-2" value={sub.cost} onChange={e => handleChangeSub(sub.id, "cost", e.target.value)} />
-                    <button onClick={() => handleRemoveSub(sub.id)} className="p-2 text-red-500/60 hover:text-red-500 bg-transparent border-none rounded-lg cursor-pointer transition-colors"><Trash2 size={15} /></button>
+                    <input type="text" placeholder="Name" className="flex-1 min-w-0 text-sm px-3 py-2 rounded-md border bg-transparent focus:outline-none focus:ring-2 focus:ring-ring" value={sub.name} onChange={e => handleChangeSub(sub.id, "name", e.target.value)} />
+                    <input type="number" step="0.01" placeholder="$ Cost" className="w-24 min-w-0 text-sm px-3 py-2 rounded-md border bg-transparent focus:outline-none focus:ring-2 focus:ring-ring" value={sub.cost} onChange={e => handleChangeSub(sub.id, "cost", e.target.value)} />
+                    <button onClick={() => handleRemoveSub(sub.id)} className="p-2 text-red-500/60 hover:text-red-500 bg-transparent border-none rounded-lg cursor-pointer transition-colors shrink-0"><Trash2 size={15} /></button>
                   </div>
                 ))}
                 {subscriptions.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No subscriptions added.</p>}
@@ -94,12 +103,12 @@ export default function CalendarSensePage() {
               </motion.div>
             )}
 
-            <MotionCard hover={false} delay={0.1} className="text-center bg-cyan-500/5 border-cyan-500/20">
-              <CalendarIcon size={28} className="text-cyan-500 mx-auto mb-3" />
+            <MotionCard hover={false} delay={0.1} className="text-center bg-secondary border-border">
+              <CalendarIcon size={28} className="text-foreground mx-auto mb-3" />
               <h3 className="font-bold text-base mb-2">Connect &amp; Scan</h3>
               <p className="text-[0.85rem] text-muted-foreground mb-4">Securely analyze the next 6 months of your Google Calendar.</p>
               <button onClick={handleAnalyze} disabled={loading} className="w-full py-3 flex justify-center items-center gap-2 font-bold bg-primary text-primary-foreground rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors shadow-sm">
-                {loading ? (<><Activity size={18} className="animate-spin" /> Analyzing...</>) : "Scan Calendar for Travel"}
+                {loading ? (<><Loader2 size={18} className="animate-spin" /> Analyzing...</>) : "Scan Calendar for Travel"}
               </button>
             </MotionCard>
           </div>
@@ -111,7 +120,7 @@ export default function CalendarSensePage() {
                 <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full">
                   <MotionCard hover={false} className="h-full min-h-[400px] flex flex-col items-center justify-center border-none shadow-none bg-transparent">
                     <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}>
-                      <Plane size={48} className="text-cyan-500 opacity-50 mb-4" />
+                      <Plane size={48} className="text-foreground opacity-50 mb-4" />
                     </motion.div>
                     <p className="text-base font-semibold tracking-wide uppercase text-muted-foreground">Ready to Scan</p>
                     <p className="text-[0.85rem] text-muted-foreground text-center max-w-[18rem] mt-2">Enter your details and connect your calendar to find travel overlaps.</p>
@@ -135,7 +144,7 @@ export default function CalendarSensePage() {
                   {result.events_preview && result.events_preview.length > 0 && (
                     <MotionCard hover={false} delay={0.15}>
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-bold flex items-center gap-2 m-0"><CalendarIcon size={18} className="text-cyan-500" /> Events Scanned</h3>
+                        <h3 className="font-bold flex items-center gap-2 m-0"><CalendarIcon size={18} className="text-foreground" /> Events Scanned</h3>
                         <span className="text-xs text-muted-foreground">{result.events_scanned} total</span>
                       </div>
                       <hr className="border-t border-border my-0" />
@@ -156,7 +165,7 @@ export default function CalendarSensePage() {
                   {/* TRAVEL DETECTION */}
                   <MotionCard hover={false} delay={0.2}>
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-bold flex items-center gap-2 m-0"><Plane size={18} className="text-cyan-500" /> Travel Detection</h3>
+                      <h3 className="font-bold flex items-center gap-2 m-0"><Plane size={18} className="text-foreground" /> Travel Detection</h3>
                       <Badge variant="info" className="text-[0.65rem]">Powered by Gemini AI</Badge>
                     </div>
                     <hr className="border-t border-border my-0" />
@@ -190,7 +199,7 @@ export default function CalendarSensePage() {
 
                   {/* SUBSCRIPTION CLASSIFICATION */}
                   <MotionCard hover={false} delay={0.25}>
-                    <h3 className="font-bold flex items-center gap-2 mb-4"><Search size={18} className="text-cyan-500" /> Subscription Classification</h3>
+                    <h3 className="font-bold flex items-center gap-2 mb-4"><Search size={18} className="text-foreground" /> Subscription Classification</h3>
                     <hr className="border-t border-border my-0" />
                     <div className="flex flex-col gap-3 mt-4">
                       {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
@@ -222,8 +231,8 @@ export default function CalendarSensePage() {
 
                   {/* SAVINGS PLAN */}
                   {result.recommendations.length > 0 && (
-                    <MotionCard hover={false} delay={0.3} className="border-cyan-500/20">
-                      <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-cyan-600 dark:text-cyan-400">
+                    <MotionCard hover={false} delay={0.3} className="border-border">
+                      <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-foreground">
                         <Activity size={22} /> Savings Plan
                       </h2>
                       <hr className="border-t border-border my-0" />
@@ -274,7 +283,7 @@ export default function CalendarSensePage() {
                                     <div key={j} className="flex justify-between items-center text-[0.85rem] pt-2 border-t border-border">
                                       <div>
                                         {opt.url ? (
-                                          <a href={opt.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cyan-600 dark:text-cyan-400 border-b border-cyan-500/30">{opt.name} ↗</a>
+                                          <a href={opt.url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground border-b border-border">{opt.name} ↗</a>
                                         ) : (<span className="font-medium">{opt.name}</span>)}
                                         <span className="text-muted-foreground ml-2">({opt.type})</span>
                                         {opt.notes && <p className="text-xs text-muted-foreground mt-0.5">{opt.notes}</p>}

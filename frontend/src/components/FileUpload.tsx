@@ -41,7 +41,7 @@ export default function FileUpload({
         animate={{ opacity: 1, scale: 1 }}
         className="flex items-center gap-3 px-5 py-4 rounded-xl bg-secondary border border-border"
       >
-        <FileText size={20} className="text-cyan-600 dark:text-cyan-400 shrink-0" />
+        <FileText size={20} className="text-foreground dark:text-foreground shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-sm truncate">{file.name}</p>
           <p className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</p>
@@ -64,14 +64,14 @@ export default function FileUpload({
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        whileHover={{ borderColor: "rgb(8, 145, 178)" }} // Cyan-600 approx for hover
+        whileHover={{ borderColor: "hsl(var(--foreground))" }} // Neutral hover
         className={`flex flex-col items-center justify-center py-10 px-6 rounded-xl border-2 border-dashed cursor-pointer transition-colors text-center ${
           dragOver 
-            ? "border-cyan-500 bg-cyan-500/10" 
+            ? "border-border bg-primary/10" 
             : "border-border bg-secondary"
         }`}
       >
-        <UploadCloud size={40} className="text-cyan-600 dark:text-cyan-400 mb-3 opacity-70" />
+        <UploadCloud size={40} className="text-foreground dark:text-foreground mb-3 opacity-70" />
         <p className="font-semibold text-[0.95rem] mb-1">Click to browse or drag file here</p>
         <p className="text-sm text-muted-foreground">{hint}</p>
       </motion.div>

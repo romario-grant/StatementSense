@@ -7,9 +7,11 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
-        // Proxy API requests directly to the FastAPI Cloud Run backend
+        // Proxy API requests directly to the FastAPI Cloud Run backend or Local Server
         source: "/api/:path*",
-        destination: "https://statementsense-backend-430268251728.us-central1.run.app/api/:path*",
+        destination: process.env.NODE_ENV === "development"
+          ? "http://127.0.0.1:8000/api/:path*"
+          : "https://statementsense-backend-430268251728.us-central1.run.app/api/:path*",
       },
     ];
   },

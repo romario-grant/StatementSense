@@ -15,6 +15,7 @@ import {
   BarChart3,
   Layers,
   Activity,
+  Loader2,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
@@ -301,7 +302,7 @@ export default function ScreentimeSensePage() {
                       />
                       <span
                         className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition-colors duration-300 ${
-                          globalSettings.is_student ? "bg-cyan-500" : "bg-muted"
+                          globalSettings.is_student ? "bg-primary" : "bg-muted"
                         }`}
                       >
                         <span
@@ -342,7 +343,7 @@ export default function ScreentimeSensePage() {
                 <MotionCard hover={false}>
                   <div className="flex justify-between items-center pb-4 mb-5 border-b border-border">
                     <h2 className="text-lg font-bold flex items-center gap-2 m-0">
-                      <Plus size={18} className="text-cyan-500" /> Add Subscription
+                      <Plus size={18} className="text-foreground" /> Add Subscription
                     </h2>
                     <span className="text-xs text-muted-foreground">
                       ${(parseFloat(globalSettings.user_wage || "0") * globalSettings.style_multiplier).toFixed(2)}/hr
@@ -409,7 +410,7 @@ export default function ScreentimeSensePage() {
                 <MotionCard hover={false} className="min-h-[400px]">
                   <div className="flex justify-between items-center pb-4 mb-5 border-b border-border">
                     <h2 className="text-lg font-bold flex items-center gap-2 m-0">
-                      <Layers size={18} className="text-cyan-500" /> Subscription Queue
+                      <Layers size={18} className="text-foreground" /> Subscription Queue
                     </h2>
                     <span className="text-[0.85rem] text-muted-foreground">
                       {subscriptions.length} subscription{subscriptions.length !== 1 ? "s" : ""}
@@ -446,7 +447,7 @@ export default function ScreentimeSensePage() {
                           className="flex items-center justify-between px-5 py-4 rounded-xl bg-secondary transition-all duration-200"
                         >
                           <div className="flex items-center gap-4">
-                            <span className="w-8 h-8 rounded-lg bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 flex items-center justify-center text-[0.8rem] font-bold">
+                            <span className="w-8 h-8 rounded-lg bg-secondary text-foreground dark:text-foreground flex items-center justify-center text-[0.8rem] font-bold">
                               {i + 1}
                             </span>
                             <div>
@@ -473,7 +474,7 @@ export default function ScreentimeSensePage() {
                       >
                         {loading ? (
                           <>
-                            <Activity size={18} className="animate-spin" /> Querying Gemini AI for {subscriptions.length} subscriptions...
+                            <Loader2 size={18} className="animate-spin" /> Querying Gemini AI for {subscriptions.length} subscriptions...
                           </>
                         ) : (
                           <>
@@ -505,7 +506,7 @@ export default function ScreentimeSensePage() {
                 <div className="flex flex-wrap justify-between items-center gap-4">
                   <div>
                     <h2 className="text-xl font-bold flex items-center gap-2 mb-1">
-                      <BarChart3 size={20} className="text-cyan-500" /> Analysis Complete
+                      <BarChart3 size={20} className="text-foreground" /> Analysis Complete
                     </h2>
                     <p className="text-[0.85rem] text-muted-foreground">
                       {batchResults.count} subscription{batchResults.count !== 1 ? "s" : ""} analyzed in parallel
@@ -520,7 +521,7 @@ export default function ScreentimeSensePage() {
                         </p>
                       </div>
                     )}
-                    <button onClick={resetAll} className="text-cyan-600 dark:text-cyan-400 text-[0.85rem] font-semibold bg-transparent border-none cursor-pointer hover:underline">
+                    <button onClick={resetAll} className="text-foreground dark:text-foreground text-[0.85rem] font-semibold bg-transparent border-none cursor-pointer hover:underline">
                       ← New Analysis
                     </button>
                   </div>
@@ -673,7 +674,7 @@ export default function ScreentimeSensePage() {
                   <MotionCard
                     hover={false}
                     delay={0.25}
-                    className="bg-cyan-500/5 border-cyan-500/20"
+                    className="bg-secondary border-border"
                   >
                     <div className="flex items-start gap-3">
                       <div className="flex-1">
@@ -699,7 +700,7 @@ export default function ScreentimeSensePage() {
                                   initial={{ opacity: 0, scale: 0.9 }}
                                   animate={{ opacity: 1, scale: 1 }}
                                   transition={{ duration: 0.3, delay: 0.35 + i * 0.06 }}
-                                  className="text-[0.75rem] font-medium px-2.5 py-1 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400"
+                                  className="text-[0.75rem] font-medium px-2.5 py-1 rounded-lg bg-primary/10 text-foreground dark:text-foreground"
                                 >
                                   {exam.name} — {exam.date?.slice(0, 10) || "TBD"}
                                 </motion.span>

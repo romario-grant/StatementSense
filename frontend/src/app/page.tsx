@@ -113,17 +113,7 @@ export default function Home() {
             animate="show"
             className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-5xl mx-auto p-4 rounded-[20px] bg-black/30 border border-white/10 backdrop-blur-md"
           >
-            {features.map(({ href, icon: Icon, title, desc }, cardIndex) => {
-              // Calculate character offset with gap between cards
-              const cardGap = 8; // virtual chars of spacing between cards
-              const charOffset = features
-                .slice(0, cardIndex)
-                .reduce((sum, f) => sum + f.title.length + cardGap, 0);
-              const totalChars = features.reduce((sum, f) => sum + f.title.length, 0) + cardGap * (features.length - 1);
-              const charDuration = 0.12; // seconds per character stagger
-              const sweepTime = totalChars * charDuration;
-              const cycleDuration = sweepTime; // no pause, restart immediately
-
+            {features.map(({ href, icon: Icon, title, desc }) => {
               return (
               <motion.div key={href} variants={itemVariants}>
                 <Link href={href} className="no-underline text-inherit block h-full">
@@ -133,42 +123,12 @@ export default function Home() {
                   >
                     <div className="flex flex-col h-full">
                       <h2 className="text-lg font-bold mb-2 tracking-tight flex text-white">
-                        {title.split("").map((char, i) => {
-                          const globalIndex = charOffset + i;
-                          const delay = globalIndex * charDuration;
-                          return (
-                            <motion.span
-                              key={i}
-                              animate={{
-                                color: [
-                                  "rgba(255,255,255,0.4)",
-                                  "rgba(255,255,255,1)",
-                                  "rgba(255,255,255,0.4)",
-                                ],
-                                textShadow: [
-                                  "0 0 0px rgba(255,255,255,0)",
-                                  "0 0 12px rgba(255,255,255,0.7), 0 0 30px rgba(255,255,255,0.3)",
-                                  "0 0 0px rgba(255,255,255,0)",
-                                ],
-                              }}
-                              transition={{
-                                duration: 0.8,
-                                delay,
-                                repeat: Infinity,
-                                repeatDelay: cycleDuration - 0.8,
-                                ease: "easeInOut",
-                              }}
-                              className="inline-block whitespace-pre"
-                            >
-                              {char}
-                            </motion.span>
-                          );
-                        })}
+                        {title}
                       </h2>
                       <p className="text-sm text-white/70 leading-relaxed mb-6 flex-grow">
                         {desc}
                       </p>
-                      <div className="flex items-center gap-1.5 text-cyan-500 font-semibold text-sm">
+                      <div className="flex items-center gap-1.5 text-foreground font-semibold text-sm">
                         Get Started <ArrowRight size={15} />
                       </div>
                     </div>
