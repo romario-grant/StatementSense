@@ -227,7 +227,7 @@ export default function CalendarSensePage() {
                         ))}
                       </div>
                     ) : eventsPreview.length > 0 ? (
-                      <div className="flex flex-col gap-1 flex-1 overflow-y-auto pr-1 no-scrollbar pb-6" style={{ maxHeight: '400px' }}>
+                      <div className="flex flex-col gap-1 flex-1 overflow-y-auto pr-1 no-scrollbar pb-6">
                         {eventsPreview.map((ev: { date: string; summary: string; location: string }, i: number) => (
                           <motion.div
                             key={i}
@@ -258,11 +258,11 @@ export default function CalendarSensePage() {
                 ) : (
                   <motion.div key="results" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="h-full flex flex-col p-4 md:p-6 pb-2">
                     
-                    {/* Carousel Container */}
-                    <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-4 h-full no-scrollbar items-stretch">
+                    {/* Vertical Scroll Container */}
+                    <div className="flex flex-col gap-6 overflow-y-auto pb-8 h-full pr-2 no-scrollbar">
                       
                       {/* Slide 1: Summary Stats */}
-                      <div className="min-w-[85%] md:min-w-[45%] snap-center shrink-0 flex flex-col h-full justify-center">
+                      <div className="flex flex-col gap-2">
                         <div className="grid grid-cols-2 gap-4">
                           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                           {([["Events", result.events_scanned, "text-white"], ["Trips", result.away_periods.length, "text-green-400"], ["Local", result.local_count || 0, "text-yellow-400"], ["Savings", `$${result.total_savings.toFixed(2)}`, "text-yellow-400"]] as [string, any, string][]).map(([label, value, colorClass], i) => (
@@ -272,16 +272,15 @@ export default function CalendarSensePage() {
                             </motion.div>
                           ))}
                         </div>
-                        <p className="text-white/40 text-xs text-center mt-6 animate-pulse">Swipe to see details →</p>
                       </div>
 
                       {/* Slide 2: Travel Detection */}
-                      <div className="min-w-[90%] md:min-w-[65%] snap-center shrink-0 h-full">
-                        <div className="h-[400px] rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 flex flex-col overflow-hidden">
+                      <div>
+                        <div className="rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 flex flex-col overflow-hidden">
                           <div className="p-5 border-b border-white/10">
                             <h3 className="font-medium flex items-center gap-2 m-0 text-white"><Plane size={18} className="text-white/70" /> Travel Detection</h3>
                           </div>
-                          <div className="flex-1 overflow-y-auto p-5 no-scrollbar">
+                          <div className="p-5">
                             {result.away_periods.length === 0 ? (
                               <div className="text-center py-8"><p className="text-white/50">No travel detected in the next 6 months.</p></div>
                             ) : (
@@ -313,12 +312,12 @@ export default function CalendarSensePage() {
                       </div>
 
                       {/* Slide 3: Subscription Classification */}
-                      <div className="min-w-[90%] md:min-w-[65%] snap-center shrink-0 h-full">
-                        <div className="h-[400px] rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 flex flex-col overflow-hidden">
+                      <div>
+                        <div className="rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 flex flex-col overflow-hidden">
                           <div className="p-5 border-b border-white/10">
                             <h3 className="font-medium flex items-center gap-2 m-0 text-white"><Search size={18} className="text-white/70" /> Subscription Classification</h3>
                           </div>
-                          <div className="flex-1 overflow-y-auto p-5 no-scrollbar">
+                          <div className="p-5">
                             <div className="flex flex-col gap-3">
                               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                               {result.processed_subscriptions.map((sub: any, i: number) => (
@@ -359,13 +358,13 @@ export default function CalendarSensePage() {
 
                       {/* Slide 4: Savings Plan */}
                       {result.recommendations.length > 0 && (
-                        <div className="min-w-[95%] md:min-w-[75%] snap-center shrink-0 h-full">
-                          <div className="h-[400px] rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 flex flex-col overflow-hidden">
+                        <div>
+                          <div className="rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 flex flex-col overflow-hidden">
                             <div className="p-5 border-b border-white/10 flex justify-between items-center">
                               <h3 className="font-medium flex items-center gap-2 m-0 text-white"><Activity size={18} className="text-white/70" /> Savings Plan</h3>
                               <span className="font-bold text-yellow-400 text-lg">${result.total_savings.toFixed(2)}</span>
                             </div>
-                            <div className="flex-1 overflow-y-auto p-5 no-scrollbar">
+                            <div className="p-5">
                               <div className="flex flex-col gap-6">
                                 {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                                 {result.recommendations.map((rec: any, i: number) => (
@@ -436,8 +435,8 @@ export default function CalendarSensePage() {
 
                       {/* SAVINGS LOADING SKELETON */}
                       {savingsLoading && (
-                        <div className="min-w-[95%] md:min-w-[75%] snap-center shrink-0 h-full">
-                          <div className="h-[400px] rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 flex flex-col p-6 justify-center items-center text-white">
+                        <div>
+                          <div className="rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 flex flex-col p-6 justify-center items-center text-white min-h-[300px]">
                             <Loader2 size={32} className="animate-spin text-white mb-4" />
                             <h2 className="text-lg font-medium">Calculating Savings...</h2>
                             <p className="text-white/50 text-sm mt-2 text-center max-w-xs">Analyzing local alternative gym and service prices in your travel destinations.</p>
@@ -447,8 +446,8 @@ export default function CalendarSensePage() {
 
                       {/* NO-RESULT STATES */}
                       {result.recommendations.length === 0 && !savingsLoading && result.away_periods.length === 0 && (
-                        <div className="min-w-[95%] md:min-w-[75%] snap-center shrink-0 h-full">
-                          <div className="h-[400px] rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 flex flex-col p-6 justify-center items-center text-white">
+                        <div>
+                          <div className="rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 flex flex-col p-6 justify-center items-center text-white min-h-[300px]">
                             <CheckCircle size={48} className="text-green-400 mb-4" />
                             <h3 className="text-xl font-medium mb-2">No Travel Detected</h3>
                             <p className="text-white/60 text-center">No travel or away periods detected for the next 6 months.</p>
@@ -456,8 +455,8 @@ export default function CalendarSensePage() {
                         </div>
                       )}
                       {result.recommendations.length === 0 && !savingsLoading && result.away_periods.length > 0 && (result.local_count || 0) === 0 && (
-                        <div className="min-w-[95%] md:min-w-[75%] snap-center shrink-0 h-full">
-                          <div className="h-[400px] rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 flex flex-col p-6 justify-center items-center text-white">
+                        <div>
+                          <div className="rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 flex flex-col p-6 justify-center items-center text-white min-h-[300px]">
                             <CheckCircle size={48} className="text-green-400 mb-4" />
                             <h3 className="text-xl font-medium mb-2">All Subscriptions Global</h3>
                             <p className="text-white/60 text-center">None of your subscriptions are location-dependent. No action needed!</p>
