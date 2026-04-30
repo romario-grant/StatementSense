@@ -33,7 +33,7 @@ export default function Navbar() {
       >
         <Link
           href="/"
-          className={`font-bold text-lg tracking-tight no-underline whitespace-nowrap leading-none ${isHomePage ? 'text-white' : 'text-foreground'}`}
+          className={`font-medium text-lg tracking-tighter no-underline whitespace-nowrap leading-none ${isHomePage ? 'text-white' : 'text-foreground'}`}
         >
           StatementSense
         </Link>
@@ -62,7 +62,7 @@ export default function Navbar() {
               href={path}
               onMouseEnter={() => setHovered(path)}
               onMouseLeave={() => setHovered(null)}
-              className={`relative font-semibold no-underline pb-1 text-[0.82rem] uppercase tracking-[0.08em] transition-colors duration-250 whitespace-nowrap leading-none ${currentClass}`}
+              className={`relative font-medium no-underline pb-1 text-sm tracking-tight transition-colors duration-250 whitespace-nowrap leading-none ${currentClass}`}
             >
               {label}
               <motion.span
@@ -91,7 +91,7 @@ export default function Navbar() {
         <button
           onClick={toggleTheme}
           aria-label="Toggle theme"
-          className="bg-transparent border-none cursor-pointer text-muted-foreground hover:text-foreground text-[0.82rem] font-semibold uppercase tracking-[0.08em] transition-colors duration-250 py-1"
+          className="bg-transparent border-none cursor-pointer text-muted-foreground hover:text-foreground text-sm font-medium tracking-tight transition-colors duration-250 py-1"
         >
           <AnimatePresence mode="wait" initial={false}>
             {!isDark ? (
@@ -122,7 +122,7 @@ export default function Navbar() {
         <button
           onClick={logout}
           aria-label="Sign out"
-          className="bg-transparent border-none cursor-pointer text-destructive/80 hover:text-destructive text-[0.82rem] font-semibold uppercase tracking-[0.08em] transition-colors duration-250 py-1 flex items-center gap-1.5"
+          className="bg-transparent border-none cursor-pointer text-destructive/80 hover:text-destructive text-sm font-medium tracking-tight transition-colors duration-250 py-1 flex items-center gap-1.5"
         >
           Sign Out <LogOut size={14} />
         </button>

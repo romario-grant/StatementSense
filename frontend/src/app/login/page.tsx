@@ -90,7 +90,7 @@ export default function LoginPage() {
         heroImageSrc="/bank.jpg"
         title={
           <span className="font-light text-foreground tracking-tighter">
-            {mode === "login" ? "Welcome" : "Create Account"}
+            {mode === "login" ? "Welcome to StatementSense" : "Create Account"}
           </span>
         }
         description={

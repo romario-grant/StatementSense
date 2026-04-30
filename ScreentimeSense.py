@@ -66,7 +66,7 @@ class GeminiClassifier:
         prompt = f"App: {app_name}, Cost: {cost}"
         try:
             response = self.client.models.generate_content(
-                model="gemini-3.1-flash-lite-preview",
+                model="gemini-2.5-flash",
                 config={
                     "tools": [{"google_search": {}}], 
                     "system_instruction": self.system_rules,

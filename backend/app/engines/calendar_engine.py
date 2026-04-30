@@ -140,24 +140,24 @@ class GeminiCalendarAnalyzer:
             config["tools"] = [{"google_search": {}}]
         
         call_label = "grounded-search" if use_search else "standard"
-        print(f"[CalendarSense] Calling gemini-3.1-flash-lite-preview ({call_label})...")
+        print(f"[CalendarSense] Calling gemini-2.5-flash ({call_label})...")
         
         for attempt in range(max_retries):
             try:
                 response = self.client.models.generate_content(
-                    model="gemini-3.1-flash-lite-preview",
+                    model="gemini-2.5-flash",
                     config=config,
                     contents=prompt
                 )
                 raw_text = response.text.strip()
-                print(f"[CalendarSense] ✓ Got response ({call_label}, attempt {attempt+1})")
+                print(f"[CalendarSense] [+] Got response ({call_label}, attempt {attempt+1})")
                 if raw_text.startswith("```json"): raw_text = raw_text[7:]
                 elif raw_text.startswith("```"): raw_text = raw_text[3:]
                 if raw_text.endswith("```"): raw_text = raw_text[:-3]
                 return json.loads(raw_text.strip())
             except Exception as e:
                 error_str = str(e)
-                print(f"[CalendarSense] ✗ Error ({call_label}, attempt {attempt+1}/{max_retries}): {error_str[:200]}")
+                print(f"[CalendarSense] [!] Error ({call_label}, attempt {attempt+1}/{max_retries}): {error_str[:200]}")
                 if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
                     if attempt == max_retries - 1:
                         raise Exception("Rate limit exceeded after all retries")

@@ -70,7 +70,7 @@ export default function RenewalSensePage() {
           transition={{ duration: 0.5 }}
           className="mb-8"
         >
-          <h1 className="text-3xl font-bold tracking-tight mb-2">
+          <h1 className="font-light text-4xl md:text-5xl tracking-tighter leading-tight mb-2">
             RenewalSense
           </h1>
           <p className="text-muted-foreground">
@@ -114,7 +114,7 @@ export default function RenewalSensePage() {
               >
                 <MotionCard className="w-full" hover={false}>
                   <div className="mb-6">
-                    <h2 className="text-xl font-semibold mb-1">
+                    <h2 className="text-xl font-medium mb-1">
                       Upload Bank Statement
                     </h2>
                     <p className="text-sm text-muted-foreground">
@@ -145,7 +145,7 @@ export default function RenewalSensePage() {
                   <button
                     disabled={!file || loading}
                     onClick={handleUpload}
-                    className="w-full py-3 flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-semibold transition-colors shadow-sm"
+                    className="w-full py-3 flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-medium transition-colors shadow-sm"
                   >
                     {loading ? (
                       <>
@@ -172,7 +172,7 @@ export default function RenewalSensePage() {
               <div className="flex flex-col gap-6">
                 {/* Summary */}
                 <MotionCard hover={false} delay={0}>
-                  <h3 className="font-bold mb-4 text-[0.95rem]">Analysis Summary</h3>
+                  <h3 className="font-medium mb-4 text-[0.95rem]">Analysis Summary</h3>
                   {[
                     ["Transactions Found", results.transactions_parsed],
                     ["Monthly Income", `$${results.salary.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, "text-green-600 dark:text-green-400"],
@@ -185,14 +185,14 @@ export default function RenewalSensePage() {
                       className="flex justify-between items-center py-2.5 border-b border-border text-[0.88rem] last:border-0"
                     >
                       <span className="text-muted-foreground">{label}</span>
-                      <span className={`font-semibold ${colorClass || "text-foreground"}`}>{value}</span>
+                      <span className={`font-medium ${colorClass || "text-foreground"}`}>{value}</span>
                     </div>
                   ))}
                 </MotionCard>
 
                 {/* Paycycle Map */}
                 <MotionCard hover={false} delay={0.1}>
-                  <h3 className="font-bold mb-1 text-[0.95rem]">30-Day Paycycle Map</h3>
+                  <h3 className="font-medium mb-1 text-[0.95rem]">30-Day Paycycle Map</h3>
                   <p className="text-xs text-muted-foreground mb-4">
                     Payday on Day {results.salary.pay_day}.
                   </p>
@@ -211,12 +211,12 @@ export default function RenewalSensePage() {
                           className={`w-[calc(10%-3px)] h-7 rounded flex items-center justify-center relative cursor-pointer ${bg} ${day.is_payday ? 'border-2 border-border' : ''}`}
                         >
                           {day.is_payday && (
-                            <span className="absolute -top-4 text-[0.5rem] font-bold bg-primary text-white px-1 py-px rounded-[3px] whitespace-nowrap">
+                            <span className="absolute -top-4 text-[0.5rem] font-medium bg-primary text-white px-1 py-px rounded-[3px] whitespace-nowrap">
                               PAY
                             </span>
                           )}
                           {day.subscription && (
-                            <span className="text-[0.6rem] font-bold text-white">
+                            <span className="text-[0.6rem] font-medium text-white">
                               {day.subscription.substring(0, 1)}
                             </span>
                           )}
@@ -241,7 +241,7 @@ export default function RenewalSensePage() {
 
                 <button
                   onClick={() => { setResults(null); setFile(null); }}
-                  className="w-full py-2.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl text-sm font-semibold transition-colors border border-border"
+                  className="w-full py-2.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl text-sm font-medium transition-colors border border-border"
                 >
                   Process Another Statement
                 </button>
@@ -253,7 +253,7 @@ export default function RenewalSensePage() {
                 {results.renewal_predictions && results.renewal_predictions.length > 0 && (
                   <MotionCard hover={false} delay={0.15} className="border-border bg-secondary">
                     <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-lg font-bold m-0">Upcoming Charges</h2>
+                      <h2 className="text-lg font-medium m-0">Upcoming Charges</h2>
                       <Badge variant="info">PREDICTED</Badge>
                     </div>
                     <div className="flex flex-col gap-3">
@@ -264,11 +264,11 @@ export default function RenewalSensePage() {
                         return (
                           <div key={idx} className="flex items-center gap-4 px-4 py-3.5 rounded-xl bg-background border border-border">
                             <div className="text-center min-w-[3.5rem]">
-                              <p className={`text-2xl font-bold leading-none ${urgencyColor}`}>{pred.days_until_charge}</p>
+                              <p className={`text-2xl font-medium leading-none ${urgencyColor}`}>{pred.days_until_charge}</p>
                               <p className="text-[0.65rem] text-muted-foreground mt-0.5">days</p>
                             </div>
                             <div className="flex-1">
-                              <p className="font-semibold text-sm">{pred.subscription}</p>
+                              <p className="font-medium text-sm">{pred.subscription}</p>
                               <p className="text-xs text-muted-foreground mt-0.5">
                                 Next: <span className="font-medium text-foreground">{pred.next_charge_date}</span>
                                 <span className="mx-1.5 opacity-30">|</span>
@@ -294,7 +294,7 @@ export default function RenewalSensePage() {
                   animate={{ opacity: 1 }}
                   transition={{ delay: 0.2 }}
                 >
-                  <h2 className="text-xl font-bold pb-3 border-b border-border mb-4">
+                  <h2 className="text-xl font-medium pb-3 border-b border-border mb-4">
                     Subscription Risk Report
                   </h2>
                 </motion.div>
@@ -307,7 +307,7 @@ export default function RenewalSensePage() {
                     <MotionCard key={idx} delay={0.1 * idx + 0.25} hover={false} className={`border-l-[3px] ${riskColor}`}>
                       <div className="flex justify-between items-start mb-3">
                         <div>
-                          <h3 className="text-base font-bold flex items-center gap-2 mb-1">
+                          <h3 className="text-base font-medium flex items-center gap-2 mb-1">
                             {sub.subscription}
                             <Badge variant={riskVariant as "safe"|"warn"|"danger"}>
                               {sub.risk_label.toUpperCase()} RISK ({Math.round(sub.risk_score * 100)}%)
@@ -316,7 +316,7 @@ export default function RenewalSensePage() {
                           <p className="text-sm text-muted-foreground">Renews on Day {sub.renewal_day}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-xl font-bold text-yellow-600 dark:text-yellow-500">${sub.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                          <p className="text-xl font-medium text-yellow-600 dark:text-yellow-500">${sub.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
                           <p className="text-xs text-muted-foreground">per month</p>
                         </div>
                       </div>
@@ -350,7 +350,7 @@ export default function RenewalSensePage() {
                 {results.subscriptions.length === 0 && (
                   <MotionCard hover={false} className="text-center py-12 px-8">
                     <Info size={40} className="text-muted-foreground mx-auto mb-4" />
-                    <h3 className="text-base font-semibold mb-1.5">No Subscriptions Detected</h3>
+                    <h3 className="text-base font-medium mb-1.5">No Subscriptions Detected</h3>
                     <p className="text-sm text-muted-foreground">
                       We couldn't identify any recurring subscription payments in this statement.
                     </p>
@@ -361,7 +361,7 @@ export default function RenewalSensePage() {
                 {results.price_changes && results.price_changes.length > 0 && (
                   <MotionCard hover={false} delay={0.4} className="border-yellow-500/30 bg-yellow-500/5">
                     <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-lg font-bold flex items-center gap-2 m-0">
+                      <h2 className="text-lg font-medium flex items-center gap-2 m-0">
                         <AlertTriangle size={18} className="text-yellow-600 dark:text-yellow-500" />
                         Price Change Detection
                       </h2>
@@ -376,7 +376,7 @@ export default function RenewalSensePage() {
                         <div key={idx} className="p-3.5 rounded-xl bg-background border border-border">
                           <div className="flex justify-between items-start mb-1.5">
                             <div>
-                              <span className="font-semibold text-sm">{change.subscription}</span>
+                              <span className="font-medium text-sm">{change.subscription}</span>
                               <Badge
                                 variant={change.severity === "warning" ? "danger" : "safe"}
                                 className="ml-2"
@@ -390,7 +390,7 @@ export default function RenewalSensePage() {
                           <div className="flex gap-4 text-[0.82rem]">
                             <span><span className="text-muted-foreground">Before: </span><span className="font-medium">${change.old_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></span>
                             <span><span className="text-muted-foreground">After: </span><span className="font-medium">${change.new_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></span>
-                            <span className={`font-bold ${change.change_amount > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
+                            <span className={`font-medium ${change.change_amount > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
                               {change.change_amount > 0 ? "+" : ""}{change.change_percent}%
                             </span>
                           </div>

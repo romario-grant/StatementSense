@@ -58,7 +58,7 @@ export default function CalendarSensePage() {
       <Navbar />
       <main className="max-w-6xl mx-auto px-8 pt-32 pb-12">
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight mb-1.5">CalendarSense</h1>
+          <h1 className="font-light text-4xl md:text-5xl tracking-tighter leading-tight mb-1.5">CalendarSense</h1>
           <p className="text-muted-foreground">Pause local subscriptions while traveling. Connects to your Google Calendar to detect travel periods.</p>
         </motion.div>
 
@@ -66,7 +66,7 @@ export default function CalendarSensePage() {
           {/* ═══ INPUT COLUMN ═══ */}
           <div className="flex flex-col gap-6">
             <MotionCard hover={false}>
-              <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+              <h2 className="text-lg font-medium tracking-tight mb-4 flex items-center gap-2">
                 Travel Details
               </h2>
               <div>
@@ -78,7 +78,7 @@ export default function CalendarSensePage() {
 
             <MotionCard hover={false} delay={0.05}>
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-bold m-0">Subscriptions</h2>
+                <h2 className="text-lg font-medium tracking-tight m-0">Subscriptions</h2>
                 <button type="button" onClick={handleAddSub} className="flex items-center gap-1 text-xs px-3 py-1.5 text-foreground bg-primary/10 rounded-full border-none cursor-pointer hover:bg-primary/90 transition-colors">
                   <Plus size={14} /> Add
                 </button>
@@ -105,9 +105,9 @@ export default function CalendarSensePage() {
 
             <MotionCard hover={false} delay={0.1} className="text-center bg-secondary border-border">
               <CalendarIcon size={28} className="text-foreground mx-auto mb-3" />
-              <h3 className="font-bold text-base mb-2">Connect &amp; Scan</h3>
+              <h3 className="font-medium tracking-tight text-base mb-2">Connect &amp; Scan</h3>
               <p className="text-[0.85rem] text-muted-foreground mb-4">Securely analyze the next 6 months of your Google Calendar.</p>
-              <button onClick={handleAnalyze} disabled={loading} className="w-full py-3 flex justify-center items-center gap-2 font-bold bg-primary text-primary-foreground rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors shadow-sm">
+              <button onClick={handleAnalyze} disabled={loading} className="w-full py-3 flex justify-center items-center gap-2 font-medium bg-primary text-primary-foreground rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors shadow-sm">
                 {loading ? (<><Loader2 size={18} className="animate-spin" /> Analyzing...</>) : "Scan Calendar for Travel"}
               </button>
             </MotionCard>
@@ -118,12 +118,15 @@ export default function CalendarSensePage() {
             <AnimatePresence mode="wait">
               {!result ? (
                 <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full">
-                  <MotionCard hover={false} className="h-full min-h-[400px] flex flex-col items-center justify-center border-none shadow-none bg-transparent">
-                    <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}>
-                      <Plane size={48} className="text-foreground opacity-50 mb-4" />
-                    </motion.div>
-                    <p className="text-base font-semibold tracking-wide uppercase text-muted-foreground">Ready to Scan</p>
-                    <p className="text-[0.85rem] text-muted-foreground text-center max-w-[18rem] mt-2">Enter your details and connect your calendar to find travel overlaps.</p>
+                  <MotionCard hover={false} className="relative overflow-hidden h-full min-h-[400px] flex flex-col items-center justify-center border-none shadow-none bg-transparent">
+                    <div className="absolute inset-0 bg-cover bg-center pointer-events-none" style={{ backgroundImage: 'url(/PLANE.jpg)' }} />
+                    <div className="relative z-10 flex flex-col items-center">
+                      <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}>
+                        <Plane size={48} className="text-white mb-4" />
+                      </motion.div>
+                      <p className="text-base font-medium tracking-wide uppercase text-white">Ready to Scan</p>
+                      <p className="text-[0.85rem] text-white text-center max-w-[18rem] mt-2 font-medium">Enter your details and connect your calendar to find travel overlaps.</p>
+                    </div>
                   </MotionCard>
                 </motion.div>
               ) : (
@@ -134,8 +137,8 @@ export default function CalendarSensePage() {
                     {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                     {([["Events", result.events_scanned, null], ["Trips", result.away_periods.length, "text-green-600 dark:text-green-400"], ["Local", result.local_count || 0, "text-yellow-600 dark:text-yellow-500"], ["Savings", `$${result.total_savings.toFixed(2)}`, "text-yellow-600 dark:text-yellow-500"]] as [string, any, string | null][]).map(([label, value, colorClass], i) => (
                       <MotionCard key={label} hover={false} delay={i * 0.06} className="text-center py-5 px-3">
-                        <p className="text-[0.7rem] text-muted-foreground uppercase tracking-[0.06em] font-semibold mb-1.5">{label}</p>
-                        <p className={`text-2xl font-bold ${colorClass || "text-foreground"}`}>{value}</p>
+                        <p className="text-[0.7rem] text-muted-foreground uppercase tracking-[0.06em] font-medium mb-1.5">{label}</p>
+                        <p className={`text-2xl font-medium ${colorClass || "text-foreground"}`}>{value}</p>
                       </MotionCard>
                     ))}
                   </div>
@@ -144,7 +147,7 @@ export default function CalendarSensePage() {
                   {result.events_preview && result.events_preview.length > 0 && (
                     <MotionCard hover={false} delay={0.15}>
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="font-bold flex items-center gap-2 m-0"><CalendarIcon size={18} className="text-foreground" /> Events Scanned</h3>
+                        <h3 className="font-medium flex items-center gap-2 m-0"><CalendarIcon size={18} className="text-foreground" /> Events Scanned</h3>
                         <span className="text-xs text-muted-foreground">{result.events_scanned} total</span>
                       </div>
                       <hr className="border-t border-border my-0" />
@@ -165,7 +168,7 @@ export default function CalendarSensePage() {
                   {/* TRAVEL DETECTION */}
                   <MotionCard hover={false} delay={0.2}>
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-bold flex items-center gap-2 m-0"><Plane size={18} className="text-foreground" /> Travel Detection</h3>
+                      <h3 className="font-medium flex items-center gap-2 m-0"><Plane size={18} className="text-foreground" /> Travel Detection</h3>
                       <Badge variant="info" className="text-[0.65rem]">Powered by Gemini AI</Badge>
                     </div>
                     <hr className="border-t border-border my-0" />
@@ -179,7 +182,7 @@ export default function CalendarSensePage() {
                           return (
                             <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 + i * 0.08 }} className="p-5 rounded-xl bg-secondary">
                               <div className="flex justify-between items-start mb-2">
-                                <p className="font-bold flex items-center gap-2">
+                                <p className="font-medium flex items-center gap-2">
                                   <span>{away.confidence === "high" ? "🟢" : away.confidence === "medium" ? "🟡" : "🔴"}</span> {away.reason}
                                 </p>
                                 <Badge variant={away.confidence === "high" ? "safe" : "warn"} className="capitalize text-[0.65rem]">{away.confidence} confidence</Badge>
@@ -199,15 +202,15 @@ export default function CalendarSensePage() {
 
                   {/* SUBSCRIPTION CLASSIFICATION */}
                   <MotionCard hover={false} delay={0.25}>
-                    <h3 className="font-bold flex items-center gap-2 mb-4"><Search size={18} className="text-foreground" /> Subscription Classification</h3>
+                    <h3 className="font-medium flex items-center gap-2 mb-4"><Search size={18} className="text-foreground" /> Subscription Classification</h3>
                     <hr className="border-t border-border my-0" />
                     <div className="flex flex-col gap-3 mt-4">
                       {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                       {result.processed_subscriptions.map((sub: any, i: number) => (
                         <motion.div key={i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 + i * 0.07 }} className={`p-5 rounded-xl border ${sub.is_local ? "bg-yellow-500/5 border-yellow-500/30" : "bg-secondary border-transparent"}`}>
                           <div className="flex justify-between items-center mb-2">
-                            <span className="font-bold text-lg">{sub.name}</span>
-                            <Badge variant={sub.is_local ? "danger" : "safe"} className="font-bold text-[0.65rem]">{sub.is_local ? "📍 LOCAL" : "🌍 GLOBAL"}</Badge>
+                            <span className="font-medium text-lg">{sub.name}</span>
+                            <Badge variant={sub.is_local ? "danger" : "safe"} className="font-medium text-[0.65rem]">{sub.is_local ? "📍 LOCAL" : "🌍 GLOBAL"}</Badge>
                           </div>
                           <p className="text-[0.85rem] text-muted-foreground mb-3">{sub.reason}</p>
                           <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[0.82rem]">
@@ -232,7 +235,7 @@ export default function CalendarSensePage() {
                   {/* SAVINGS PLAN */}
                   {result.recommendations.length > 0 && (
                     <MotionCard hover={false} delay={0.3} className="border-border">
-                      <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-foreground">
+                      <h2 className="text-xl font-medium mb-4 flex items-center gap-2 text-foreground">
                         <Activity size={22} /> Savings Plan
                       </h2>
                       <hr className="border-t border-border my-0" />
@@ -242,7 +245,7 @@ export default function CalendarSensePage() {
                           <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 + i * 0.1 }}>
                             <div className="flex justify-between gap-4 flex-wrap">
                               <div className="flex-1">
-                                <h3 className="text-lg font-bold mb-1">{rec.action}</h3>
+                                <h3 className="text-lg font-medium mb-1">{rec.action}</h3>
                                 <p className="text-[0.85rem] text-muted-foreground mb-3">{rec.action_detail}</p>
                                 <div className="text-[0.9rem] flex flex-col gap-1.5">
                                   {([
@@ -263,7 +266,7 @@ export default function CalendarSensePage() {
                                 </div>
                               </div>
                               <div className="flex flex-col items-end justify-start">
-                                <div className="px-5 py-2.5 rounded-full font-bold text-lg text-white bg-green-500 shadow-[0_2px_8px_rgba(52,199,89,0.2)]">
+                                <div className="px-5 py-2.5 rounded-full font-medium text-lg text-white bg-green-500 shadow-[0_2px_8px_rgba(52,199,89,0.2)]">
                                   Save ${rec.net_savings?.toFixed(2)}
                                 </div>
                               </div>
@@ -273,7 +276,7 @@ export default function CalendarSensePage() {
                             {rec.alternatives && rec.alternatives.alternatives_found && (
                               <div className="mt-4 rounded-xl p-5 bg-secondary">
                                 <div className="flex items-center justify-between mb-2">
-                                  <span className="font-bold text-[0.85rem]">Alternatives in {rec.destination}</span>
+                                  <span className="font-medium text-[0.85rem]">Alternatives in {rec.destination}</span>
                                   <Badge variant="warn" className="bg-yellow-500 text-white text-[0.6rem]">SMART TIP</Badge>
                                 </div>
                                 {rec.alternatives.tip && <p className="text-[0.85rem] italic text-muted-foreground mb-3">💡 &quot;{rec.alternatives.tip}&quot;</p>}
@@ -288,7 +291,7 @@ export default function CalendarSensePage() {
                                         <span className="text-muted-foreground ml-2">({opt.type})</span>
                                         {opt.notes && <p className="text-xs text-muted-foreground mt-0.5">{opt.notes}</p>}
                                       </div>
-                                      <span className="font-bold text-yellow-600 dark:text-yellow-500">{opt.estimated_cost}</span>
+                                      <span className="font-medium text-yellow-600 dark:text-yellow-500">{opt.estimated_cost}</span>
                                     </div>
                                   ))}
                                 </div>
@@ -306,10 +309,10 @@ export default function CalendarSensePage() {
                                   const netImpact = cancelSavings - altCost;
                                   return (
                                     <div className="mt-3 pt-3 border-t border-border text-[0.9rem]">
-                                      <p className="text-[0.7rem] font-bold uppercase tracking-[0.06em] text-muted-foreground mb-2">Cost Comparison ({rec.months_away} months)</p>
+                                      <p className="text-[0.7rem] font-medium uppercase tracking-[0.06em] text-muted-foreground mb-2">Cost Comparison ({rec.months_away} months)</p>
                                       <div className="flex justify-between"><span>Cancel {rec.subscription}:</span><span className="text-green-600 dark:text-green-400">+${cancelSavings.toFixed(2)} saved</span></div>
                                       <div className="flex justify-between"><span>{rec.alternatives.best_value_option || "Alternative"} cost:</span><span className="text-red-600 dark:text-red-400">-${altCost.toFixed(2)}</span></div>
-                                      <div className="flex justify-between font-bold mt-1.5 pt-1.5 border-t border-border">
+                                      <div className="flex justify-between font-medium mt-1.5 pt-1.5 border-t border-border">
                                         <span>{netImpact >= 0 ? "NET SAVINGS:" : "NET COST:"}</span>
                                         <span className={netImpact >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>{netImpact >= 0 ? `$${netImpact.toFixed(2)} ✓` : `-$${Math.abs(netImpact).toFixed(2)}`}</span>
                                       </div>
@@ -326,8 +329,8 @@ export default function CalendarSensePage() {
 
                       {/* Total Savings Footer */}
                       <div className="text-center mt-6 pt-4 border-t border-border">
-                        <p className="text-[0.7rem] text-muted-foreground uppercase tracking-[0.06em] font-semibold mb-1">Total Potential Savings</p>
-                        <p className="text-3xl font-bold text-yellow-600 dark:text-yellow-500">${result.total_savings.toFixed(2)}</p>
+                        <p className="text-[0.7rem] text-muted-foreground uppercase tracking-[0.06em] font-medium mb-1">Total Potential Savings</p>
+                        <p className="text-3xl font-medium text-yellow-600 dark:text-yellow-500">${result.total_savings.toFixed(2)}</p>
                       </div>
                     </MotionCard>
                   )}
@@ -336,14 +339,14 @@ export default function CalendarSensePage() {
                   {result.recommendations.length === 0 && result.away_periods.length === 0 && (
                     <MotionCard hover={false} className="text-center py-12 px-8">
                       <CheckCircle size={48} className="text-green-600 dark:text-green-400 mx-auto mb-4" />
-                      <h3 className="text-lg font-bold mb-2">No Travel Detected</h3>
+                      <h3 className="text-lg font-medium mb-2">No Travel Detected</h3>
                       <p className="text-muted-foreground">No travel or away periods detected for the next 6 months.</p>
                     </MotionCard>
                   )}
                   {result.recommendations.length === 0 && result.away_periods.length > 0 && (result.local_count || 0) === 0 && (
                     <MotionCard hover={false} className="text-center py-12 px-8">
                       <CheckCircle size={48} className="text-green-600 dark:text-green-400 mx-auto mb-4" />
-                      <h3 className="text-lg font-bold mb-2">All Subscriptions Are Global</h3>
+                      <h3 className="text-lg font-medium mb-2">All Subscriptions Are Global</h3>
                       <p className="text-muted-foreground">None of your subscriptions are location-dependent. No action needed!</p>
                     </MotionCard>
                   )}

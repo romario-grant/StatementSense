@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 const geist = Geist({
   subsets: ['latin'],
-  variable: '--font-sans',
+  variable: '--font-geist-sans',
   display: 'swap',
 });
 

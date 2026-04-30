@@ -188,7 +188,7 @@ export default function ScreentimeSensePage() {
           transition={{ duration: 0.5 }}
           className="mb-8"
         >
-          <h1 className="text-3xl font-bold tracking-tight mb-1.5">
+          <h1 className="font-light text-4xl md:text-5xl tracking-tighter leading-tight mb-1.5">
             ScreentimeSense
           </h1>
           <p className="text-muted-foreground">
@@ -209,7 +209,7 @@ export default function ScreentimeSensePage() {
               transition={{ duration: 0.4 }}
             >
               <MotionCard className="max-w-[28rem] mx-auto" hover={false}>
-                <h2 className="text-xl font-bold mb-2">
+                <h2 className="text-xl font-medium mb-2">
                   Set Your Baseline
                 </h2>
                 <p className="text-[0.85rem] text-muted-foreground mb-6">
@@ -320,7 +320,7 @@ export default function ScreentimeSensePage() {
                     </div>
                   </div>
 
-                  <button type="submit" className="w-full py-3 mt-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl font-semibold transition-colors shadow-sm">
+                  <button type="submit" className="w-full py-3 mt-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl font-medium transition-colors shadow-sm">
                     Save Settings &amp; Continue
                   </button>
                 </form>
@@ -342,7 +342,7 @@ export default function ScreentimeSensePage() {
               <div>
                 <MotionCard hover={false}>
                   <div className="flex justify-between items-center pb-4 mb-5 border-b border-border">
-                    <h2 className="text-lg font-bold flex items-center gap-2 m-0">
+                    <h2 className="text-lg font-medium flex items-center gap-2 m-0">
                       <Plus size={18} className="text-foreground" /> Add Subscription
                     </h2>
                     <span className="text-xs text-muted-foreground">
@@ -371,7 +371,7 @@ export default function ScreentimeSensePage() {
 
                     {/* Weekly Hours */}
                     <div>
-                      <label className="block text-[0.85rem] font-semibold mb-2">Screen Time (Hours per week)</label>
+                      <label className="block text-[0.85rem] font-medium mb-2">Screen Time (Hours per week)</label>
                       <div className="grid grid-cols-4 gap-4 p-4 rounded-xl bg-secondary">
                         {(
                           [
@@ -398,7 +398,7 @@ export default function ScreentimeSensePage() {
                       </div>
                     </div>
 
-                    <button type="submit" className="w-full flex items-center justify-center gap-2 py-3 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl font-semibold transition-colors shadow-sm">
+                    <button type="submit" className="w-full flex items-center justify-center gap-2 py-3 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl font-medium transition-colors shadow-sm">
                       <Plus size={16} /> Add to Queue
                     </button>
                   </form>
@@ -409,7 +409,7 @@ export default function ScreentimeSensePage() {
               <div className="md:col-span-2">
                 <MotionCard hover={false} className="min-h-[400px]">
                   <div className="flex justify-between items-center pb-4 mb-5 border-b border-border">
-                    <h2 className="text-lg font-bold flex items-center gap-2 m-0">
+                    <h2 className="text-lg font-medium flex items-center gap-2 m-0">
                       <Layers size={18} className="text-foreground" /> Subscription Queue
                     </h2>
                     <span className="text-[0.85rem] text-muted-foreground">
@@ -433,7 +433,7 @@ export default function ScreentimeSensePage() {
                     /* Empty State */
                     <div className="flex flex-col items-center justify-center py-16 px-8 opacity-40">
                       <Clock size={48} className="text-muted-foreground mb-4" />
-                      <p className="text-base font-semibold tracking-wide uppercase text-muted-foreground">No Subscriptions Yet</p>
+                      <p className="text-base font-medium tracking-wide uppercase text-muted-foreground">No Subscriptions Yet</p>
                       <p className="text-[0.85rem] text-muted-foreground text-center max-w-[18rem] mt-2">
                         Add subscriptions using the form to build your analysis queue.
                       </p>
@@ -447,11 +447,11 @@ export default function ScreentimeSensePage() {
                           className="flex items-center justify-between px-5 py-4 rounded-xl bg-secondary transition-all duration-200"
                         >
                           <div className="flex items-center gap-4">
-                            <span className="w-8 h-8 rounded-lg bg-secondary text-foreground dark:text-foreground flex items-center justify-center text-[0.8rem] font-bold">
+                            <span className="w-8 h-8 rounded-lg bg-secondary text-foreground dark:text-foreground flex items-center justify-center text-[0.8rem] font-medium">
                               {i + 1}
                             </span>
                             <div>
-                              <p className="font-semibold text-[0.85rem]">{sub.app_name}</p>
+                              <p className="font-medium text-[0.85rem]">{sub.app_name}</p>
                               <p className="text-[0.75rem] text-muted-foreground mt-0.5">
                                 ${sub.cost}/billing • {sub.months_subscribed}mo •{" "}
                                 {sub.weekly_hours.reduce((a, b) => a + b, 0).toFixed(1)} hrs total
@@ -470,7 +470,7 @@ export default function ScreentimeSensePage() {
                       <button
                         onClick={handleAnalyzeBatch}
                         disabled={loading}
-                        className="w-full flex items-center justify-center gap-2 py-3 mt-4 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-semibold transition-colors shadow-sm"
+                        className="w-full flex items-center justify-center gap-2 py-3 mt-4 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-medium transition-colors shadow-sm"
                       >
                         {loading ? (
                           <>
@@ -505,7 +505,7 @@ export default function ScreentimeSensePage() {
               <MotionCard hover={false} className="bg-background">
                 <div className="flex flex-wrap justify-between items-center gap-4">
                   <div>
-                    <h2 className="text-xl font-bold flex items-center gap-2 mb-1">
+                    <h2 className="text-xl font-medium flex items-center gap-2 mb-1">
                       <BarChart3 size={20} className="text-foreground" /> Analysis Complete
                     </h2>
                     <p className="text-[0.85rem] text-muted-foreground">
@@ -516,12 +516,12 @@ export default function ScreentimeSensePage() {
                     {batchResults.portfolio?.saturated_categories > 0 && (
                       <div className="text-right pr-4 border-r border-border">
                         <p className="text-xs text-muted-foreground mb-0.5">Portfolio Savings</p>
-                        <p className="font-bold text-green-600 dark:text-green-400 text-xl">
+                        <p className="font-medium text-green-600 dark:text-green-400 text-xl">
                           ${batchResults.portfolio.total_potential_savings_annual.toFixed(2)}/yr
                         </p>
                       </div>
                     )}
-                    <button onClick={resetAll} className="text-foreground dark:text-foreground text-[0.85rem] font-semibold bg-transparent border-none cursor-pointer hover:underline">
+                    <button onClick={resetAll} className="text-foreground dark:text-foreground text-[0.85rem] font-medium bg-transparent border-none cursor-pointer hover:underline">
                       ← New Analysis
                     </button>
                   </div>
@@ -533,7 +533,7 @@ export default function ScreentimeSensePage() {
                 <MotionCard hover={false} delay={0.1} className="border-t-[3px] border-t-yellow-500">
                   <div className="flex items-center gap-2 mb-4 pb-4 border-b border-border">
                     <Layers size={20} className="text-yellow-600 dark:text-yellow-500" />
-                    <h3 className="font-bold m-0">Portfolio Analysis — Category Saturation</h3>
+                    <h3 className="font-medium m-0">Portfolio Analysis — Category Saturation</h3>
                   </div>
 
                   <div className="flex flex-col gap-6">
@@ -552,9 +552,9 @@ export default function ScreentimeSensePage() {
                             <Badge variant="warn" className="text-[0.7rem]">
                               {insight.subscription_count} SUBSCRIPTIONS
                             </Badge>
-                            <h4 className="font-bold m-0 capitalize text-lg">{insight.category_label}</h4>
+                            <h4 className="font-medium m-0 capitalize text-lg">{insight.category_label}</h4>
                           </div>
-                          <span className="text-[0.9rem] font-bold">
+                          <span className="text-[0.9rem] font-medium">
                             ${insight.total_monthly_cost.toFixed(2)}/mo
                           </span>
                         </div>
@@ -562,7 +562,7 @@ export default function ScreentimeSensePage() {
                         {/* Ranked Subscriptions Table */}
                         <div className="rounded-xl overflow-hidden border border-border bg-background">
                           {/* Table Header */}
-                          <div className="grid grid-cols-4 p-3 bg-secondary text-[0.7rem] font-bold uppercase tracking-[0.06em] text-muted-foreground">
+                          <div className="grid grid-cols-4 p-3 bg-secondary text-[0.7rem] font-medium uppercase tracking-[0.06em] text-muted-foreground">
                             <span>Rank</span>
                             <span>Subscription</span>
                             <span className="text-right">CPH</span>
@@ -586,7 +586,7 @@ export default function ScreentimeSensePage() {
                               }`}
                             >
                               <span
-                                className={`text-[0.85rem] font-bold ${
+                                className={`text-[0.85rem] font-medium ${
                                   sub.is_best_value
                                     ? "text-green-600 dark:text-green-400"
                                     : sub.is_worst_value
@@ -626,7 +626,7 @@ export default function ScreentimeSensePage() {
                             <p className="text-xs text-muted-foreground mb-1">
                               Drop {insight.worst_value.name}
                             </p>
-                            <p className="font-bold text-green-600 dark:text-green-400">
+                            <p className="font-medium text-green-600 dark:text-green-400">
                               ${insight.savings_drop_worst.toFixed(2)}/mo{" "}
                               <span className="text-xs font-medium text-muted-foreground">
                                 (${insight.savings_drop_worst_annual.toFixed(2)}/yr)
@@ -644,7 +644,7 @@ export default function ScreentimeSensePage() {
                               <p className="text-xs text-muted-foreground mb-1">
                                 Keep only {insight.best_value.name}
                               </p>
-                              <p className="font-bold text-green-600 dark:text-green-400">
+                              <p className="font-medium text-green-600 dark:text-green-400">
                                 ${insight.savings_keep_best_only.toFixed(2)}/mo{" "}
                                 <span className="text-xs font-medium text-muted-foreground">
                                   (${insight.savings_keep_best_only_annual.toFixed(2)}/yr)
@@ -679,7 +679,7 @@ export default function ScreentimeSensePage() {
                     <div className="flex items-start gap-3">
                       <div className="flex-1">
                         {/* Title */}
-                        <h3 className="text-base font-bold mb-1">
+                        <h3 className="text-base font-medium mb-1">
                           Exam Season Detected
                         </h3>
                         <p className="text-[0.85rem] text-muted-foreground mb-3">
@@ -689,7 +689,7 @@ export default function ScreentimeSensePage() {
                         {/* Upcoming Exams */}
                         {batchResults.exam_alert.exams.length > 0 && (
                           <div className="mb-3">
-                            <p className="text-[0.7rem] font-bold uppercase tracking-[0.06em] text-muted-foreground mb-1.5">
+                            <p className="text-[0.7rem] font-medium uppercase tracking-[0.06em] text-muted-foreground mb-1.5">
                               Upcoming Exams
                             </p>
                             <div className="flex flex-wrap gap-2">
@@ -712,7 +712,7 @@ export default function ScreentimeSensePage() {
                         {/* Pausable Subscriptions */}
                         {batchResults.exam_alert.pausable_subscriptions.length > 0 && (
                           <div>
-                            <p className="text-[0.7rem] font-bold uppercase tracking-[0.06em] text-muted-foreground mb-1.5">
+                            <p className="text-[0.7rem] font-medium uppercase tracking-[0.06em] text-muted-foreground mb-1.5">
                               Consider Pausing
                             </p>
                             <div className="flex flex-wrap gap-2">
@@ -734,7 +734,7 @@ export default function ScreentimeSensePage() {
                                 animate={{ opacity: 1, scale: 1 }}
                                 transition={{ duration: 0.3, delay: 0.55 }}
                               >
-                                <Badge variant="safe" className="text-[0.72rem] font-bold">
+                                <Badge variant="safe" className="text-[0.72rem] font-medium">
                                   Save ${batchResults.exam_alert.total_monthly_savings.toFixed(2)}/mo
                                 </Badge>
                               </motion.span>
@@ -753,7 +753,7 @@ export default function ScreentimeSensePage() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: 0.3 }}
-                  className="font-bold text-lg mb-4"
+                  className="font-medium text-lg mb-4"
                 >
                   Individual Analysis
                 </motion.h3>
@@ -785,10 +785,10 @@ export default function ScreentimeSensePage() {
                         {/* Card Header: Name + Action + VRS + CPH */}
                         <div className="flex justify-between items-start">
                           <div>
-                            <h4 className="font-bold mb-1">{result.app_name}</h4>
+                            <h4 className="font-medium mb-1">{result.app_name}</h4>
                             <Badge
                               variant={actionVariant}
-                              className="text-[0.65rem] font-bold tracking-[0.08em]"
+                              className="text-[0.65rem] font-medium tracking-[0.08em]"
                             >
                               {result.action}
                             </Badge>
@@ -808,7 +808,7 @@ export default function ScreentimeSensePage() {
                                 >
                                   {result.value_risk_score}
                                 </div>
-                                <p className="text-[0.55rem] text-muted-foreground mt-1 font-semibold uppercase">
+                                <p className="text-[0.55rem] text-muted-foreground mt-1 font-medium uppercase">
                                   VRS
                                 </p>
                               </div>
@@ -816,7 +816,7 @@ export default function ScreentimeSensePage() {
                             {/* CPH + Burden */}
                             <div className="text-right">
                               <p
-                                className={`text-[0.85rem] font-bold ${
+                                className={`text-[0.85rem] font-medium ${
                                   result.math.cph > wageThreshold
                                     ? "text-red-600 dark:text-red-400"
                                     : "text-green-600 dark:text-green-400"
@@ -849,7 +849,7 @@ export default function ScreentimeSensePage() {
                             <span>Conf: {result.confidence_label}</span>
                             {result.value_risk_label && (
                               <span
-                                className={`font-semibold ${
+                                className={`font-medium ${
                                   result.value_risk_score > 70
                                     ? "text-green-600 dark:text-green-400"
                                     : result.value_risk_score >= 40
@@ -876,7 +876,7 @@ export default function ScreentimeSensePage() {
                               <div className="mt-4 pt-4 border-t border-border grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 {/* Math Breakdown */}
                                 <div>
-                                  <h5 className="text-[0.7rem] font-bold uppercase tracking-[0.06em] text-muted-foreground mb-2">
+                                  <h5 className="text-[0.7rem] font-medium uppercase tracking-[0.06em] text-muted-foreground mb-2">
                                     Math Breakdown
                                   </h5>
                                   {[
@@ -898,7 +898,7 @@ export default function ScreentimeSensePage() {
 
                                 {/* AI Classification */}
                                 <div>
-                                  <h5 className="text-[0.7rem] font-bold uppercase tracking-[0.06em] text-muted-foreground mb-2">
+                                  <h5 className="text-[0.7rem] font-medium uppercase tracking-[0.06em] text-muted-foreground mb-2">
                                     AI Classification
                                   </h5>
                                   {[
@@ -929,7 +929,7 @@ export default function ScreentimeSensePage() {
                                   transition={{ duration: 0.3, delay: 0.1 }}
                                   className="mt-3 p-3 rounded-xl bg-secondary"
                                 >
-                                  <p className="text-[0.78rem] font-bold mb-1.5">
+                                  <p className="text-[0.78rem] font-medium mb-1.5">
                                     <DollarSign size={12} className="inline align-middle mr-1" />
                                     Best Plan:{" "}
                                     <span className="capitalize text-yellow-600 dark:text-yellow-500">
@@ -944,7 +944,7 @@ export default function ScreentimeSensePage() {
                                           key={plan}
                                           className={
                                             plan === result.best_plan
-                                              ? "font-bold text-foreground"
+                                              ? "font-medium text-foreground"
                                               : "font-normal text-muted-foreground"
                                           }
                                         >

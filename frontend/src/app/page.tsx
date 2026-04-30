@@ -90,17 +90,17 @@ export default function Home() {
         </div>
 
         {/* ── Foreground Content ── */}
-        <div className="relative z-10 pt-32 pb-20 max-w-6xl mx-auto px-8">
+        <div className="relative z-10 pt-52 pb-20 max-w-7xl mx-auto px-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: [0.25, 0.1, 0.25, 1] as const }}
-            className="text-center max-w-2xl mx-auto mb-24"
+            className="text-center max-w-4xl mx-auto mb-40"
           >
-            <h1 className="text-5xl font-bold tracking-tight leading-[1.15] mb-5 text-white drop-shadow-[0_0_20px_rgba(255,255,255,0.35)]">
+            <h1 className="font-light text-4xl md:text-5xl tracking-tighter leading-tight mb-5 text-white drop-shadow-[0_0_20px_rgba(255,255,255,0.35)]">
               Intelligent Subscription Management.
             </h1>
-            <p className="text-lg text-white/85 leading-relaxed">
+            <p className="text-sm text-white/85 leading-relaxed">
               StatementSense helps users save money by monitoring their
               subscriptions and how much they actually use them.
             </p>
@@ -111,7 +111,7 @@ export default function Home() {
             variants={containerVariants}
             initial="hidden"
             animate="show"
-            className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-5xl mx-auto p-4 rounded-[20px] bg-black/30 border border-white/10 backdrop-blur-md"
+            className="grid grid-cols-1 md:grid-cols-3 gap-5 w-full mx-auto"
           >
             {features.map(({ href, icon: Icon, title, desc }) => {
               return (
@@ -119,16 +119,16 @@ export default function Home() {
                 <Link href={href} className="no-underline text-inherit block h-full">
                   <MotionCard
                     hover
-                    className="h-full bg-white/5 dark:bg-black/55 backdrop-blur-xl border border-white/10 cursor-pointer p-6"
+                    className="h-full bg-white/5 dark:bg-black/55 backdrop-blur-xl border border-white/10 cursor-pointer py-5 px-6"
                   >
                     <div className="flex flex-col h-full">
-                      <h2 className="text-lg font-bold mb-2 tracking-tight flex text-white">
+                      <h2 className="text-lg font-medium mb-2 tracking-tight flex text-white">
                         {title}
                       </h2>
-                      <p className="text-sm text-white/70 leading-relaxed mb-6 flex-grow">
+                      <p className="text-sm text-white/70 leading-relaxed mb-3 flex-grow">
                         {desc}
                       </p>
-                      <div className="flex items-center gap-1.5 text-foreground font-semibold text-sm">
+                      <div className="flex items-center gap-1.5 text-white font-medium text-sm">
                         Get Started <ArrowRight size={15} />
                       </div>
                     </div>
