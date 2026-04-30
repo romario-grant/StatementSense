@@ -190,8 +190,9 @@ conferences, visiting family, moving, or any event that suggests extended absenc
 IMPORTANT RULES:
 - Only flag periods where the person will be PHYSICALLY AWAY from {user_home_location}
 - Combine overlapping or consecutive travel events into single away periods
-- If you cannot determine whether an event involves travel, DO NOT include it
-- Be conservative — only include events that clearly indicate being away
+- If you see a departing flight but no explicit return flight, INFER the return date based on the last event that occurs in that destination (e.g., if there's a flight to Kansas City in May and a concert in Kansas City in June, the away period lasts until the concert).
+- If you see a departing flight with no subsequent events, estimate a 7-day trip.
+- DO NOT ignore one-way flights or single events in another city; these are strong indicators of travel.
 
 Return a JSON array (no markdown formatting) of away periods:
 [

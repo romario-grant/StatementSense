@@ -64,55 +64,64 @@ class GeminiClassifier:
 
     def analyze_app(self, app_name, cost):
         prompt = f"App: {app_name}, Cost: {cost}"
-        try:
-            response = self.client.models.generate_content(
-                model="gemini-2.5-flash",
-                config={
-                    "tools": [{"google_search": {}}], 
-                    "system_instruction": self.system_rules,
-                    "temperature": 0.0
-                },
-                contents=prompt
-            )
-            
-            # --- THE PARSER FIX ---
-            raw_text = response.text.strip()
-            if raw_text.startswith("```json"): 
-                raw_text = raw_text[7:]
-            elif raw_text.startswith("```"): 
-                raw_text = raw_text[3:]
-                
-            if raw_text.endswith("```"): 
-                raw_text = raw_text[:-3]
-            
-            result = json.loads(raw_text.strip())
-            
-            # --- V3.1: HALLUCINATION GUARD ---
-            # Cross-check: if Gemini says pricing is verified, validate that
-            # the user's reported cost actually matches one of the returned tiers.
-            pricing = result.get("pricing_tiers", {})
-            verified = result.get("pricing_verified", False)
-            tier_values = [v for v in pricing.values() if v and v > 0]
-            
-            if verified and tier_values:
-                # Check if user's cost is close to any returned tier (within 20% tolerance)
-                cost_float = float(cost)
-                matches_any_tier = any(
-                    abs(cost_float - tier) / max(tier, 0.01) < 0.20 
-                    for tier in tier_values if isinstance(tier, (int, float)) and tier > 0
+        max_retries = 4
+        for attempt in range(max_retries):
+            try:
+                response = self.client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    config={
+                        "tools": [{"google_search": {}}], 
+                        "system_instruction": self.system_rules,
+                        "temperature": 0.0
+                    },
+                    contents=prompt
                 )
-                if not matches_any_tier:
-                    print(f"  ⚠ Warning: Your cost (${cost}) doesn't match any returned tier. Prices may be inaccurate.")
-                    result["pricing_verified"] = False
-            elif not verified:
-                # Gemini admitted it couldn't find pricing — zero out tiers
-                result["pricing_tiers"] = {"monthly": 0, "yearly": 0, "lifetime": 0}
-                print(f"  ⚠ Warning: Gemini could not verify pricing for {app_name}. Plan optimization disabled.")
-            
-            return result
-            
-        except Exception as e:
-            print(f"Gemini API Error: {e}")
+                
+                # --- THE PARSER FIX ---
+                raw_text = response.text.strip()
+                if raw_text.startswith("```json"): 
+                    raw_text = raw_text[7:]
+                elif raw_text.startswith("```"): 
+                    raw_text = raw_text[3:]
+                    
+                if raw_text.endswith("```"): 
+                    raw_text = raw_text[:-3]
+                
+                result = json.loads(raw_text.strip())
+                
+                # --- V3.1: HALLUCINATION GUARD ---
+                # Cross-check: if Gemini says pricing is verified, validate that
+                # the user's reported cost actually matches one of the returned tiers.
+                pricing = result.get("pricing_tiers", {})
+                verified = result.get("pricing_verified", False)
+                tier_values = [v for v in pricing.values() if v and v > 0]
+                
+                if verified and tier_values:
+                    # Check if user's cost is close to any returned tier (within 20% tolerance)
+                    cost_float = float(cost)
+                    matches_any_tier = any(
+                        abs(cost_float - tier) / max(tier, 0.01) < 0.20 
+                        for tier in tier_values if isinstance(tier, (int, float)) and tier > 0
+                    )
+                    if not matches_any_tier:
+                        print(f"  ⚠ Warning: Your cost (${cost}) doesn't match any returned tier. Prices may be inaccurate.")
+                        result["pricing_verified"] = False
+                elif not verified:
+                    # Gemini admitted it couldn't find pricing — zero out tiers
+                    result["pricing_tiers"] = {"monthly": 0, "yearly": 0, "lifetime": 0}
+                    print(f"  ⚠ Warning: Gemini could not verify pricing for {app_name}. Plan optimization disabled.")
+                
+                return result
+                
+            except Exception as e:
+                error_str = str(e)
+                if ("429" in error_str or "RESOURCE_EXHAUSTED" in error_str) and attempt < max_retries - 1:
+                    import time
+                    print(f"  [Rate limited — waiting 2s before retry...]")
+                    time.sleep(2)
+                    continue
+                print(f"Gemini API Error: {e}")
+
             return {
                 "frequency": "monthly", "category": "entertainment", "value_mode": "time_based",
                 "engagement_type": "active", "is_multi_device": False, "has_free_tier": False, 
@@ -286,9 +295,21 @@ class SubscriptionAnalyzer:
 
         Returns: (best_plan, plan_costs, breakeven_info)
         """
-        monthly_price = pricing_tiers.get("monthly", 0)
-        yearly_price = pricing_tiers.get("yearly", 0)
-        lifetime_price = pricing_tiers.get("lifetime", 0)
+        def _to_float(val):
+            if isinstance(val, dict):
+                # Try to find a 'price' or 'cost' key if it's nested
+                for k in ["price", "cost", "value", "amount"]:
+                    if k in val: return float(val[k])
+                # Otherwise just take the first numeric value
+                for v in val.values():
+                    if isinstance(v, (int, float)): return float(v)
+                return 0.0
+            try: return float(val)
+            except: return 0.0
+
+        monthly_price = _to_float(pricing_tiers.get("monthly", 0))
+        yearly_price = _to_float(pricing_tiers.get("yearly", 0))
+        lifetime_price = _to_float(pricing_tiers.get("lifetime", 0))
         
         # Project usage horizon based on EMA velocity (usage trend)
         if velocity < 0.3:
