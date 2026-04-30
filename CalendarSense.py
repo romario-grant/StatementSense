@@ -126,7 +126,7 @@ class GeminiCalendarAnalyzer:
         for attempt in range(max_retries):
             try:
                 response = self.client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-3.1-pro-preview",
                     config=config,
                     contents=prompt
                 )

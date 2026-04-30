@@ -8,6 +8,7 @@ import json
 import math
 from datetime import datetime, timedelta, timezone
 import time
+import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google import genai
 # NOTE: Google Calendar OAuth imports (google_auth_oauthlib, googleapiclient)
@@ -145,12 +146,12 @@ class GeminiCalendarAnalyzer:
             config["tools"] = [{"google_search": {}}]
         
         call_label = "grounded-search" if use_search else "standard"
-        print(f"[CalendarSense] Calling gemini-2.5-flash ({call_label})...")
+        print(f"[CalendarSense] Calling gemini-3.1-pro-preview ({call_label})...")
         
         for attempt in range(max_retries):
             try:
                 response = self.client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-3.1-pro-preview",
                     config=config,
                     contents=prompt
                 )

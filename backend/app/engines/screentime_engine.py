@@ -72,9 +72,8 @@ class GeminiClassifier:
         max_retries = 4
         for attempt in range(max_retries):
             try:
-                # Re-enabled Google Search for accuracy as per user request
                 response = self.client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-3.1-pro-preview",
                     config={
                         "tools": [{"google_search": {}}],
                         "system_instruction": self.system_rules,

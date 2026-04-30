@@ -7,7 +7,7 @@ load_dotenv('c:/Users/Romario Grant/Desktop/StatementSense/.env')
 try:
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     resp = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.1-pro-preview",
         contents="Hello",
         config={"tools": [{"googleSearch": {}}]}
     )
@@ -17,7 +17,7 @@ except Exception as e:
 
 try:
     resp = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.1-pro-preview",
         contents="Hello",
         config={"tools": [{"google_search": {}}]}
     )
