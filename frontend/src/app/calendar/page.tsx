@@ -44,91 +44,89 @@ export default function CalendarSensePage() {
     finally { setLoading(false); }
   };
 
-  const divider: React.CSSProperties = { height: "1px", background: "var(--border-subtle)", border: "none", margin: 0 };
-
   return (
     <>
       <Navbar />
-      <main className="container" style={{ paddingTop: "5rem", paddingBottom: "3rem" }}>
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} style={{ marginBottom: "2rem" }}>
-          <h1 style={{ fontSize: "2rem", fontWeight: 700, letterSpacing: "-0.02em", marginBottom: "0.3rem" }}>CalendarSense</h1>
-          <p style={{ color: "var(--text-secondary)" }}>Pause local subscriptions while traveling. Connects to your Google Calendar to detect travel periods.</p>
+      <main className="max-w-6xl mx-auto px-8 pt-32 pb-12">
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="mb-8">
+          <h1 className="text-3xl font-bold tracking-tight mb-1.5">CalendarSense</h1>
+          <p className="text-muted-foreground">Pause local subscriptions while traveling. Connects to your Google Calendar to detect travel periods.</p>
         </motion.div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "1.5rem" }}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* ═══ INPUT COLUMN ═══ */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+          <div className="flex flex-col gap-6">
             <MotionCard hover={false}>
-              <h2 style={{ fontSize: "1.15rem", fontWeight: 700, marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <MapPin size={18} style={{ color: "var(--accent-teal)" }} /> Travel Details
+              <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+                <MapPin size={18} className="text-cyan-500" /> Travel Details
               </h2>
               <div>
-                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 500, marginBottom: "0.35rem" }}>Your Home Location</label>
-                <input type="text" value={homeLocation} onChange={e => setHomeLocation(e.target.value)} placeholder="e.g. Kingston, Jamaica" />
-                <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>Used to identify which subscriptions are &quot;local&quot; to you.</p>
+                <label className="block text-[0.85rem] font-medium mb-1.5">Your Home Location</label>
+                <input type="text" className="w-full" value={homeLocation} onChange={e => setHomeLocation(e.target.value)} placeholder="e.g. Kingston, Jamaica" />
+                <p className="text-xs text-muted-foreground mt-2">Used to identify which subscriptions are &quot;local&quot; to you.</p>
               </div>
             </MotionCard>
 
             <MotionCard hover={false} delay={0.05}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                <h2 style={{ fontSize: "1.15rem", fontWeight: 700, margin: 0 }}>Subscriptions</h2>
-                <button type="button" onClick={handleAddSub} style={{ display: "flex", alignItems: "center", gap: "0.25rem", fontSize: "0.8rem", padding: "0.3rem 0.75rem", color: "var(--accent-teal)", backgroundColor: "var(--accent-teal-light)", borderRadius: "980px", border: "none" }}>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-bold m-0">Subscriptions</h2>
+                <button type="button" onClick={handleAddSub} className="flex items-center gap-1 text-xs px-3 py-1.5 text-cyan-600 dark:text-cyan-400 bg-cyan-500/10 rounded-full border-none cursor-pointer hover:bg-cyan-500/20 transition-colors">
                   <Plus size={14} /> Add
                 </button>
               </div>
-              <hr style={divider} />
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "1rem" }}>
+              <hr className="border-t border-border my-0" />
+              <div className="flex flex-col gap-3 mt-4">
                 {subscriptions.map((sub, index) => (
-                  <div key={sub.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    <span style={{ color: "var(--text-muted)", fontSize: "0.75rem", width: "1rem" }}>{index + 1}.</span>
-                    <input type="text" placeholder="Name" style={{ flex: 1, fontSize: "0.9rem", padding: "0.5rem 0.75rem" }} value={sub.name} onChange={e => handleChangeSub(sub.id, "name", e.target.value)} />
-                    <input type="number" step="0.01" placeholder="$ Cost" style={{ width: "6rem", fontSize: "0.9rem", padding: "0.5rem 0.75rem" }} value={sub.cost} onChange={e => handleChangeSub(sub.id, "cost", e.target.value)} />
-                    <button onClick={() => handleRemoveSub(sub.id)} style={{ padding: "0.5rem", color: "var(--status-danger)", background: "none", border: "none", borderRadius: "8px", cursor: "pointer" }}><Trash2 size={15} /></button>
+                  <div key={sub.id} className="flex items-center gap-2">
+                    <span className="text-muted-foreground text-xs w-4 shrink-0">{index + 1}.</span>
+                    <input type="text" placeholder="Name" className="flex-1 text-sm px-3 py-2" value={sub.name} onChange={e => handleChangeSub(sub.id, "name", e.target.value)} />
+                    <input type="number" step="0.01" placeholder="$ Cost" className="w-24 text-sm px-3 py-2" value={sub.cost} onChange={e => handleChangeSub(sub.id, "cost", e.target.value)} />
+                    <button onClick={() => handleRemoveSub(sub.id)} className="p-2 text-red-500/60 hover:text-red-500 bg-transparent border-none rounded-lg cursor-pointer transition-colors"><Trash2 size={15} /></button>
                   </div>
                 ))}
-                {subscriptions.length === 0 && <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", textAlign: "center", padding: "1rem 0" }}>No subscriptions added.</p>}
+                {subscriptions.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No subscriptions added.</p>}
               </div>
             </MotionCard>
 
             {error && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} style={{ display: "flex", gap: "0.5rem", alignItems: "center", padding: "0.75rem 1rem", background: "var(--status-danger-bg)", color: "var(--status-danger)", borderRadius: "14px", fontSize: "0.85rem" }}>
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="flex gap-2 items-center px-4 py-3 bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl text-[0.85rem]">
                 <AlertTriangle size={16} /> <span>{error}</span>
               </motion.div>
             )}
 
-            <MotionCard hover={false} delay={0.1} style={{ textAlign: "center", background: "rgba(97, 205, 255, 0.04)", border: "1px solid rgba(97, 205, 255, 0.12)" }}>
-              <CalendarIcon size={28} style={{ color: "var(--accent-teal)", margin: "0 auto 0.75rem" }} />
-              <h3 style={{ fontWeight: 700, fontSize: "1rem", marginBottom: "0.5rem" }}>Connect &amp; Scan</h3>
-              <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1rem" }}>Securely analyze the next 6 months of your Google Calendar.</p>
-              <button onClick={handleAnalyze} disabled={loading} className="btn-primary" style={{ width: "100%", padding: "0.75rem", display: "flex", justifyContent: "center", alignItems: "center", gap: "0.5rem", fontWeight: 700 }}>
+            <MotionCard hover={false} delay={0.1} className="text-center bg-cyan-500/5 border-cyan-500/20">
+              <CalendarIcon size={28} className="text-cyan-500 mx-auto mb-3" />
+              <h3 className="font-bold text-base mb-2">Connect &amp; Scan</h3>
+              <p className="text-[0.85rem] text-muted-foreground mb-4">Securely analyze the next 6 months of your Google Calendar.</p>
+              <button onClick={handleAnalyze} disabled={loading} className="w-full py-3 flex justify-center items-center gap-2 font-bold bg-primary text-primary-foreground rounded-xl disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors shadow-sm">
                 {loading ? (<><Activity size={18} className="animate-spin" /> Analyzing...</>) : "Scan Calendar for Travel"}
               </button>
             </MotionCard>
           </div>
 
           {/* ═══ RESULTS COLUMN ═══ */}
-          <div>
+          <div className="md:col-span-2">
             <AnimatePresence mode="wait">
               {!result ? (
-                <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  <MotionCard hover={false} style={{ height: "100%", minHeight: "400px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", border: "none" }}>
+                <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full">
+                  <MotionCard hover={false} className="h-full min-h-[400px] flex flex-col items-center justify-center border-none shadow-none bg-transparent">
                     <motion.div animate={{ y: [0, -8, 0] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}>
-                      <Plane size={48} style={{ color: "var(--accent-teal)", marginBottom: "1rem", opacity: 0.5 }} />
+                      <Plane size={48} className="text-cyan-500 opacity-50 mb-4" />
                     </motion.div>
-                    <p style={{ fontSize: "1rem", fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--text-muted)" }}>Ready to Scan</p>
-                    <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", textAlign: "center", maxWidth: "18rem", marginTop: "0.5rem" }}>Enter your details and connect your calendar to find travel overlaps.</p>
+                    <p className="text-base font-semibold tracking-wide uppercase text-muted-foreground">Ready to Scan</p>
+                    <p className="text-[0.85rem] text-muted-foreground text-center max-w-[18rem] mt-2">Enter your details and connect your calendar to find travel overlaps.</p>
                   </MotionCard>
                 </motion.div>
               ) : (
-                <motion.div key="results" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+                <motion.div key="results" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="flex flex-col gap-6">
 
                   {/* SUMMARY STATS */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "1rem" }}>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    {([["Events", result.events_scanned, null], ["Trips", result.away_periods.length, "var(--status-safe)"], ["Local", result.local_count || 0, "var(--status-warn)"], ["Savings", `$${result.total_savings.toFixed(2)}`, "var(--accent-gold)"]] as [string, any, string | null][]).map(([label, value, color], i) => (
-                      <MotionCard key={label} hover={false} delay={i * 0.06} style={{ textAlign: "center", padding: "1.25rem 0.75rem" }}>
-                        <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.35rem" }}>{label}</p>
-                        <p style={{ fontSize: "1.5rem", fontWeight: 700, color: color || "var(--text-primary)" }}>{value}</p>
+                    {([["Events", result.events_scanned, null], ["Trips", result.away_periods.length, "text-green-600 dark:text-green-400"], ["Local", result.local_count || 0, "text-yellow-600 dark:text-yellow-500"], ["Savings", `$${result.total_savings.toFixed(2)}`, "text-yellow-600 dark:text-yellow-500"]] as [string, any, string | null][]).map(([label, value, colorClass], i) => (
+                      <MotionCard key={label} hover={false} delay={i * 0.06} className="text-center py-5 px-3">
+                        <p className="text-[0.7rem] text-muted-foreground uppercase tracking-[0.06em] font-semibold mb-1.5">{label}</p>
+                        <p className={`text-2xl font-bold ${colorClass || "text-foreground"}`}>{value}</p>
                       </MotionCard>
                     ))}
                   </div>
@@ -136,53 +134,53 @@ export default function CalendarSensePage() {
                   {/* EVENTS PREVIEW */}
                   {result.events_preview && result.events_preview.length > 0 && (
                     <MotionCard hover={false} delay={0.15}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-                        <h3 style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", margin: 0 }}><CalendarIcon size={18} style={{ color: "var(--accent-teal)" }} /> Events Scanned</h3>
-                        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{result.events_scanned} total</span>
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-bold flex items-center gap-2 m-0"><CalendarIcon size={18} className="text-cyan-500" /> Events Scanned</h3>
+                        <span className="text-xs text-muted-foreground">{result.events_scanned} total</span>
                       </div>
-                      <hr style={divider} />
-                      <div style={{ marginTop: "0.5rem" }}>
+                      <hr className="border-t border-border my-0" />
+                      <div className="mt-2">
                         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                         {result.events_preview.map((ev: any, i: number) => (
-                          <div key={i} style={{ display: "flex", gap: "0.75rem", fontSize: "0.85rem", padding: "0.5rem 0", borderBottom: "1px solid var(--border-subtle)" }}>
-                            <span style={{ color: "var(--text-muted)", fontFamily: "monospace", fontSize: "0.7rem", width: "5rem", flexShrink: 0, paddingTop: "0.15rem" }}>[{ev.date}]</span>
-                            <span style={{ fontWeight: 500 }}>{ev.summary}</span>
-                            {ev.location && <span style={{ color: "var(--text-muted)", fontSize: "0.75rem", marginLeft: "auto" }}>📍 {ev.location}</span>}
+                          <div key={i} className="flex gap-3 text-[0.85rem] py-2 border-b border-border last:border-0">
+                            <span className="text-muted-foreground font-mono text-[0.7rem] w-20 shrink-0 pt-0.5">[{ev.date}]</span>
+                            <span className="font-medium">{ev.summary}</span>
+                            {ev.location && <span className="text-muted-foreground text-[0.75rem] ml-auto shrink-0">📍 {ev.location}</span>}
                           </div>
                         ))}
-                        {result.events_scanned > 15 && <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", textAlign: "center", marginTop: "0.5rem" }}>... and {result.events_scanned - 15} more events</p>}
+                        {result.events_scanned > 15 && <p className="text-xs text-muted-foreground text-center mt-2">... and {result.events_scanned - 15} more events</p>}
                       </div>
                     </MotionCard>
                   )}
 
                   {/* TRAVEL DETECTION */}
                   <MotionCard hover={false} delay={0.2}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-                      <h3 style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", margin: 0 }}><Plane size={18} style={{ color: "var(--accent-teal)" }} /> Travel Detection</h3>
-                      <Badge variant="teal" style={{ fontSize: "0.65rem" }}>Powered by Gemini AI</Badge>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-bold flex items-center gap-2 m-0"><Plane size={18} className="text-cyan-500" /> Travel Detection</h3>
+                      <Badge variant="info" className="text-[0.65rem]">Powered by Gemini AI</Badge>
                     </div>
-                    <hr style={divider} />
+                    <hr className="border-t border-border my-0" />
                     {result.away_periods.length === 0 ? (
-                      <div style={{ textAlign: "center", padding: "2rem 0" }}><p style={{ color: "var(--text-muted)" }}>No travel detected in the next 6 months.</p></div>
+                      <div className="text-center py-8"><p className="text-muted-foreground">No travel detected in the next 6 months.</p></div>
                     ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginTop: "1rem" }}>
+                      <div className="flex flex-col gap-4 mt-4">
                         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                         {result.away_periods.map((away: any, i: number) => {
                           const days = Math.ceil((new Date(away.return_date).getTime() - new Date(away.departure_date).getTime()) / (1000 * 60 * 60 * 24));
                           return (
-                            <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 + i * 0.08 }} style={{ padding: "1.25rem", borderRadius: "14px", background: "var(--bg-secondary)" }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>
-                                <p style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 + i * 0.08 }} className="p-5 rounded-xl bg-secondary">
+                              <div className="flex justify-between items-start mb-2">
+                                <p className="font-bold flex items-center gap-2">
                                   <span>{away.confidence === "high" ? "🟢" : away.confidence === "medium" ? "🟡" : "🔴"}</span> {away.reason}
                                 </p>
-                                <Badge variant={away.confidence === "high" ? "safe" : "warn"} style={{ textTransform: "capitalize", fontSize: "0.65rem" }}>{away.confidence} confidence</Badge>
+                                <Badge variant={away.confidence === "high" ? "safe" : "warn"} className="capitalize text-[0.65rem]">{away.confidence} confidence</Badge>
                               </div>
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1rem", fontSize: "0.85rem", marginTop: "0.75rem" }}>
-                                <div><span style={{ fontSize: "0.7rem", color: "var(--text-muted)", display: "block" }}>Dates</span><span style={{ fontWeight: 500 }}>{away.departure_date} → {away.return_date}</span></div>
-                                <div><span style={{ fontSize: "0.7rem", color: "var(--text-muted)", display: "block" }}>Destination</span><span style={{ fontWeight: 500, display: "flex", alignItems: "center", gap: "0.25rem" }}><MapPin size={12} /> {away.destination || "Unknown"}</span></div>
-                                <div><span style={{ fontSize: "0.7rem", color: "var(--text-muted)", display: "block" }}>Duration</span><span style={{ fontWeight: 500 }}>{days} days ({Math.ceil(days / 30)} months)</span></div>
+                              <div className="grid grid-cols-3 gap-4 text-[0.85rem] mt-3">
+                                <div><span className="text-[0.7rem] text-muted-foreground block">Dates</span><span className="font-medium">{away.departure_date} → {away.return_date}</span></div>
+                                <div><span className="text-[0.7rem] text-muted-foreground block">Destination</span><span className="font-medium flex items-center gap-1"><MapPin size={12} /> {away.destination || "Unknown"}</span></div>
+                                <div><span className="text-[0.7rem] text-muted-foreground block">Duration</span><span className="font-medium">{days} days ({Math.ceil(days / 30)} months)</span></div>
                               </div>
-                              {away.trigger_type && <div style={{ marginTop: "0.5rem" }}><span style={{ fontSize: "0.7rem", padding: "0.15rem 0.5rem", borderRadius: "980px", background: "var(--bg-tertiary)", textTransform: "capitalize" }}>{away.trigger_type}</span></div>}
+                              {away.trigger_type && <div className="mt-2"><span className="text-[0.7rem] px-2 py-1 rounded-full bg-background capitalize">{away.trigger_type}</span></div>}
                             </motion.div>
                           );
                         })}
@@ -192,28 +190,28 @@ export default function CalendarSensePage() {
 
                   {/* SUBSCRIPTION CLASSIFICATION */}
                   <MotionCard hover={false} delay={0.25}>
-                    <h3 style={{ fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}><Search size={18} style={{ color: "var(--accent-teal)" }} /> Subscription Classification</h3>
-                    <hr style={divider} />
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "1rem" }}>
+                    <h3 className="font-bold flex items-center gap-2 mb-4"><Search size={18} className="text-cyan-500" /> Subscription Classification</h3>
+                    <hr className="border-t border-border my-0" />
+                    <div className="flex flex-col gap-3 mt-4">
                       {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                       {result.processed_subscriptions.map((sub: any, i: number) => (
-                        <motion.div key={i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 + i * 0.07 }} style={{ padding: "1.25rem", borderRadius: "14px", backgroundColor: sub.is_local ? "var(--accent-gold-light)" : "var(--bg-secondary)", border: sub.is_local ? "1px solid var(--accent-gold-border)" : "1px solid transparent" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                            <span style={{ fontWeight: 700, fontSize: "1.1rem" }}>{sub.name}</span>
-                            <Badge variant={sub.is_local ? "danger" : "safe"} style={{ fontWeight: 700, fontSize: "0.65rem" }}>{sub.is_local ? "📍 LOCAL" : "🌍 GLOBAL"}</Badge>
+                        <motion.div key={i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 + i * 0.07 }} className={`p-5 rounded-xl border ${sub.is_local ? "bg-yellow-500/5 border-yellow-500/30" : "bg-secondary border-transparent"}`}>
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="font-bold text-lg">{sub.name}</span>
+                            <Badge variant={sub.is_local ? "danger" : "safe"} className="font-bold text-[0.65rem]">{sub.is_local ? "📍 LOCAL" : "🌍 GLOBAL"}</Badge>
                           </div>
-                          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "0.75rem" }}>{sub.reason}</p>
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem 1.5rem", fontSize: "0.82rem" }}>
+                          <p className="text-[0.85rem] text-muted-foreground mb-3">{sub.reason}</p>
+                          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[0.82rem]">
                             {([["Location Type", sub.location_type?.replace("_", " ")], ["Monthly Cost", `$${(sub.monthly_cost || 0).toFixed(2)}`], ["Can Pause", sub.can_pause ? "✓ Yes" : "✗ No"], ["Can Cancel & Rejoin", sub.can_cancel_and_rejoin ? "✓ Yes" : "✗ No"]] as [string, string][]).map(([label, val]) => (
-                              <div key={label} style={{ display: "flex", justifyContent: "space-between", paddingBottom: "0.35rem", borderBottom: "1px solid var(--border-subtle)" }}>
-                                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{label}</span>
-                                <span style={{ fontWeight: 500, textTransform: "capitalize" }}>{val || "N/A"}</span>
+                              <div key={label} className="flex justify-between pb-1.5 border-b border-border">
+                                <span className="text-[0.75rem] text-muted-foreground">{label}</span>
+                                <span className="font-medium capitalize">{val || "N/A"}</span>
                               </div>
                             ))}
                             {sub.cancellation_penalty > 0 && (
-                              <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: "0.35rem", borderBottom: "1px solid var(--border-subtle)" }}>
-                                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Penalty</span>
-                                <span style={{ fontWeight: 500, color: "var(--status-danger)" }}>${sub.cancellation_penalty}</span>
+                              <div className="flex justify-between pb-1.5 border-b border-border">
+                                <span className="text-[0.75rem] text-muted-foreground">Penalty</span>
+                                <span className="font-medium text-red-600 dark:text-red-400">${sub.cancellation_penalty}</span>
                               </div>
                             )}
                           </div>
@@ -224,39 +222,39 @@ export default function CalendarSensePage() {
 
                   {/* SAVINGS PLAN */}
                   {result.recommendations.length > 0 && (
-                    <MotionCard hover={false} delay={0.3} style={{ border: "1px solid rgba(97, 205, 255, 0.15)" }}>
-                      <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--accent-teal)" }}>
+                    <MotionCard hover={false} delay={0.3} className="border-cyan-500/20">
+                      <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-cyan-600 dark:text-cyan-400">
                         <Activity size={22} /> Savings Plan
                       </h2>
-                      <hr style={divider} />
-                      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", marginTop: "1.25rem" }}>
+                      <hr className="border-t border-border my-0" />
+                      <div className="flex flex-col gap-6 mt-5">
                         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                         {result.recommendations.map((rec: any, i: number) => (
                           <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 + i * 0.1 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
-                              <div style={{ flex: 1 }}>
-                                <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "0.25rem" }}>{rec.action}</h3>
-                                <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "0.75rem" }}>{rec.action_detail}</p>
-                                <div style={{ fontSize: "0.9rem", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                            <div className="flex justify-between gap-4 flex-wrap">
+                              <div className="flex-1">
+                                <h3 className="text-lg font-bold mb-1">{rec.action}</h3>
+                                <p className="text-[0.85rem] text-muted-foreground mb-3">{rec.action_detail}</p>
+                                <div className="text-[0.9rem] flex flex-col gap-1.5">
                                   {([
                                     ["Service", <><strong>{rec.subscription}</strong> (${rec.monthly_cost?.toFixed(2)}/mo)</>],
                                     ["Type", rec.location_type?.replace("_", " ")],
                                     ["Trip", rec.away_reason],
                                     ["Away", rec.away_dates],
                                     ["Duration", `${rec.days_away} days (${rec.months_away} months)`],
-                                    ["Savings", <strong style={{ color: "var(--status-safe)" }}>${rec.potential_savings?.toFixed(2)}</strong>],
+                                    ["Savings", <strong className="text-green-600 dark:text-green-400">${rec.potential_savings?.toFixed(2)}</strong>],
                                   ] as [string, React.ReactNode][]).map(([label, val]) => (
-                                    <p key={label}><span style={{ color: "var(--text-muted)", display: "inline-block", width: "6rem" }}>{label}:</span> {val}</p>
+                                    <p key={label}><span className="text-muted-foreground inline-block w-24">{label}:</span> {val}</p>
                                   ))}
                                   {rec.penalty > 0 && (<>
-                                    <p><span style={{ color: "var(--text-muted)", display: "inline-block", width: "6rem" }}>Rejoin Fee:</span> <span style={{ color: "var(--status-danger)" }}>${rec.penalty?.toFixed(2)}</span></p>
-                                    <p><span style={{ color: "var(--text-muted)", display: "inline-block", width: "6rem" }}>Net:</span> <strong style={{ color: "var(--status-safe)" }}>${rec.net_savings?.toFixed(2)}</strong></p>
+                                    <p><span className="text-muted-foreground inline-block w-24">Rejoin Fee:</span> <span className="text-red-600 dark:text-red-400">${rec.penalty?.toFixed(2)}</span></p>
+                                    <p><span className="text-muted-foreground inline-block w-24">Net:</span> <strong className="text-green-600 dark:text-green-400">${rec.net_savings?.toFixed(2)}</strong></p>
                                   </>)}
-                                  <p><span style={{ color: "var(--text-muted)", display: "inline-block", width: "6rem" }}>Confidence:</span> <span style={{ textTransform: "capitalize" }}>{rec.confidence}</span></p>
+                                  <p><span className="text-muted-foreground inline-block w-24">Confidence:</span> <span className="capitalize">{rec.confidence}</span></p>
                                 </div>
                               </div>
-                              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", justifyContent: "flex-start" }}>
-                                <div style={{ padding: "0.6rem 1.25rem", borderRadius: "980px", fontWeight: 700, fontSize: "1.1rem", color: "#fff", backgroundColor: "var(--status-safe)", boxShadow: "0 2px 8px rgba(52,199,89,0.2)" }}>
+                              <div className="flex flex-col items-end justify-start">
+                                <div className="px-5 py-2.5 rounded-full font-bold text-lg text-white bg-green-500 shadow-[0_2px_8px_rgba(52,199,89,0.2)]">
                                   Save ${rec.net_savings?.toFixed(2)}
                                 </div>
                               </div>
@@ -264,24 +262,24 @@ export default function CalendarSensePage() {
 
                             {/* Destination Alternatives */}
                             {rec.alternatives && rec.alternatives.alternatives_found && (
-                              <div style={{ marginTop: "1rem", borderRadius: "14px", padding: "1.25rem", background: "var(--bg-secondary)" }}>
-                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                                  <span style={{ fontWeight: 700, fontSize: "0.85rem" }}>Alternatives in {rec.destination}</span>
-                                  <Badge variant="warn" style={{ backgroundColor: "var(--accent-gold)", color: "#fff", fontSize: "0.6rem" }}>SMART TIP</Badge>
+                              <div className="mt-4 rounded-xl p-5 bg-secondary">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="font-bold text-[0.85rem]">Alternatives in {rec.destination}</span>
+                                  <Badge variant="warn" className="bg-yellow-500 text-white text-[0.6rem]">SMART TIP</Badge>
                                 </div>
-                                {rec.alternatives.tip && <p style={{ fontSize: "0.85rem", fontStyle: "italic", color: "var(--text-muted)", marginBottom: "0.75rem" }}>💡 &quot;{rec.alternatives.tip}&quot;</p>}
-                                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                                {rec.alternatives.tip && <p className="text-[0.85rem] italic text-muted-foreground mb-3">💡 &quot;{rec.alternatives.tip}&quot;</p>}
+                                <div className="flex flex-col gap-2">
                                   {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                                   {rec.alternatives.options?.map((opt: any, j: number) => (
-                                    <div key={j} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.85rem", paddingTop: "0.5rem", borderTop: "1px solid var(--border-subtle)" }}>
+                                    <div key={j} className="flex justify-between items-center text-[0.85rem] pt-2 border-t border-border">
                                       <div>
                                         {opt.url ? (
-                                          <a href={opt.url} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 500, color: "var(--accent-teal)", borderBottom: "1px solid var(--accent-teal-border)" }}>{opt.name} ↗</a>
-                                        ) : (<span style={{ fontWeight: 500 }}>{opt.name}</span>)}
-                                        <span style={{ color: "var(--text-muted)", marginLeft: "0.5rem" }}>({opt.type})</span>
-                                        {opt.notes && <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{opt.notes}</p>}
+                                          <a href={opt.url} target="_blank" rel="noopener noreferrer" className="font-medium text-cyan-600 dark:text-cyan-400 border-b border-cyan-500/30">{opt.name} ↗</a>
+                                        ) : (<span className="font-medium">{opt.name}</span>)}
+                                        <span className="text-muted-foreground ml-2">({opt.type})</span>
+                                        {opt.notes && <p className="text-xs text-muted-foreground mt-0.5">{opt.notes}</p>}
                                       </div>
-                                      <span style={{ fontWeight: 700, color: "var(--accent-gold)" }}>{opt.estimated_cost}</span>
+                                      <span className="font-bold text-yellow-600 dark:text-yellow-500">{opt.estimated_cost}</span>
                                     </div>
                                   ))}
                                 </div>
@@ -298,13 +296,13 @@ export default function CalendarSensePage() {
                                   const altCost = cheapest * (rec.months_away || 1);
                                   const netImpact = cancelSavings - altCost;
                                   return (
-                                    <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid var(--border-subtle)", fontSize: "0.9rem" }}>
-                                      <p style={{ fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-muted)", marginBottom: "0.5rem" }}>Cost Comparison ({rec.months_away} months)</p>
-                                      <div style={{ display: "flex", justifyContent: "space-between" }}><span>Cancel {rec.subscription}:</span><span style={{ color: "var(--status-safe)" }}>+${cancelSavings.toFixed(2)} saved</span></div>
-                                      <div style={{ display: "flex", justifyContent: "space-between" }}><span>{rec.alternatives.best_value_option || "Alternative"} cost:</span><span style={{ color: "var(--status-danger)" }}>-${altCost.toFixed(2)}</span></div>
-                                      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginTop: "0.35rem", paddingTop: "0.35rem", borderTop: "1px solid var(--border-subtle)" }}>
+                                    <div className="mt-3 pt-3 border-t border-border text-[0.9rem]">
+                                      <p className="text-[0.7rem] font-bold uppercase tracking-[0.06em] text-muted-foreground mb-2">Cost Comparison ({rec.months_away} months)</p>
+                                      <div className="flex justify-between"><span>Cancel {rec.subscription}:</span><span className="text-green-600 dark:text-green-400">+${cancelSavings.toFixed(2)} saved</span></div>
+                                      <div className="flex justify-between"><span>{rec.alternatives.best_value_option || "Alternative"} cost:</span><span className="text-red-600 dark:text-red-400">-${altCost.toFixed(2)}</span></div>
+                                      <div className="flex justify-between font-bold mt-1.5 pt-1.5 border-t border-border">
                                         <span>{netImpact >= 0 ? "NET SAVINGS:" : "NET COST:"}</span>
-                                        <span style={{ color: netImpact >= 0 ? "var(--status-safe)" : "var(--status-danger)" }}>{netImpact >= 0 ? `$${netImpact.toFixed(2)} ✓` : `-$${Math.abs(netImpact).toFixed(2)}`}</span>
+                                        <span className={netImpact >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>{netImpact >= 0 ? `$${netImpact.toFixed(2)} ✓` : `-$${Math.abs(netImpact).toFixed(2)}`}</span>
                                       </div>
                                     </div>
                                   );
@@ -312,32 +310,32 @@ export default function CalendarSensePage() {
                               </div>
                             )}
 
-                            {i < result.recommendations.length - 1 && <hr style={{ ...divider, marginTop: "1.5rem" }} />}
+                            {i < result.recommendations.length - 1 && <hr className="border-t border-border my-6" />}
                           </motion.div>
                         ))}
                       </div>
 
                       {/* Total Savings Footer */}
-                      <div style={{ textAlign: "center", marginTop: "1.5rem", paddingTop: "1rem", borderTop: "1px solid var(--border-subtle)" }}>
-                        <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.25rem" }}>Total Potential Savings</p>
-                        <p style={{ fontSize: "2rem", fontWeight: 700, color: "var(--accent-gold)" }}>${result.total_savings.toFixed(2)}</p>
+                      <div className="text-center mt-6 pt-4 border-t border-border">
+                        <p className="text-[0.7rem] text-muted-foreground uppercase tracking-[0.06em] font-semibold mb-1">Total Potential Savings</p>
+                        <p className="text-3xl font-bold text-yellow-600 dark:text-yellow-500">${result.total_savings.toFixed(2)}</p>
                       </div>
                     </MotionCard>
                   )}
 
                   {/* NO-RESULT STATES */}
                   {result.recommendations.length === 0 && result.away_periods.length === 0 && (
-                    <MotionCard hover={false} style={{ textAlign: "center", padding: "3rem 2rem" }}>
-                      <CheckCircle size={48} style={{ color: "var(--status-safe)", margin: "0 auto 1rem" }} />
-                      <h3 style={{ fontSize: "1.15rem", fontWeight: 700, marginBottom: "0.5rem" }}>No Travel Detected</h3>
-                      <p style={{ color: "var(--text-muted)" }}>No travel or away periods detected for the next 6 months.</p>
+                    <MotionCard hover={false} className="text-center py-12 px-8">
+                      <CheckCircle size={48} className="text-green-600 dark:text-green-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-bold mb-2">No Travel Detected</h3>
+                      <p className="text-muted-foreground">No travel or away periods detected for the next 6 months.</p>
                     </MotionCard>
                   )}
                   {result.recommendations.length === 0 && result.away_periods.length > 0 && (result.local_count || 0) === 0 && (
-                    <MotionCard hover={false} style={{ textAlign: "center", padding: "3rem 2rem" }}>
-                      <CheckCircle size={48} style={{ color: "var(--status-safe)", margin: "0 auto 1rem" }} />
-                      <h3 style={{ fontSize: "1.15rem", fontWeight: 700, marginBottom: "0.5rem" }}>All Subscriptions Are Global</h3>
-                      <p style={{ color: "var(--text-muted)" }}>None of your subscriptions are location-dependent. No action needed!</p>
+                    <MotionCard hover={false} className="text-center py-12 px-8">
+                      <CheckCircle size={48} className="text-green-600 dark:text-green-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-bold mb-2">All Subscriptions Are Global</h3>
+                      <p className="text-muted-foreground">None of your subscriptions are location-dependent. No action needed!</p>
                     </MotionCard>
                   )}
                 </motion.div>

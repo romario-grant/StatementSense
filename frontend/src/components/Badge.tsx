@@ -2,29 +2,30 @@ import type { CSSProperties, ReactNode } from "react";
 
 type BadgeVariant = "safe" | "low" | "warn" | "moderate" | "danger" | "high" | "critical" | "info" | "teal";
 
-const variantStyles: Record<BadgeVariant, CSSProperties> = {
-  safe: { background: "var(--status-safe-bg)", color: "var(--status-safe)" },
-  low: { background: "var(--status-safe-bg)", color: "var(--status-safe)" },
-  warn: { background: "var(--status-warn-bg)", color: "var(--status-warn)" },
-  moderate: { background: "var(--status-warn-bg)", color: "var(--status-warn)" },
-  danger: { background: "var(--status-danger-bg)", color: "var(--status-danger)" },
-  high: { background: "var(--status-danger-bg)", color: "var(--status-danger)" },
-  critical: { background: "var(--status-danger-bg)", color: "var(--status-danger)" },
-  info: { background: "var(--accent-teal-light)", color: "var(--accent-teal)" },
-  teal: { background: "var(--accent-teal-light)", color: "var(--accent-teal)" },
+const variantClasses: Record<BadgeVariant, string> = {
+  safe: "bg-green-500/15 text-green-700 dark:text-green-400",
+  low: "bg-green-500/15 text-green-700 dark:text-green-400",
+  warn: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400",
+  moderate: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400",
+  danger: "bg-red-500/15 text-red-700 dark:text-red-400",
+  high: "bg-red-500/15 text-red-700 dark:text-red-400",
+  critical: "bg-red-500/15 text-red-700 dark:text-red-400",
+  info: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-400",
+  teal: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-400",
 };
 
 interface BadgeProps {
   variant: BadgeVariant;
   children: ReactNode;
   style?: CSSProperties;
+  className?: string;
 }
 
-export default function Badge({ variant, children, style }: BadgeProps) {
+export default function Badge({ variant, children, style, className = "" }: BadgeProps) {
   return (
     <span
-      className="badge"
-      style={{ ...variantStyles[variant], ...style }}
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold tracking-wide ${variantClasses[variant]} ${className}`}
+      style={style}
     >
       {children}
     </span>

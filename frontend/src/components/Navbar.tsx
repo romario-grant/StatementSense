@@ -23,35 +23,17 @@ export default function Navbar() {
   const isHomePage = pathname === "/";
 
   return (
-    <nav
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 999,
-        padding: "2rem 3rem 1.25rem",
-        pointerEvents: "none",
-      }}
-    >
+    <nav className="fixed top-0 left-0 right-0 z-[999] px-12 pt-8 pb-5 pointer-events-none">
       {/* ── Brand — absolute left ── */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.25, 0.1, 0.25, 1] as const }}
-        style={{ position: "absolute", left: "3rem", top: "2rem", pointerEvents: "auto" }}
+        className="absolute left-12 top-8 pointer-events-auto"
       >
         <Link
           href="/"
-          style={{
-            color: isHomePage ? "#ffffff" : "var(--text-primary)",
-            fontWeight: 700,
-            fontSize: "1.05rem",
-            letterSpacing: "-0.01em",
-            textDecoration: "none",
-            whiteSpace: "nowrap",
-            lineHeight: 1,
-          }}
+          className={`font-bold text-lg tracking-tight no-underline whitespace-nowrap leading-none ${isHomePage ? 'text-white' : 'text-foreground'}`}
         >
           StatementSense
         </Link>
@@ -62,22 +44,17 @@ export default function Navbar() {
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.25, 0.1, 0.25, 1] as const }}
-        style={{
-          width: "100%",
-          display: "flex",
-          justifyContent: "center",
-          gap: "2rem",
-          alignItems: "center",
-          pointerEvents: "auto",
-        }}
+        className="w-full flex justify-center gap-8 items-center pointer-events-auto"
       >
         {navLinks.map(({ path, label }) => {
           const active = pathname === path;
           const isHovered = hovered === path;
           const showLine = active || isHovered;
 
-          const activeColor = isHomePage ? "#ffffff" : "var(--text-primary)";
-          const inactiveColor = isHomePage ? "rgba(255, 255, 255, 0.6)" : "var(--text-muted)";
+          // Tailwind classes mapped
+          const activeClass = isHomePage ? "text-white" : "text-foreground";
+          const inactiveClass = isHomePage ? "text-white/60" : "text-muted-foreground";
+          const currentClass = active ? activeClass : inactiveClass;
 
           return (
             <Link
@@ -85,32 +62,12 @@ export default function Navbar() {
               href={path}
               onMouseEnter={() => setHovered(path)}
               onMouseLeave={() => setHovered(null)}
-              style={{
-                position: "relative",
-                color: active ? activeColor : inactiveColor,
-                fontWeight: 600,
-                textDecoration: "none",
-                paddingBottom: "4px",
-                fontSize: "0.82rem",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-                transition: "color 0.25s ease",
-                whiteSpace: "nowrap",
-                lineHeight: 1,
-              }}
+              className={`relative font-semibold no-underline pb-1 text-[0.82rem] uppercase tracking-[0.08em] transition-colors duration-250 whitespace-nowrap leading-none ${currentClass}`}
             >
               {label}
               <motion.span
-                style={{
-                  position: "absolute",
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  height: "2px",
-                  borderRadius: "1px",
-                  background: active ? activeColor : inactiveColor,
-                  transformOrigin: "center",
-                }}
+                className={`absolute bottom-0 left-0 right-0 h-[2px] rounded-[1px] origin-center ${activeClass}`}
+                style={{ background: 'currentColor' }}
                 initial={false}
                 animate={{
                   scaleX: showLine ? 1 : 0,
@@ -128,30 +85,13 @@ export default function Navbar() {
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.25, 0.1, 0.25, 1] as const }}
-        style={{ position: "absolute", right: "3rem", top: "2rem", pointerEvents: "auto", display: "flex", gap: "1rem", alignItems: "center" }}
+        className="absolute right-12 top-8 pointer-events-auto flex gap-4 items-center"
       >
         {/* Theme Toggle */}
         <button
           onClick={toggleTheme}
           aria-label="Toggle theme"
-          style={{
-            background: "transparent",
-            border: "none",
-            cursor: "pointer",
-            color: "var(--text-muted)",
-            fontSize: "0.82rem",
-            fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
-            transition: "color 0.25s ease",
-            padding: "0.25rem 0",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = "var(--text-primary)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = "var(--text-muted)";
-          }}
+          className="bg-transparent border-none cursor-pointer text-muted-foreground hover:text-foreground text-[0.82rem] font-semibold uppercase tracking-[0.08em] transition-colors duration-250 py-1"
         >
           <AnimatePresence mode="wait" initial={false}>
             {!isDark ? (
@@ -182,29 +122,9 @@ export default function Navbar() {
         <button
           onClick={logout}
           aria-label="Sign out"
-          style={{
-            background: "transparent",
-            border: "none",
-            cursor: "pointer",
-            color: "var(--status-danger)",
-            fontSize: "0.82rem",
-            fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
-            transition: "color 0.25s ease",
-            padding: "0.25rem 0",
-            display: "flex",
-            alignItems: "center",
-            gap: "0.35rem",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = "#ff6b6b";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = "var(--status-danger)";
-          }}
+          className="bg-transparent border-none cursor-pointer text-destructive/80 hover:text-destructive text-[0.82rem] font-semibold uppercase tracking-[0.08em] transition-colors duration-250 py-1 flex items-center gap-1.5"
         >
-          <LogOut size={14} /> Sign Out
+          Sign Out <LogOut size={14} />
         </button>
       </motion.div>
     </nav>

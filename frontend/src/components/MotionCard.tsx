@@ -22,7 +22,7 @@ export default function MotionCard({
 }: MotionCardProps) {
   return (
     <motion.div
-      className={`card ${className}`}
+      className={`bg-card text-card-foreground border border-border rounded-2xl p-6 shadow-sm transition-colors ${className}`}
       style={style}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
@@ -35,7 +35,7 @@ export default function MotionCard({
         hover
           ? {
               y: -4,
-              boxShadow: "0 8px 32px rgba(97, 205, 255, 0.08), 0 0 0 1px rgba(97, 205, 255, 0.12)",
+              boxShadow: "0 8px 30px rgba(0, 0, 0, 0.12)",
               transition: { duration: 0.25 },
             }
           : undefined

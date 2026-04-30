@@ -63,16 +63,9 @@ const getVelocityLabel = (velocity: number): string => {
 };
 
 const getVelocityIcon = (velocity: number) => {
-  if (velocity > 1.05) return <TrendingUp style={{ color: "var(--status-safe)" }} size={14} />;
-  if (velocity < 0.95) return <TrendingDown style={{ color: "var(--status-danger)" }} size={14} />;
-  return <Minus style={{ color: "var(--text-muted)" }} size={14} />;
-};
-
-const sectionDivider: React.CSSProperties = {
-  height: "1px",
-  background: "var(--border-subtle)",
-  border: "none",
-  margin: 0,
+  if (velocity > 1.05) return <TrendingUp className="text-green-600 dark:text-green-400" size={14} />;
+  if (velocity < 0.95) return <TrendingDown className="text-red-600 dark:text-red-400" size={14} />;
+  return <Minus className="text-muted-foreground" size={14} />;
 };
 
 /* ═══════════════════════════════════════════════════════════
@@ -186,18 +179,18 @@ export default function ScreentimeSensePage() {
   return (
     <>
       <Navbar />
-      <main className="container" style={{ paddingTop: "5rem", paddingBottom: "3rem" }}>
+      <main className="max-w-6xl mx-auto px-8 pt-32 pb-12">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          style={{ marginBottom: "2rem" }}
+          className="mb-8"
         >
-          <h1 style={{ fontSize: "2rem", fontWeight: 700, letterSpacing: "-0.02em", marginBottom: "0.3rem" }}>
+          <h1 className="text-3xl font-bold tracking-tight mb-1.5">
             ScreentimeSense
           </h1>
-          <p style={{ color: "var(--text-secondary)" }}>
+          <p className="text-muted-foreground">
             Analyze your app usage against personal hourly value to find zombie subscriptions.
           </p>
         </motion.div>
@@ -214,18 +207,18 @@ export default function ScreentimeSensePage() {
               exit={{ opacity: 0, y: -16 }}
               transition={{ duration: 0.4 }}
             >
-              <MotionCard style={{ maxWidth: "28rem", margin: "0 auto" }} hover={false}>
-                <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.5rem" }}>
+              <MotionCard className="max-w-[28rem] mx-auto" hover={false}>
+                <h2 className="text-xl font-bold mb-2">
                   Set Your Baseline
                 </h2>
-                <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "1.5rem" }}>
+                <p className="text-[0.85rem] text-muted-foreground mb-6">
                   We calculate &quot;Cost Per Hour&quot; (CPH) and compare it against your hourly wage to judge subscription value.
                 </p>
 
-                <form onSubmit={saveSettings} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                <form onSubmit={saveSettings} className="flex flex-col gap-4">
                   {/* Hourly Wage */}
                   <div>
-                    <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 500, marginBottom: "0.35rem" }}>
+                    <label className="block text-[0.85rem] font-medium mb-1.5">
                       Your Hourly Wage ($)
                     </label>
                     <input
@@ -236,12 +229,13 @@ export default function ScreentimeSensePage() {
                       value={globalSettings.user_wage}
                       onChange={(e) => setGlobalSettings({ ...globalSettings, user_wage: e.target.value })}
                       placeholder="20.00"
+                      className="w-full"
                     />
                   </div>
 
                   {/* Budgeting Style — Custom Dropdown */}
                   <div>
-                    <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 500, marginBottom: "0.35rem" }}>
+                    <label className="block text-[0.85rem] font-medium mb-1.5">
                       Budgeting Style
                     </label>
                     {(() => {
@@ -252,32 +246,14 @@ export default function ScreentimeSensePage() {
                       ];
                       const selected = options.find((o) => o.value === globalSettings.style_multiplier) || options[1];
                       return (
-                        <div style={{ position: "relative" }}>
+                        <div className="relative">
                           <button
                             type="button"
                             onClick={() => setDropdownOpen(!dropdownOpen)}
-                            style={{
-                              width: "100%",
-                              padding: "0.7rem 1rem",
-                              borderRadius: "10px",
-                              border: "1px solid rgba(255,255,255,0.1)",
-                              background: "rgba(255,255,255,0.05)",
-                              color: "var(--text-primary)",
-                              fontSize: "0.9rem",
-                              fontWeight: 500,
-                              textAlign: "left",
-                              cursor: "pointer",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                              transition: "border-color 0.2s, background 0.2s",
-                              outline: "none",
-                            }}
-                            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--accent-teal)")}
-                            onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}
+                            className="w-full px-4 py-3 rounded-xl border border-border bg-secondary text-foreground text-sm font-medium text-left cursor-pointer flex items-center justify-between transition-colors focus:border-primary outline-none"
                           >
                             {selected.label}
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ opacity: 0.5, transform: dropdownOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className={`opacity-50 transition-transform duration-200 ${dropdownOpen ? "rotate-180" : "rotate-0"}`}>
                               <path d="M4 6L8 10L12 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                             </svg>
                           </button>
@@ -288,23 +264,7 @@ export default function ScreentimeSensePage() {
                                 animate={{ opacity: 1, y: 4, scale: 1 }}
                                 exit={{ opacity: 0, y: -6, scale: 0.97 }}
                                 transition={{ duration: 0.18, ease: "easeOut" }}
-                                style={{
-                                  position: "absolute",
-                                  top: "100%",
-                                  left: 0,
-                                  right: 0,
-                                  zIndex: 60,
-                                  listStyle: "none",
-                                  margin: 0,
-                                  padding: "0.35rem",
-                                  borderRadius: "12px",
-                                  background: "rgba(22, 22, 22, 0.95)",
-                                  backdropFilter: "blur(20px)",
-                                  WebkitBackdropFilter: "blur(20px)",
-                                  border: "1px solid rgba(255,255,255,0.1)",
-                                  boxShadow: "0 16px 40px rgba(0,0,0,0.5)",
-                                  overflow: "hidden",
-                                }}
+                                className="absolute top-full left-0 right-0 z-50 list-none m-0 p-1.5 rounded-xl bg-background/95 backdrop-blur-lg border border-border shadow-lg overflow-hidden mt-1"
                               >
                                 {options.map((opt) => (
                                   <li
@@ -313,23 +273,11 @@ export default function ScreentimeSensePage() {
                                       setGlobalSettings({ ...globalSettings, style_multiplier: opt.value });
                                       setDropdownOpen(false);
                                     }}
-                                    style={{
-                                      padding: "0.6rem 0.85rem",
-                                      borderRadius: "8px",
-                                      fontSize: "0.88rem",
-                                      cursor: "pointer",
-                                      color: opt.value === globalSettings.style_multiplier ? "#ffffff" : "var(--text-secondary)",
-                                      background: opt.value === globalSettings.style_multiplier ? "rgba(255,255,255,0.08)" : "transparent",
-                                      transition: "background 0.15s, color 0.15s",
-                                    }}
-                                    onMouseEnter={(e) => {
-                                      e.currentTarget.style.background = "rgba(255,255,255,0.06)";
-                                      e.currentTarget.style.color = "#ffffff";
-                                    }}
-                                    onMouseLeave={(e) => {
-                                      e.currentTarget.style.background = opt.value === globalSettings.style_multiplier ? "rgba(255,255,255,0.08)" : "transparent";
-                                      e.currentTarget.style.color = opt.value === globalSettings.style_multiplier ? "#ffffff" : "var(--text-secondary)";
-                                    }}
+                                    className={`px-3.5 py-2.5 rounded-lg text-[0.88rem] cursor-pointer transition-colors ${
+                                      opt.value === globalSettings.style_multiplier
+                                        ? "text-foreground bg-secondary/80"
+                                        : "text-muted-foreground bg-transparent hover:bg-secondary/50 hover:text-foreground"
+                                    }`}
                                   >
                                     {opt.label}
                                   </li>
@@ -343,59 +291,35 @@ export default function ScreentimeSensePage() {
                   </div>
 
                   {/* Student Toggle */}
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.75rem",
-                      padding: "0.75rem 1rem",
-                      borderRadius: "12px",
-                      background: "var(--bg-secondary)",
-                    }}
-                  >
-                    <label style={{ position: "relative", width: "2.75rem", height: "1.5rem", display: "inline-block", flexShrink: 0 }}>
+                  <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-secondary">
+                    <label className="relative w-11 h-6 inline-block shrink-0">
                       <input
                         type="checkbox"
                         checked={globalSettings.is_student}
                         onChange={(e) => setGlobalSettings({ ...globalSettings, is_student: e.target.checked })}
-                        style={{ opacity: 0, width: 0, height: 0, position: "absolute" }}
+                        className="opacity-0 w-0 h-0 absolute"
                       />
                       <span
-                        style={{
-                          position: "absolute",
-                          cursor: "pointer",
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          background: globalSettings.is_student ? "var(--accent-teal)" : "var(--bg-tertiary)",
-                          borderRadius: "1rem",
-                          transition: "0.3s",
-                        }}
+                        className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition-colors duration-300 ${
+                          globalSettings.is_student ? "bg-cyan-500" : "bg-muted"
+                        }`}
                       >
                         <span
-                          style={{
-                            position: "absolute",
-                            height: "1.1rem",
-                            width: "1.1rem",
-                            left: globalSettings.is_student ? "1.45rem" : "0.2rem",
-                            bottom: "0.2rem",
-                            background: "#fff",
-                            borderRadius: "50%",
-                            transition: "0.3s",
-                          }}
+                          className={`absolute h-4 w-4 bg-white rounded-full transition-all duration-300 bottom-1 ${
+                            globalSettings.is_student ? "left-[1.45rem]" : "left-[0.2rem]"
+                          }`}
                         />
                       </span>
                     </label>
                     <div>
-                      <span style={{ fontSize: "0.85rem", fontWeight: 500 }}>I&apos;m a Student</span>
-                      <p style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.1rem" }}>
+                      <span className="text-[0.85rem] font-medium">I&apos;m a Student</span>
+                      <p className="text-[0.75rem] text-muted-foreground mt-0.5">
                         Scans Google Calendar for exams &amp; suggests pausing entertainment subscriptions.
                       </p>
                     </div>
                   </div>
 
-                  <button type="submit" className="btn-primary" style={{ marginTop: "0.5rem", padding: "0.75rem" }}>
+                  <button type="submit" className="w-full py-3 mt-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl font-semibold transition-colors shadow-sm">
                     Save Settings &amp; Continue
                   </button>
                 </form>
@@ -411,44 +335,43 @@ export default function ScreentimeSensePage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
               transition={{ duration: 0.4 }}
-              style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "1.5rem" }}
+              className="grid grid-cols-1 md:grid-cols-3 gap-6"
             >
               {/* ── Left: Add Subscription Form ── */}
               <div>
                 <MotionCard hover={false}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "1rem", marginBottom: "1.25rem" }}>
-                    <h2 style={{ fontSize: "1.1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", margin: 0 }}>
-                      <Plus size={18} style={{ color: "var(--accent-teal)" }} /> Add Subscription
+                  <div className="flex justify-between items-center pb-4 mb-5 border-b border-border">
+                    <h2 className="text-lg font-bold flex items-center gap-2 m-0">
+                      <Plus size={18} className="text-cyan-500" /> Add Subscription
                     </h2>
-                    <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                    <span className="text-xs text-muted-foreground">
                       ${(parseFloat(globalSettings.user_wage || "0") * globalSettings.style_multiplier).toFixed(2)}/hr
                     </span>
                   </div>
-                  <hr style={sectionDivider} />
 
-                  <form onSubmit={addSubscription} style={{ display: "flex", flexDirection: "column", gap: "1.25rem", marginTop: "1.25rem" }}>
+                  <form onSubmit={addSubscription} className="flex flex-col gap-5">
                     {/* App Name */}
                     <div>
-                      <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 500, marginBottom: "0.35rem" }}>App Name</label>
-                      <input required type="text" placeholder="e.g. Netflix, Duolingo, ChatGPT" value={formData.app_name} onChange={(e) => setFormData({ ...formData, app_name: e.target.value })} />
+                      <label className="block text-[0.85rem] font-medium mb-1.5">App Name</label>
+                      <input required type="text" placeholder="e.g. Netflix, Duolingo, ChatGPT" value={formData.app_name} onChange={(e) => setFormData({ ...formData, app_name: e.target.value })} className="w-full" />
                     </div>
 
                     {/* Cost + Months row */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                    <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 500, marginBottom: "0.35rem" }}>Cost ($)</label>
-                        <input required type="number" step="0.01" placeholder="14.99" value={formData.cost} onChange={(e) => setFormData({ ...formData, cost: e.target.value })} />
+                        <label className="block text-[0.85rem] font-medium mb-1.5">Cost ($)</label>
+                        <input required type="number" step="0.01" placeholder="14.99" value={formData.cost} onChange={(e) => setFormData({ ...formData, cost: e.target.value })} className="w-full" />
                       </div>
                       <div>
-                        <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 500, marginBottom: "0.35rem" }}>Months</label>
-                        <input required type="number" min="1" value={formData.months_subscribed} onChange={(e) => setFormData({ ...formData, months_subscribed: e.target.value })} />
+                        <label className="block text-[0.85rem] font-medium mb-1.5">Months</label>
+                        <input required type="number" min="1" value={formData.months_subscribed} onChange={(e) => setFormData({ ...formData, months_subscribed: e.target.value })} className="w-full" />
                       </div>
                     </div>
 
                     {/* Weekly Hours */}
                     <div>
-                      <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: "0.5rem" }}>Screen Time (Hours per week)</label>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "1rem", padding: "1rem", borderRadius: "14px", background: "var(--bg-secondary)" }}>
+                      <label className="block text-[0.85rem] font-semibold mb-2">Screen Time (Hours per week)</label>
+                      <div className="grid grid-cols-4 gap-4 p-4 rounded-xl bg-secondary">
                         {(
                           [
                             ["Wk 1", "w1"],
@@ -458,14 +381,14 @@ export default function ScreentimeSensePage() {
                           ] as const
                         ).map(([label, key]) => (
                           <div key={key}>
-                            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "0.25rem" }}>{label}</span>
+                            <span className="text-[0.75rem] text-muted-foreground block mb-1">{label}</span>
                             <input
                               required
                               type="number"
                               step="0.1"
                               min="0"
                               placeholder="hrs"
-                              style={{ width: "100%", minWidth: "3.5rem", textAlign: "center" }}
+                              className="w-full min-w-[3.5rem] text-center"
                               value={formData[key]}
                               onChange={(e) => setFormData({ ...formData, [key]: e.target.value })}
                             />
@@ -474,7 +397,7 @@ export default function ScreentimeSensePage() {
                       </div>
                     </div>
 
-                    <button type="submit" className="btn-primary" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem", padding: "0.75rem" }}>
+                    <button type="submit" className="w-full flex items-center justify-center gap-2 py-3 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl font-semibold transition-colors shadow-sm">
                       <Plus size={16} /> Add to Queue
                     </button>
                   </form>
@@ -482,24 +405,23 @@ export default function ScreentimeSensePage() {
               </div>
 
               {/* ── Right: Queue List ── */}
-              <div>
-                <MotionCard hover={false} style={{ minHeight: "400px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                    <h2 style={{ fontSize: "1.1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", margin: 0 }}>
-                      <Layers size={18} style={{ color: "var(--accent-teal)" }} /> Subscription Queue
+              <div className="md:col-span-2">
+                <MotionCard hover={false} className="min-h-[400px]">
+                  <div className="flex justify-between items-center pb-4 mb-5 border-b border-border">
+                    <h2 className="text-lg font-bold flex items-center gap-2 m-0">
+                      <Layers size={18} className="text-cyan-500" /> Subscription Queue
                     </h2>
-                    <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                    <span className="text-[0.85rem] text-muted-foreground">
                       {subscriptions.length} subscription{subscriptions.length !== 1 ? "s" : ""}
                     </span>
                   </div>
-                  <hr style={sectionDivider} />
 
                   {/* Error Banner */}
                   {error && (
                     <motion.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: "auto" }}
-                      style={{ display: "flex", gap: "0.5rem", alignItems: "center", padding: "0.75rem 1rem", background: "var(--status-danger-bg)", color: "var(--status-danger)", borderRadius: "10px", marginTop: "1rem", fontSize: "0.85rem" }}
+                      className="flex gap-2 items-center px-4 py-3 bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl mb-4 text-[0.85rem]"
                     >
                       <AlertTriangle size={16} />
                       <span>{error}</span>
@@ -508,49 +430,28 @@ export default function ScreentimeSensePage() {
 
                   {subscriptions.length === 0 ? (
                     /* Empty State */
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "4rem 2rem", opacity: 0.4 }}>
-                      <Clock size={48} style={{ color: "var(--text-muted)", marginBottom: "1rem" }} />
-                      <p style={{ fontSize: "1rem", fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--text-muted)" }}>No Subscriptions Yet</p>
-                      <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", textAlign: "center", maxWidth: "18rem", marginTop: "0.5rem" }}>
+                    <div className="flex flex-col items-center justify-center py-16 px-8 opacity-40">
+                      <Clock size={48} className="text-muted-foreground mb-4" />
+                      <p className="text-base font-semibold tracking-wide uppercase text-muted-foreground">No Subscriptions Yet</p>
+                      <p className="text-[0.85rem] text-muted-foreground text-center max-w-[18rem] mt-2">
                         Add subscriptions using the form to build your analysis queue.
                       </p>
                     </div>
                   ) : (
                     /* Queue Items + Analyze Button */
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "1rem" }}>
+                    <div className="flex flex-col gap-3">
                       {subscriptions.map((sub, i) => (
                         <div
                           key={sub.id}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            padding: "1rem 1.25rem",
-                            borderRadius: "14px",
-                            background: "var(--bg-secondary)",
-                            transition: "all 0.2s ease",
-                          }}
+                          className="flex items-center justify-between px-5 py-4 rounded-xl bg-secondary transition-all duration-200"
                         >
-                          <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-                            <span
-                              style={{
-                                width: "2rem",
-                                height: "2rem",
-                                borderRadius: "10px",
-                                background: "var(--accent-teal-light)",
-                                color: "var(--accent-teal)",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: "0.8rem",
-                                fontWeight: 700,
-                              }}
-                            >
+                          <div className="flex items-center gap-4">
+                            <span className="w-8 h-8 rounded-lg bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 flex items-center justify-center text-[0.8rem] font-bold">
                               {i + 1}
                             </span>
                             <div>
-                              <p style={{ fontWeight: 600, fontSize: "0.85rem" }}>{sub.app_name}</p>
-                              <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                              <p className="font-semibold text-[0.85rem]">{sub.app_name}</p>
+                              <p className="text-[0.75rem] text-muted-foreground mt-0.5">
                                 ${sub.cost}/billing • {sub.months_subscribed}mo •{" "}
                                 {sub.weekly_hours.reduce((a, b) => a + b, 0).toFixed(1)} hrs total
                               </p>
@@ -558,7 +459,7 @@ export default function ScreentimeSensePage() {
                           </div>
                           <button
                             onClick={() => removeSubscription(sub.id)}
-                            style={{ background: "none", border: "none", padding: "0.4rem", color: "var(--status-danger)", opacity: 0.6, cursor: "pointer" }}
+                            className="bg-transparent border-none p-1.5 text-red-500/60 hover:text-red-500 cursor-pointer transition-colors"
                           >
                             <Trash2 size={16} />
                           </button>
@@ -568,8 +469,7 @@ export default function ScreentimeSensePage() {
                       <button
                         onClick={handleAnalyzeBatch}
                         disabled={loading}
-                        className="btn-primary"
-                        style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem", padding: "0.75rem", marginTop: "1rem" }}
+                        className="w-full flex items-center justify-center gap-2 py-3 mt-4 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-semibold transition-colors shadow-sm"
                       >
                         {loading ? (
                           <>
@@ -581,7 +481,7 @@ export default function ScreentimeSensePage() {
                           </>
                         )}
                       </button>
-                      <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", textAlign: "center", marginTop: "0.25rem" }}>
+                      <p className="text-xs text-muted-foreground text-center mt-1">
                         All {subscriptions.length} Gemini calls fire in parallel — takes ~3 seconds regardless of count.
                       </p>
                     </div>
@@ -598,29 +498,29 @@ export default function ScreentimeSensePage() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
-              style={{ display: "flex", flexDirection: "column", gap: "2rem" }}
+              className="flex flex-col gap-8"
             >
               {/* ── Summary Bar ── */}
-              <MotionCard hover={false} style={{ background: "var(--bg-primary)" }}>
-                <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: "1rem" }}>
+              <MotionCard hover={false} className="bg-background">
+                <div className="flex flex-wrap justify-between items-center gap-4">
                   <div>
-                    <h2 style={{ fontSize: "1.25rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
-                      <BarChart3 size={20} style={{ color: "var(--accent-teal)" }} /> Analysis Complete
+                    <h2 className="text-xl font-bold flex items-center gap-2 mb-1">
+                      <BarChart3 size={20} className="text-cyan-500" /> Analysis Complete
                     </h2>
-                    <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                    <p className="text-[0.85rem] text-muted-foreground">
                       {batchResults.count} subscription{batchResults.count !== 1 ? "s" : ""} analyzed in parallel
                     </p>
                   </div>
-                  <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+                  <div className="flex gap-4 items-center">
                     {batchResults.portfolio?.saturated_categories > 0 && (
-                      <div style={{ textAlign: "right" }}>
-                        <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Portfolio Savings</p>
-                        <p style={{ fontWeight: 700, color: "var(--status-safe)", fontSize: "1.25rem" }}>
+                      <div className="text-right pr-4 border-r border-border">
+                        <p className="text-xs text-muted-foreground mb-0.5">Portfolio Savings</p>
+                        <p className="font-bold text-green-600 dark:text-green-400 text-xl">
                           ${batchResults.portfolio.total_potential_savings_annual.toFixed(2)}/yr
                         </p>
                       </div>
                     )}
-                    <button onClick={resetAll} style={{ color: "var(--accent-teal)", fontSize: "0.85rem", background: "none", border: "none" }}>
+                    <button onClick={resetAll} className="text-cyan-600 dark:text-cyan-400 text-[0.85rem] font-semibold bg-transparent border-none cursor-pointer hover:underline">
                       ← New Analysis
                     </button>
                   </div>
@@ -629,14 +529,13 @@ export default function ScreentimeSensePage() {
 
               {/* ── Portfolio Analysis (Category Saturation) ── */}
               {batchResults.portfolio?.category_insights?.length > 0 && (
-                <MotionCard hover={false} delay={0.1} style={{ borderTop: "3px solid var(--accent-gold)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
-                    <Layers size={20} style={{ color: "var(--accent-gold)" }} />
-                    <h3 style={{ fontWeight: 700, margin: 0 }}>Portfolio Analysis — Category Saturation</h3>
+                <MotionCard hover={false} delay={0.1} className="border-t-[3px] border-t-yellow-500">
+                  <div className="flex items-center gap-2 mb-4 pb-4 border-b border-border">
+                    <Layers size={20} className="text-yellow-600 dark:text-yellow-500" />
+                    <h3 className="font-bold m-0">Portfolio Analysis — Category Saturation</h3>
                   </div>
-                  <hr style={sectionDivider} />
 
-                  <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", marginTop: "1rem" }}>
+                  <div className="flex flex-col gap-6">
                     {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                     {batchResults.portfolio.category_insights.map((insight: any, idx: number) => (
                       <motion.div
@@ -644,41 +543,29 @@ export default function ScreentimeSensePage() {
                         initial={{ opacity: 0, y: 12 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.4, delay: 0.15 + idx * 0.1 }}
-                        style={{ padding: "1.25rem", borderRadius: "16px", background: "var(--bg-secondary)" }}
+                        className="p-5 rounded-2xl bg-secondary"
                       >
                         {/* Category Header */}
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                            <Badge variant="warn" style={{ fontSize: "0.7rem", fontWeight: 700 }}>
+                        <div className="flex justify-between items-center mb-3">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="warn" className="text-[0.7rem]">
                               {insight.subscription_count} SUBSCRIPTIONS
                             </Badge>
-                            <h4 style={{ fontWeight: 700, margin: 0, textTransform: "capitalize" }}>{insight.category_label}</h4>
+                            <h4 className="font-bold m-0 capitalize text-lg">{insight.category_label}</h4>
                           </div>
-                          <span style={{ fontSize: "0.9rem", fontWeight: 700 }}>
+                          <span className="text-[0.9rem] font-bold">
                             ${insight.total_monthly_cost.toFixed(2)}/mo
                           </span>
                         </div>
 
                         {/* Ranked Subscriptions Table */}
-                        <div style={{ borderRadius: "12px", overflow: "hidden", border: "1px solid var(--border-subtle)", background: "var(--bg-primary)" }}>
+                        <div className="rounded-xl overflow-hidden border border-border bg-background">
                           {/* Table Header */}
-                          <div
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: "1fr 1fr 1fr 1fr",
-                              padding: "0.75rem",
-                              backgroundColor: "var(--bg-secondary)",
-                              fontSize: "0.7rem",
-                              fontWeight: 700,
-                              textTransform: "uppercase",
-                              letterSpacing: "0.06em",
-                              color: "var(--text-muted)",
-                            }}
-                          >
+                          <div className="grid grid-cols-4 p-3 bg-secondary text-[0.7rem] font-bold uppercase tracking-[0.06em] text-muted-foreground">
                             <span>Rank</span>
                             <span>Subscription</span>
-                            <span style={{ textAlign: "right" }}>CPH</span>
-                            <span style={{ textAlign: "right" }}>Cost</span>
+                            <span className="text-right">CPH</span>
+                            <span className="text-right">Cost</span>
                           </div>
 
                           {/* Table Rows — staggered entrance */}
@@ -689,48 +576,38 @@ export default function ScreentimeSensePage() {
                               initial={{ opacity: 0, x: -8 }}
                               animate={{ opacity: 1, x: 0 }}
                               transition={{ duration: 0.3, delay: 0.25 + idx * 0.1 + rowIdx * 0.08 }}
-                              style={{
-                                display: "grid",
-                                gridTemplateColumns: "1fr 1fr 1fr 1fr",
-                                padding: "0.75rem",
-                                alignItems: "center",
-                                borderTop: "1px solid var(--border-subtle)",
-                                backgroundColor: sub.is_best_value
-                                  ? "var(--status-safe-bg)"
+                              className={`grid grid-cols-4 p-3 items-center border-t border-border ${
+                                sub.is_best_value
+                                  ? "bg-green-500/10"
                                   : sub.is_worst_value
-                                  ? "var(--status-danger-bg)"
-                                  : "transparent",
-                              }}
+                                  ? "bg-red-500/10"
+                                  : "bg-transparent"
+                              }`}
                             >
                               <span
-                                style={{
-                                  fontSize: "0.85rem",
-                                  fontWeight: 700,
-                                  color: sub.is_best_value
-                                    ? "var(--status-safe)"
+                                className={`text-[0.85rem] font-bold ${
+                                  sub.is_best_value
+                                    ? "text-green-600 dark:text-green-400"
                                     : sub.is_worst_value
-                                    ? "var(--status-danger)"
-                                    : "inherit",
-                                }}
+                                    ? "text-red-600 dark:text-red-400"
+                                    : "text-inherit"
+                                }`}
                               >
                                 #{sub.rank} {sub.is_best_value ? "👑" : sub.is_worst_value ? "⚠️" : ""}
                               </span>
-                              <span style={{ fontSize: "0.85rem", fontWeight: 500 }}>{sub.app_name}</span>
+                              <span className="text-[0.85rem] font-medium">{sub.app_name}</span>
                               <span
-                                style={{
-                                  fontSize: "0.85rem",
-                                  textAlign: "right",
-                                  fontWeight: 500,
-                                  color: sub.is_best_value
-                                    ? "var(--status-safe)"
+                                className={`text-[0.85rem] text-right font-medium ${
+                                  sub.is_best_value
+                                    ? "text-green-600 dark:text-green-400"
                                     : sub.is_worst_value
-                                    ? "var(--status-danger)"
-                                    : "inherit",
-                                }}
+                                    ? "text-red-600 dark:text-red-400"
+                                    : "text-inherit"
+                                }`}
                               >
                                 ${sub.cph.toFixed(2)}/hr
                               </span>
-                              <span style={{ fontSize: "0.85rem", textAlign: "right", color: "var(--text-muted)" }}>
+                              <span className="text-[0.85rem] text-right text-muted-foreground">
                                 ${sub.monthly_cost.toFixed(2)}/mo
                               </span>
                             </motion.div>
@@ -738,26 +615,19 @@ export default function ScreentimeSensePage() {
                         </div>
 
                         {/* Savings Callout Cards */}
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", marginTop: "0.75rem" }}>
+                        <div className="flex flex-wrap gap-4 mt-3">
                           <motion.div
                             initial={{ opacity: 0, y: 8 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ duration: 0.35, delay: 0.4 + idx * 0.1 }}
-                            style={{
-                              flex: 1,
-                              minWidth: "200px",
-                              padding: "0.75rem 1rem",
-                              borderRadius: "12px",
-                              background: "var(--bg-primary)",
-                              border: "1px solid var(--border-subtle)",
-                            }}
+                            className="flex-1 min-w-[200px] py-3 px-4 rounded-xl bg-background border border-border"
                           >
-                            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                            <p className="text-xs text-muted-foreground mb-1">
                               Drop {insight.worst_value.name}
                             </p>
-                            <p style={{ fontWeight: 700, color: "var(--status-safe)" }}>
+                            <p className="font-bold text-green-600 dark:text-green-400">
                               ${insight.savings_drop_worst.toFixed(2)}/mo{" "}
-                              <span style={{ fontSize: "0.75rem", fontWeight: 500, color: "var(--text-muted)" }}>
+                              <span className="text-xs font-medium text-muted-foreground">
                                 (${insight.savings_drop_worst_annual.toFixed(2)}/yr)
                               </span>
                             </p>
@@ -768,21 +638,14 @@ export default function ScreentimeSensePage() {
                               initial={{ opacity: 0, y: 8 }}
                               animate={{ opacity: 1, y: 0 }}
                               transition={{ duration: 0.35, delay: 0.5 + idx * 0.1 }}
-                              style={{
-                                flex: 1,
-                                minWidth: "200px",
-                                padding: "0.75rem 1rem",
-                                borderRadius: "12px",
-                                background: "var(--bg-primary)",
-                                border: "1px solid var(--border-subtle)",
-                              }}
+                              className="flex-1 min-w-[200px] py-3 px-4 rounded-xl bg-background border border-border"
                             >
-                              <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                              <p className="text-xs text-muted-foreground mb-1">
                                 Keep only {insight.best_value.name}
                               </p>
-                              <p style={{ fontWeight: 700, color: "var(--status-safe)" }}>
+                              <p className="font-bold text-green-600 dark:text-green-400">
                                 ${insight.savings_keep_best_only.toFixed(2)}/mo{" "}
-                                <span style={{ fontSize: "0.75rem", fontWeight: 500, color: "var(--text-muted)" }}>
+                                <span className="text-xs font-medium text-muted-foreground">
                                   (${insight.savings_keep_best_only_annual.toFixed(2)}/yr)
                                 </span>
                               </p>
@@ -791,7 +654,7 @@ export default function ScreentimeSensePage() {
                         </div>
 
                         {/* Recommendation */}
-                        <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "0.75rem", fontStyle: "italic" }}>
+                        <p className="text-[0.78rem] text-muted-foreground mt-3 italic">
                           {insight.recommendation}
                         </p>
                       </motion.div>
@@ -810,38 +673,25 @@ export default function ScreentimeSensePage() {
                   <MotionCard
                     hover={false}
                     delay={0.25}
-                    style={{
-                      background: "rgba(97, 205, 255, 0.05)",
-                      border: "1px solid rgba(97, 205, 255, 0.2)",
-                      padding: "1.5rem",
-                    }}
+                    className="bg-cyan-500/5 border-cyan-500/20"
                   >
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem" }}>
-                      <div style={{ flex: 1 }}>
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1">
                         {/* Title */}
-                        <h3 style={{ fontSize: "1rem", fontWeight: 700, marginBottom: "0.25rem" }}>
+                        <h3 className="text-base font-bold mb-1">
                           Exam Season Detected
                         </h3>
-                        <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "0.75rem" }}>
+                        <p className="text-[0.85rem] text-muted-foreground mb-3">
                           {batchResults.exam_alert.message}
                         </p>
 
                         {/* Upcoming Exams */}
                         {batchResults.exam_alert.exams.length > 0 && (
-                          <div style={{ marginBottom: "0.75rem" }}>
-                            <p
-                              style={{
-                                fontSize: "0.7rem",
-                                fontWeight: 700,
-                                textTransform: "uppercase",
-                                letterSpacing: "0.06em",
-                                color: "var(--text-muted)",
-                                marginBottom: "0.4rem",
-                              }}
-                            >
+                          <div className="mb-3">
+                            <p className="text-[0.7rem] font-bold uppercase tracking-[0.06em] text-muted-foreground mb-1.5">
                               Upcoming Exams
                             </p>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                            <div className="flex flex-wrap gap-2">
                               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                               {batchResults.exam_alert.exams.map((exam: any, i: number) => (
                                 <motion.span
@@ -849,14 +699,7 @@ export default function ScreentimeSensePage() {
                                   initial={{ opacity: 0, scale: 0.9 }}
                                   animate={{ opacity: 1, scale: 1 }}
                                   transition={{ duration: 0.3, delay: 0.35 + i * 0.06 }}
-                                  style={{
-                                    fontSize: "0.75rem",
-                                    fontWeight: 500,
-                                    padding: "0.25rem 0.6rem",
-                                    borderRadius: "0.5rem",
-                                    background: "rgba(97, 205, 255, 0.12)",
-                                    color: "var(--accent-teal)",
-                                  }}
+                                  className="text-[0.75rem] font-medium px-2.5 py-1 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400"
                                 >
                                   {exam.name} — {exam.date?.slice(0, 10) || "TBD"}
                                 </motion.span>
@@ -868,19 +711,10 @@ export default function ScreentimeSensePage() {
                         {/* Pausable Subscriptions */}
                         {batchResults.exam_alert.pausable_subscriptions.length > 0 && (
                           <div>
-                            <p
-                              style={{
-                                fontSize: "0.7rem",
-                                fontWeight: 700,
-                                textTransform: "uppercase",
-                                letterSpacing: "0.06em",
-                                color: "var(--text-muted)",
-                                marginBottom: "0.35rem",
-                              }}
-                            >
+                            <p className="text-[0.7rem] font-bold uppercase tracking-[0.06em] text-muted-foreground mb-1.5">
                               Consider Pausing
                             </p>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+                            <div className="flex flex-wrap gap-2">
                               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                               {batchResults.exam_alert.pausable_subscriptions.map((sub: any, i: number) => (
                                 <motion.span
@@ -889,7 +723,7 @@ export default function ScreentimeSensePage() {
                                   animate={{ opacity: 1, scale: 1 }}
                                   transition={{ duration: 0.3, delay: 0.4 + i * 0.06 }}
                                 >
-                                  <Badge variant="warn" style={{ fontSize: "0.72rem" }}>
+                                  <Badge variant="warn" className="text-[0.72rem]">
                                     {sub.name} (${sub.monthly_cost.toFixed(2)}/mo)
                                   </Badge>
                                 </motion.span>
@@ -899,7 +733,7 @@ export default function ScreentimeSensePage() {
                                 animate={{ opacity: 1, scale: 1 }}
                                 transition={{ duration: 0.3, delay: 0.55 }}
                               >
-                                <Badge variant="safe" style={{ fontSize: "0.72rem", fontWeight: 700 }}>
+                                <Badge variant="safe" className="text-[0.72rem] font-bold">
                                   Save ${batchResults.exam_alert.total_monthly_savings.toFixed(2)}/mo
                                 </Badge>
                               </motion.span>
@@ -918,21 +752,21 @@ export default function ScreentimeSensePage() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: 0.3 }}
-                  style={{ fontWeight: 700, fontSize: "1.1rem", marginBottom: "1rem" }}
+                  className="font-bold text-lg mb-4"
                 >
                   Individual Analysis
                 </motion.h3>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                   {batchResults.results.map((result: any, i: number) => {
                     const actionVariant = getActionColor(result.action);
                     const borderColor =
                       actionVariant === "safe"
-                        ? "var(--status-safe)"
+                        ? "border-l-green-500"
                         : actionVariant === "danger"
-                        ? "var(--status-danger)"
-                        : "var(--status-warn)";
+                        ? "border-l-red-500"
+                        : "border-l-yellow-500";
                     const isExpanded = expandedResult === i;
                     const wageThreshold =
                       parseFloat(globalSettings.user_wage || "0") * globalSettings.style_multiplier;
@@ -944,96 +778,52 @@ export default function ScreentimeSensePage() {
                         initial={{ opacity: 0, y: 14 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.4, delay: 0.35 + i * 0.08 }}
-                        className="card"
+                        className={`bg-card text-card-foreground border border-border border-l-[4px] ${borderColor} rounded-2xl p-5 shadow-sm cursor-pointer transition-transform hover:-translate-y-0.5 hover:shadow-md`}
                         onClick={() => setExpandedResult(isExpanded ? null : i)}
-                        style={{
-                          padding: "1.25rem",
-                          borderLeft: `4px solid ${borderColor}`,
-                          cursor: "pointer",
-                          transition: "transform 0.2s ease, box-shadow 0.2s ease",
-                        }}
-                        whileHover={{
-                          y: -2,
-                          boxShadow: "0 6px 24px rgba(0,0,0,0.25)",
-                          transition: { duration: 0.2 },
-                        }}
                       >
                         {/* Card Header: Name + Action + VRS + CPH */}
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <div className="flex justify-between items-start">
                           <div>
-                            <h4 style={{ fontWeight: 700, marginBottom: "0.25rem" }}>{result.app_name}</h4>
+                            <h4 className="font-bold mb-1">{result.app_name}</h4>
                             <Badge
                               variant={actionVariant}
-                              style={{ fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.08em" }}
+                              className="text-[0.65rem] font-bold tracking-[0.08em]"
                             >
                               {result.action}
                             </Badge>
                           </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                          <div className="flex items-center gap-4">
                             {/* Value Risk Score Circle */}
                             {result.value_risk_score !== undefined && (
-                              <div style={{ textAlign: "center" }}>
+                              <div className="text-center">
                                 <div
-                                  style={{
-                                    width: "3rem",
-                                    height: "3rem",
-                                    borderRadius: "50%",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    fontSize: "1rem",
-                                    fontWeight: 800,
-                                    background:
-                                      result.value_risk_score > 70
-                                        ? "var(--status-safe-bg)"
-                                        : result.value_risk_score >= 40
-                                        ? "var(--status-warn-bg)"
-                                        : "var(--status-danger-bg)",
-                                    color:
-                                      result.value_risk_score > 70
-                                        ? "var(--status-safe)"
-                                        : result.value_risk_score >= 40
-                                        ? "var(--status-warn)"
-                                        : "var(--status-danger)",
-                                    border: `2px solid ${
-                                      result.value_risk_score > 70
-                                        ? "var(--status-safe)"
-                                        : result.value_risk_score >= 40
-                                        ? "var(--status-warn)"
-                                        : "var(--status-danger)"
-                                    }`,
-                                  }}
+                                  className={`w-12 h-12 rounded-full flex items-center justify-center text-base font-extrabold border-2 ${
+                                    result.value_risk_score > 70
+                                      ? "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/50"
+                                      : result.value_risk_score >= 40
+                                      ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-500 border-yellow-500/50"
+                                      : "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/50"
+                                  }`}
                                 >
                                   {result.value_risk_score}
                                 </div>
-                                <p
-                                  style={{
-                                    fontSize: "0.55rem",
-                                    color: "var(--text-muted)",
-                                    marginTop: "0.15rem",
-                                    fontWeight: 600,
-                                    textTransform: "uppercase",
-                                  }}
-                                >
+                                <p className="text-[0.55rem] text-muted-foreground mt-1 font-semibold uppercase">
                                   VRS
                                 </p>
                               </div>
                             )}
                             {/* CPH + Burden */}
-                            <div style={{ textAlign: "right" }}>
+                            <div className="text-right">
                               <p
-                                style={{
-                                  fontSize: "0.85rem",
-                                  fontWeight: 700,
-                                  color:
-                                    result.math.cph > wageThreshold
-                                      ? "var(--status-danger)"
-                                      : "var(--status-safe)",
-                                }}
+                                className={`text-[0.85rem] font-bold ${
+                                  result.math.cph > wageThreshold
+                                    ? "text-red-600 dark:text-red-400"
+                                    : "text-green-600 dark:text-green-400"
+                                }`}
                               >
                                 ${result.math.cph.toFixed(2)}/{result.is_presence ? "day" : "hr"}
                               </p>
-                              <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                              <p className="text-[0.75rem] text-muted-foreground mt-0.5">
                                 ${result.math.personal_burden.toFixed(2)}/mo
                               </p>
                             </div>
@@ -1041,26 +831,14 @@ export default function ScreentimeSensePage() {
                         </div>
 
                         {/* Reason */}
-                        <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
+                        <p className="text-[0.78rem] text-muted-foreground mt-2">
                           {result.reason}
                         </p>
 
                         {/* Velocity Row */}
                         {!result.is_presence && (
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "1rem",
-                              fontSize: "0.75rem",
-                              color: "var(--text-muted)",
-                              marginTop: "0.75rem",
-                              paddingTop: "0.75rem",
-                              borderTop: "1px solid var(--border-subtle)",
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            <span style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                          <div className="flex items-center gap-4 text-[0.75rem] text-muted-foreground mt-3 pt-3 border-t border-border flex-wrap">
+                            <span className="flex items-center gap-1">
                               {getVelocityIcon(result.math.velocity)} {result.math.velocity.toFixed(2)}{" "}
                               {getVelocityLabel(result.math.velocity)}
                             </span>
@@ -1070,15 +848,13 @@ export default function ScreentimeSensePage() {
                             <span>Conf: {result.confidence_label}</span>
                             {result.value_risk_label && (
                               <span
-                                style={{
-                                  fontWeight: 600,
-                                  color:
-                                    result.value_risk_score > 70
-                                      ? "var(--status-safe)"
-                                      : result.value_risk_score >= 40
-                                      ? "var(--status-warn)"
-                                      : "var(--status-danger)",
-                                }}
+                                className={`font-semibold ${
+                                  result.value_risk_score > 70
+                                    ? "text-green-600 dark:text-green-400"
+                                    : result.value_risk_score >= 40
+                                    ? "text-yellow-600 dark:text-yellow-500"
+                                    : "text-red-600 dark:text-red-400"
+                                }`}
                               >
                                 • {result.value_risk_label}
                               </span>
@@ -1094,30 +870,12 @@ export default function ScreentimeSensePage() {
                               animate={{ opacity: 1, height: "auto" }}
                               exit={{ opacity: 0, height: 0 }}
                               transition={{ duration: 0.35, ease: [0.25, 0.1, 0.25, 1] }}
-                              style={{ overflow: "hidden" }}
+                              className="overflow-hidden"
                             >
-                              <div
-                                style={{
-                                  marginTop: "1rem",
-                                  paddingTop: "1rem",
-                                  borderTop: "1px solid var(--border-subtle)",
-                                  display: "grid",
-                                  gridTemplateColumns: "1fr 1fr",
-                                  gap: "0.75rem",
-                                }}
-                              >
+                              <div className="mt-4 pt-4 border-t border-border grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 {/* Math Breakdown */}
                                 <div>
-                                  <h5
-                                    style={{
-                                      fontSize: "0.7rem",
-                                      fontWeight: 700,
-                                      textTransform: "uppercase",
-                                      letterSpacing: "0.06em",
-                                      color: "var(--text-muted)",
-                                      marginBottom: "0.5rem",
-                                    }}
-                                  >
+                                  <h5 className="text-[0.7rem] font-bold uppercase tracking-[0.06em] text-muted-foreground mb-2">
                                     Math Breakdown
                                   </h5>
                                   {[
@@ -1129,31 +887,17 @@ export default function ScreentimeSensePage() {
                                   ].map(([label, val]) => (
                                     <div
                                       key={label}
-                                      style={{
-                                        display: "flex",
-                                        justifyContent: "space-between",
-                                        fontSize: "0.78rem",
-                                        paddingBottom: "0.3rem",
-                                      }}
+                                      className="flex justify-between text-[0.78rem] pb-1.5"
                                     >
-                                      <span style={{ color: "var(--text-muted)" }}>{label}</span>
-                                      <span style={{ fontWeight: 500 }}>{val}</span>
+                                      <span className="text-muted-foreground">{label}</span>
+                                      <span className="font-medium">{val}</span>
                                     </div>
                                   ))}
                                 </div>
 
                                 {/* AI Classification */}
                                 <div>
-                                  <h5
-                                    style={{
-                                      fontSize: "0.7rem",
-                                      fontWeight: 700,
-                                      textTransform: "uppercase",
-                                      letterSpacing: "0.06em",
-                                      color: "var(--text-muted)",
-                                      marginBottom: "0.5rem",
-                                    }}
-                                  >
+                                  <h5 className="text-[0.7rem] font-bold uppercase tracking-[0.06em] text-muted-foreground mb-2">
                                     AI Classification
                                   </h5>
                                   {[
@@ -1165,15 +909,10 @@ export default function ScreentimeSensePage() {
                                   ].map(([label, val]) => (
                                     <div
                                       key={label}
-                                      style={{
-                                        display: "flex",
-                                        justifyContent: "space-between",
-                                        fontSize: "0.78rem",
-                                        paddingBottom: "0.3rem",
-                                      }}
+                                      className="flex justify-between text-[0.78rem] pb-1.5"
                                     >
-                                      <span style={{ color: "var(--text-muted)" }}>{label}</span>
-                                      <span style={{ fontWeight: 500, textTransform: "capitalize" }}>
+                                      <span className="text-muted-foreground">{label}</span>
+                                      <span className="font-medium capitalize">
                                         {(val as string) || "N/A"}
                                       </span>
                                     </div>
@@ -1187,36 +926,26 @@ export default function ScreentimeSensePage() {
                                   initial={{ opacity: 0, y: 6 }}
                                   animate={{ opacity: 1, y: 0 }}
                                   transition={{ duration: 0.3, delay: 0.1 }}
-                                  style={{
-                                    marginTop: "0.75rem",
-                                    padding: "0.75rem",
-                                    borderRadius: "10px",
-                                    background: "var(--bg-secondary)",
-                                  }}
+                                  className="mt-3 p-3 rounded-xl bg-secondary"
                                 >
-                                  <p style={{ fontSize: "0.78rem", fontWeight: 700, marginBottom: "0.35rem" }}>
-                                    <DollarSign
-                                      size={12}
-                                      style={{ display: "inline", verticalAlign: "middle", marginRight: "0.2rem" }}
-                                    />
+                                  <p className="text-[0.78rem] font-bold mb-1.5">
+                                    <DollarSign size={12} className="inline align-middle mr-1" />
                                     Best Plan:{" "}
-                                    <span style={{ textTransform: "capitalize", color: "var(--accent-gold)" }}>
+                                    <span className="capitalize text-yellow-600 dark:text-yellow-500">
                                       {result.best_plan}
                                     </span>
                                   </p>
-                                  <div style={{ display: "flex", gap: "0.75rem", fontSize: "0.75rem" }}>
+                                  <div className="flex gap-3 text-[0.75rem] flex-wrap">
                                     {Object.entries(result.breakeven_info?.plan_costs_npv || {}).map(
                                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
                                       ([plan, cost]: [string, any]) => (
                                         <span
                                           key={plan}
-                                          style={{
-                                            fontWeight: plan === result.best_plan ? 700 : 400,
-                                            color:
-                                              plan === result.best_plan
-                                                ? "var(--text-primary)"
-                                                : "var(--text-muted)",
-                                          }}
+                                          className={
+                                            plan === result.best_plan
+                                              ? "font-bold text-foreground"
+                                              : "font-normal text-muted-foreground"
+                                          }
                                         >
                                           {plan}: ${cost.toFixed(2)}
                                         </span>

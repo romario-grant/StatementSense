@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  FileText,
   AlertTriangle,
   CheckCircle,
   Info,
@@ -63,18 +62,18 @@ export default function RenewalSensePage() {
   return (
     <>
       <Navbar />
-      <main className="container" style={{ paddingTop: "5rem", paddingBottom: "3rem" }}>
+      <main className="max-w-6xl mx-auto px-8 pt-32 pb-12">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          style={{ marginBottom: "2rem" }}
+          className="mb-8"
         >
-          <h1 style={{ fontSize: "2rem", fontWeight: 700, letterSpacing: "-0.02em", marginBottom: "0.3rem" }}>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">
             RenewalSense
           </h1>
-          <p style={{ color: "var(--text-secondary)" }}>
+          <p className="text-muted-foreground">
             Predict subscription renewal failures before they happen.
           </p>
         </motion.div>
@@ -89,63 +88,41 @@ export default function RenewalSensePage() {
               exit={{ opacity: 0, y: -16 }}
               transition={{ duration: 0.4 }}
               onAnimationComplete={() => setSwapped(true)}
-              style={{
-                display: "flex",
-                gap: "2.5rem",
-                alignItems: "center",
-                maxWidth: "56rem",
-                margin: "0 auto",
-              }}
+              className="flex gap-10 items-center max-w-4xl mx-auto"
             >
               {/* Bankcard Image */}
               <motion.div
                 layout
-                style={{
-                  flex: 1,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  order: swapped ? 2 : 1,
-                  zIndex: 1,
-                }}
+                className={`flex-1 flex items-center justify-center z-10 ${swapped ? 'order-2' : 'order-1'}`}
                 transition={{ layout: { type: "tween", duration: swapComplete ? 0.3 : 2.5, ease: [0.45, 0, 0.15, 1] } }}
               >
                 <img
                   src="/bankcard.png"
                   alt="Bank Card"
-                  style={{
-                    width: "100%",
-                    maxWidth: "456px",
-                    borderRadius: "16px",
-                    filter: "drop-shadow(0 20px 40px rgba(0,0,0,0.4))",
-                  }}
+                  className="w-full max-w-[456px] rounded-2xl drop-shadow-[0_20px_40px_rgba(0,0,0,0.4)]"
                 />
               </motion.div>
 
               {/* Upload Form */}
               <motion.div
                 layout
-                style={{
-                  flex: 1,
-                  order: swapped ? 1 : 2,
-                  zIndex: 2,
-                }}
+                className={`flex-1 z-20 ${swapped ? 'order-1' : 'order-2'}`}
                 transition={{ layout: { type: "tween", duration: swapComplete ? 0.3 : 2.5, ease: [0.45, 0, 0.15, 1] } }}
                 onLayoutAnimationComplete={() => {
                   if (swapped) setSwapComplete(true);
                 }}
               >
-                <MotionCard style={{ width: "100%" }} hover={false}>
-                  <div style={{ marginBottom: "1.5rem" }}>
-                    <h2 style={{ fontSize: "1.15rem", fontWeight: 600, marginBottom: "0.35rem" }}>
+                <MotionCard className="w-full" hover={false}>
+                  <div className="mb-6">
+                    <h2 className="text-xl font-semibold mb-1">
                       Upload Bank Statement
                     </h2>
-                    <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+                    <p className="text-sm text-muted-foreground">
                       Select your recent PDF or CSV statement. All processing is done server-side.
                     </p>
                   </div>
 
-                  <div style={{ marginBottom: "1.25rem" }}>
+                  <div className="mb-5">
                     <FileUpload
                       file={file}
                       onFileSelect={handleFileSelect}
@@ -158,17 +135,7 @@ export default function RenewalSensePage() {
                     <motion.div
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: "auto" }}
-                      style={{
-                        display: "flex",
-                        gap: "0.5rem",
-                        alignItems: "center",
-                        padding: "0.75rem 1rem",
-                        background: "var(--status-danger-bg)",
-                        color: "var(--status-danger)",
-                        borderRadius: "10px",
-                        marginBottom: "1.25rem",
-                        fontSize: "0.85rem",
-                      }}
+                      className="flex gap-2 items-center px-4 py-3 bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl mb-5 text-sm"
                     >
                       <AlertTriangle size={16} />
                       <span>{error}</span>
@@ -176,21 +143,13 @@ export default function RenewalSensePage() {
                   )}
 
                   <button
-                    className="btn-primary"
                     disabled={!file || loading}
                     onClick={handleUpload}
-                    style={{
-                      width: "100%",
-                      padding: "0.75rem",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "0.5rem",
-                    }}
+                    className="w-full py-3 flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-semibold transition-colors shadow-sm"
                   >
                     {loading ? (
                       <>
-                        <span className="animate-spin" style={{ display: "inline-block", width: 16, height: 16, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%" }} />
+                        <span className="animate-spin inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />
                         Analyzing Statement...
                       </>
                     ) : (
@@ -207,79 +166,57 @@ export default function RenewalSensePage() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 2fr",
-                gap: "1.5rem",
-              }}
+              className="grid grid-cols-1 md:grid-cols-3 gap-6"
             >
               {/* Left Column */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+              <div className="flex flex-col gap-6">
                 {/* Summary */}
                 <MotionCard hover={false} delay={0}>
-                  <h3 style={{ fontWeight: 700, marginBottom: "1rem", fontSize: "0.95rem" }}>Analysis Summary</h3>
+                  <h3 className="font-bold mb-4 text-[0.95rem]">Analysis Summary</h3>
                   {[
                     ["Transactions Found", results.transactions_parsed],
-                    ["Monthly Income", `$${results.salary.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, "var(--status-safe)"],
+                    ["Monthly Income", `$${results.salary.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, "text-green-600 dark:text-green-400"],
                     ["Payday", `Day ${results.salary.pay_day}`],
                     ["Total Subscriptions", results.summary.total_subscriptions],
-                    ["Monthly Subs Cost", `$${results.summary.total_sub_cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, "var(--accent-gold)"],
-                  ].map(([label, value, color], i) => (
+                    ["Monthly Subs Cost", `$${results.summary.total_sub_cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, "text-yellow-600 dark:text-yellow-500"],
+                  ].map(([label, value, colorClass], i) => (
                     <div
                       key={i}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "0.6rem 0",
-                        borderBottom: "1px solid var(--border-subtle)",
-                        fontSize: "0.88rem",
-                      }}
+                      className="flex justify-between items-center py-2.5 border-b border-border text-[0.88rem] last:border-0"
                     >
-                      <span style={{ color: "var(--text-secondary)" }}>{label}</span>
-                      <span style={{ fontWeight: 600, color: (color as string) || "var(--text-primary)" }}>{value}</span>
+                      <span className="text-muted-foreground">{label}</span>
+                      <span className={`font-semibold ${colorClass || "text-foreground"}`}>{value}</span>
                     </div>
                   ))}
                 </MotionCard>
 
                 {/* Paycycle Map */}
                 <MotionCard hover={false} delay={0.1}>
-                  <h3 style={{ fontWeight: 700, marginBottom: "0.25rem", fontSize: "0.95rem" }}>30-Day Paycycle Map</h3>
-                  <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
+                  <h3 className="font-bold mb-1 text-[0.95rem]">30-Day Paycycle Map</h3>
+                  <p className="text-xs text-muted-foreground mb-4">
                     Payday on Day {results.salary.pay_day}.
                   </p>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "3px" }}>
+                  <div className="flex flex-wrap gap-[3px]">
                     {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                     {results.paycycle_map.map((day: any) => {
-                      let bg = "var(--bg-tertiary)";
-                      if (day.zone === "safe") bg = "var(--status-safe)";
-                      if (day.zone === "moderate") bg = "var(--status-warn)";
-                      if (day.zone === "high") bg = "var(--accent-gold-hover)";
-                      if (day.zone === "critical") bg = "var(--status-danger)";
+                      let bg = "bg-secondary";
+                      if (day.zone === "safe") bg = "bg-green-500 text-white";
+                      if (day.zone === "moderate") bg = "bg-yellow-500 text-white";
+                      if (day.zone === "high") bg = "bg-orange-500 text-white";
+                      if (day.zone === "critical") bg = "bg-red-500 text-white";
                       return (
                         <div
                           key={day.day}
                           title={`Day ${day.day}: ${day.zone.toUpperCase()} ZONE`}
-                          style={{
-                            width: "calc(10% - 3px)",
-                            height: "28px",
-                            backgroundColor: bg,
-                            borderRadius: "4px",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            position: "relative",
-                            border: day.is_payday ? "2px solid var(--accent-teal)" : "none",
-                            cursor: "pointer",
-                          }}
+                          className={`w-[calc(10%-3px)] h-7 rounded flex items-center justify-center relative cursor-pointer ${bg} ${day.is_payday ? 'border-2 border-cyan-500' : ''}`}
                         >
                           {day.is_payday && (
-                            <span style={{ position: "absolute", top: "-18px", fontSize: "0.5rem", fontWeight: 700, background: "var(--accent-teal)", color: "#fff", padding: "1px 4px", borderRadius: "3px", whiteSpace: "nowrap" }}>
+                            <span className="absolute -top-4 text-[0.5rem] font-bold bg-cyan-500 text-white px-1 py-px rounded-[3px] whitespace-nowrap">
                               PAY
                             </span>
                           )}
                           {day.subscription && (
-                            <span style={{ fontSize: "0.6rem", fontWeight: 700, color: "#fff" }}>
+                            <span className="text-[0.6rem] font-bold text-white">
                               {day.subscription.substring(0, 1)}
                             </span>
                           )}
@@ -287,15 +224,15 @@ export default function RenewalSensePage() {
                       );
                     })}
                   </div>
-                  <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.75rem", fontSize: "0.7rem", color: "var(--text-secondary)" }}>
+                  <div className="flex gap-3 mt-3 text-[0.7rem] text-muted-foreground">
                     {[
-                      ["Safe", "var(--status-safe)"],
-                      ["Mid", "var(--status-warn)"],
-                      ["Caution", "var(--accent-gold-hover)"],
-                      ["Danger", "var(--status-danger)"],
-                    ].map(([label, color]) => (
-                      <div key={label as string} style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                        <span style={{ width: 10, height: 10, borderRadius: 2, background: color as string, display: "inline-block" }} />
+                      ["Safe", "bg-green-500"],
+                      ["Mid", "bg-yellow-500"],
+                      ["Caution", "bg-orange-500"],
+                      ["Danger", "bg-red-500"],
+                    ].map(([label, colorClass]) => (
+                      <div key={label} className="flex items-center gap-1">
+                        <span className={`w-2.5 h-2.5 rounded-sm ${colorClass}`} />
                         {label}
                       </div>
                     ))}
@@ -304,43 +241,43 @@ export default function RenewalSensePage() {
 
                 <button
                   onClick={() => { setResults(null); setFile(null); }}
-                  style={{ width: "100%", padding: "0.6rem" }}
+                  className="w-full py-2.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl text-sm font-semibold transition-colors border border-border"
                 >
                   Process Another Statement
                 </button>
               </div>
 
               {/* Right Column */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+              <div className="flex flex-col gap-6 md:col-span-2">
                 {/* Renewal Predictions */}
                 {results.renewal_predictions && results.renewal_predictions.length > 0 && (
-                  <MotionCard hover={false} delay={0.15} style={{ border: "1px solid var(--accent-teal-border)", background: "rgba(97, 205, 255, 0.03)" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-                      <h2 style={{ fontSize: "1.1rem", fontWeight: 700, margin: 0 }}>Upcoming Charges</h2>
-                      <Badge variant="teal" style={{ fontSize: "0.65rem" }}>PREDICTED</Badge>
+                  <MotionCard hover={false} delay={0.15} className="border-cyan-500/30 bg-cyan-500/5">
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-lg font-bold m-0">Upcoming Charges</h2>
+                      <Badge variant="info">PREDICTED</Badge>
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                    <div className="flex flex-col gap-3">
                       {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                       {results.renewal_predictions.map((pred: any, idx: number) => {
-                        const urgencyColor = pred.days_until_charge <= 3 ? "var(--status-danger)" : pred.days_until_charge <= 7 ? "var(--status-warn)" : "var(--status-safe)";
+                        const urgencyColor = pred.days_until_charge <= 3 ? "text-red-600 dark:text-red-400" : pred.days_until_charge <= 7 ? "text-yellow-600 dark:text-yellow-500" : "text-green-600 dark:text-green-400";
                         const confVariant = pred.confidence_label === "high" ? "safe" : pred.confidence_label === "medium" ? "warn" : "danger";
                         return (
-                          <div key={idx} style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "0.85rem 1rem", borderRadius: "10px", background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)" }}>
-                            <div style={{ textAlign: "center", minWidth: "3.5rem" }}>
-                              <p style={{ fontSize: "1.4rem", fontWeight: 700, color: urgencyColor, lineHeight: 1 }}>{pred.days_until_charge}</p>
-                              <p style={{ fontSize: "0.65rem", color: "var(--text-muted)", marginTop: "2px" }}>days</p>
+                          <div key={idx} className="flex items-center gap-4 px-4 py-3.5 rounded-xl bg-background border border-border">
+                            <div className="text-center min-w-[3.5rem]">
+                              <p className={`text-2xl font-bold leading-none ${urgencyColor}`}>{pred.days_until_charge}</p>
+                              <p className="text-[0.65rem] text-muted-foreground mt-0.5">days</p>
                             </div>
-                            <div style={{ flex: 1 }}>
-                              <p style={{ fontWeight: 600, fontSize: "0.9rem" }}>{pred.subscription}</p>
-                              <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
-                                Next: <span style={{ fontWeight: 500, color: "var(--text-primary)" }}>{pred.next_charge_date}</span>
-                                <span style={{ margin: "0 0.4rem", opacity: 0.3 }}>|</span>
+                            <div className="flex-1">
+                              <p className="font-semibold text-sm">{pred.subscription}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                Next: <span className="font-medium text-foreground">{pred.next_charge_date}</span>
+                                <span className="mx-1.5 opacity-30">|</span>
                                 Window: {pred.confidence_window.earliest} — {pred.confidence_window.latest}
                               </p>
                             </div>
-                            <div style={{ textAlign: "right" }}>
-                              <Badge variant={confVariant as "safe"|"warn"|"danger"} style={{ textTransform: "capitalize" }}>{pred.confidence_label}</Badge>
-                              <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
+                            <div className="text-right">
+                              <Badge variant={confVariant as "safe"|"warn"|"danger"} className="capitalize">{pred.confidence_label}</Badge>
+                              <p className="text-[0.7rem] text-muted-foreground mt-1">
                                 {pred.data_points} data pt{pred.data_points !== 1 ? "s" : ""}
                               </p>
                             </div>
@@ -357,52 +294,52 @@ export default function RenewalSensePage() {
                   animate={{ opacity: 1 }}
                   transition={{ delay: 0.2 }}
                 >
-                  <h2 style={{ fontSize: "1.25rem", fontWeight: 700, paddingBottom: "0.75rem", borderBottom: "1px solid var(--border-subtle)", marginBottom: "1rem" }}>
+                  <h2 className="text-xl font-bold pb-3 border-b border-border mb-4">
                     Subscription Risk Report
                   </h2>
                 </motion.div>
 
                 {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                 {results.subscriptions.map((sub: any, idx: number) => {
-                  const riskColor = sub.risk_level === "low" ? "var(--status-safe)" : sub.risk_level === "moderate" ? "var(--status-warn)" : "var(--status-danger)";
+                  const riskColor = sub.risk_level === "low" ? "border-l-green-500" : sub.risk_level === "moderate" ? "border-l-yellow-500" : "border-l-red-500";
                   const riskVariant = sub.risk_level === "low" ? "safe" : sub.risk_level === "moderate" ? "warn" : "danger";
                   return (
-                    <MotionCard key={idx} delay={0.1 * idx + 0.25} hover={false} style={{ borderLeft: `3px solid ${riskColor}` }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem" }}>
+                    <MotionCard key={idx} delay={0.1 * idx + 0.25} hover={false} className={`border-l-[3px] ${riskColor}`}>
+                      <div className="flex justify-between items-start mb-3">
                         <div>
-                          <h3 style={{ fontSize: "1.05rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.2rem" }}>
+                          <h3 className="text-base font-bold flex items-center gap-2 mb-1">
                             {sub.subscription}
                             <Badge variant={riskVariant as "safe"|"warn"|"danger"}>
                               {sub.risk_label.toUpperCase()} RISK ({Math.round(sub.risk_score * 100)}%)
                             </Badge>
                           </h3>
-                          <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Renews on Day {sub.renewal_day}</p>
+                          <p className="text-sm text-muted-foreground">Renews on Day {sub.renewal_day}</p>
                         </div>
-                        <div style={{ textAlign: "right" }}>
-                          <p style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--accent-gold)" }}>${sub.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>per month</p>
+                        <div className="text-right">
+                          <p className="text-xl font-bold text-yellow-600 dark:text-yellow-500">${sub.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                          <p className="text-xs text-muted-foreground">per month</p>
                         </div>
                       </div>
 
-                      <div style={{ padding: "0.75rem", borderRadius: "8px", background: "var(--bg-secondary)", marginBottom: "0.75rem" }}>
-                        <p style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", fontSize: "0.85rem", fontWeight: 500 }}>
+                      <div className="p-3 rounded-lg bg-secondary mb-3">
+                        <p className="flex items-start gap-2 text-sm font-medium">
                           {sub.risk_level === "low"
-                            ? <CheckCircle size={16} style={{ color: "var(--status-safe)", flexShrink: 0, marginTop: 2 }} />
-                            : <AlertTriangle size={16} style={{ color: "var(--status-danger)", flexShrink: 0, marginTop: 2 }} />}
+                            ? <CheckCircle size={16} className="text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
+                            : <AlertTriangle size={16} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />}
                           {sub.advice}
                         </p>
                       </div>
 
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem 1.5rem", fontSize: "0.82rem" }}>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-[0.82rem]">
                         {[
                           ["Paycycle Position", `${sub.breakdown.days_since_payday} days after payday`],
                           ["Financial Load", `${Math.round(sub.breakdown.load_factor * 100)}% of salary consumed`],
                           ["Failure History", `${sub.fail_history} failed attempts`],
                           ["Expense Clustering", `$${sub.breakdown.cluster_amount.toLocaleString()} within ±3 days`],
                         ].map(([label, val], i) => (
-                          <div key={i} style={{ display: "flex", justifyContent: "space-between", paddingBottom: "0.35rem", borderBottom: "1px solid var(--border-subtle)" }}>
-                            <span style={{ color: "var(--text-muted)" }}>{label}</span>
-                            <span style={{ fontWeight: 500 }}>{val}</span>
+                          <div key={i} className="flex justify-between pb-1.5 border-b border-border">
+                            <span className="text-muted-foreground">{label}</span>
+                            <span className="font-medium">{val}</span>
                           </div>
                         ))}
                       </div>
@@ -411,10 +348,10 @@ export default function RenewalSensePage() {
                 })}
 
                 {results.subscriptions.length === 0 && (
-                  <MotionCard hover={false} style={{ textAlign: "center", padding: "3rem 2rem" }}>
-                    <Info size={40} style={{ color: "var(--text-muted)", margin: "0 auto 1rem" }} />
-                    <h3 style={{ fontSize: "1rem", fontWeight: 600, marginBottom: "0.4rem" }}>No Subscriptions Detected</h3>
-                    <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>
+                  <MotionCard hover={false} className="text-center py-12 px-8">
+                    <Info size={40} className="text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-base font-semibold mb-1.5">No Subscriptions Detected</h3>
+                    <p className="text-sm text-muted-foreground">
                       We couldn't identify any recurring subscription payments in this statement.
                     </p>
                   </MotionCard>
@@ -422,38 +359,38 @@ export default function RenewalSensePage() {
 
                 {/* Price Change Detection */}
                 {results.price_changes && results.price_changes.length > 0 && (
-                  <MotionCard hover={false} delay={0.4} style={{ border: "1px solid var(--accent-gold-border)", background: "var(--accent-gold-light)" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
-                      <h2 style={{ fontSize: "1.1rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", margin: 0 }}>
-                        <AlertTriangle size={18} style={{ color: "var(--accent-gold)" }} />
+                  <MotionCard hover={false} delay={0.4} className="border-yellow-500/30 bg-yellow-500/5">
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-lg font-bold flex items-center gap-2 m-0">
+                        <AlertTriangle size={18} className="text-yellow-600 dark:text-yellow-500" />
                         Price Change Detection
                       </h2>
-                      <Badge variant="warn" style={{ background: "var(--accent-gold)", color: "#fff", fontSize: "0.65rem" }}>CUSUM</Badge>
+                      <Badge variant="warn">CUSUM</Badge>
                     </div>
-                    <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", marginBottom: "1rem" }}>
+                    <p className="text-sm text-muted-foreground mb-4">
                       Structural billing changes detected using Cumulative Sum analysis.
                     </p>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                    <div className="flex flex-col gap-3">
                       {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                       {results.price_changes.map((change: any, idx: number) => (
-                        <div key={idx} style={{ padding: "0.85rem 1rem", borderRadius: "10px", background: "var(--bg-secondary)", border: "1px solid var(--border-subtle)" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.4rem" }}>
+                        <div key={idx} className="p-3.5 rounded-xl bg-background border border-border">
+                          <div className="flex justify-between items-start mb-1.5">
                             <div>
-                              <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>{change.subscription}</span>
+                              <span className="font-semibold text-sm">{change.subscription}</span>
                               <Badge
                                 variant={change.severity === "warning" ? "danger" : "safe"}
-                                style={{ marginLeft: "0.5rem", fontSize: "0.6rem" }}
+                                className="ml-2"
                               >
                                 {change.type}
                               </Badge>
                             </div>
-                            <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>{change.date}</span>
+                            <span className="text-[0.7rem] text-muted-foreground">{change.date}</span>
                           </div>
-                          <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginBottom: "0.5rem" }}>{change.description}</p>
-                          <div style={{ display: "flex", gap: "1rem", fontSize: "0.82rem" }}>
-                            <span><span style={{ color: "var(--text-muted)" }}>Before: </span><span style={{ fontWeight: 500 }}>${change.old_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></span>
-                            <span><span style={{ color: "var(--text-muted)" }}>After: </span><span style={{ fontWeight: 500 }}>${change.new_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></span>
-                            <span style={{ fontWeight: 700, color: change.change_amount > 0 ? "var(--status-danger)" : "var(--status-safe)" }}>
+                          <p className="text-sm text-muted-foreground mb-2">{change.description}</p>
+                          <div className="flex gap-4 text-[0.82rem]">
+                            <span><span className="text-muted-foreground">Before: </span><span className="font-medium">${change.old_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></span>
+                            <span><span className="text-muted-foreground">After: </span><span className="font-medium">${change.new_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></span>
+                            <span className={`font-bold ${change.change_amount > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
                               {change.change_amount > 0 ? "+" : ""}{change.change_percent}%
                             </span>
                           </div>
