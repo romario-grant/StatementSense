@@ -81,38 +81,43 @@ class CalendarReader:
         all_events = []
         page_token = None
         
-        while True:
-            events_result = self.service.events().list(
-                calendarId='primary',
-                timeMin=time_min,
-                timeMax=time_max,
-                maxResults=100,
-                singleEvents=True,
-                orderBy='startTime',
-                pageToken=page_token
-            ).execute()
-            
-            events = events_result.get('items', [])
-            
-            for event in events:
-                start = event.get('start', {})
-                end = event.get('end', {})
+        try:
+            while True:
+                events_result = self.service.events().list(
+                    calendarId='primary',
+                    timeMin=time_min,
+                    timeMax=time_max,
+                    maxResults=100,
+                    singleEvents=True,
+                    orderBy='startTime',
+                    pageToken=page_token
+                ).execute()
                 
-                start_str = start.get('dateTime', start.get('date', ''))
-                end_str = end.get('dateTime', end.get('date', ''))
+                events = events_result.get('items', [])
                 
-                all_events.append({
-                    'summary': event.get('summary', 'No Title'),
-                    'start': start_str,
-                    'end': end_str,
-                    'location': event.get('location', ''),
-                    'description': event.get('description', '')
-                })
+                for event in events:
+                    start = event.get('start', {})
+                    end = event.get('end', {})
+                    
+                    start_str = start.get('dateTime', start.get('date', ''))
+                    end_str = end.get('dateTime', end.get('date', ''))
+                    
+                    all_events.append({
+                        'summary': event.get('summary', 'No Title'),
+                        'start': start_str,
+                        'end': end_str,
+                        'location': event.get('location', ''),
+                        'description': event.get('description', '')
+                    })
+                
+                page_token = events_result.get('nextPageToken')
+                if not page_token:
+                    break
+        except Exception as e:
+            print(f"[CalendarSense] Google Calendar API Error: {e}")
+            # Return empty list rather than crashing
+            return []
             
-            page_token = events_result.get('nextPageToken')
-            if not page_token:
-                break
-        
         return all_events
 
 
@@ -134,7 +139,7 @@ class GeminiCalendarAnalyzer:
         self.client = genai.Client(api_key=api_key)
     
     def _call_gemini(self, prompt, use_search=False, max_retries=4):
-        """Call Gemini API with automatic retry on 429 RESOURCE_EXHAUSTED."""
+        """Call Gemini API. Search enabled for accuracy as per user request."""
         config = {"temperature": 0.0}
         if use_search:
             config["tools"] = [{"google_search": {}}]
@@ -158,15 +163,14 @@ class GeminiCalendarAnalyzer:
             except Exception as e:
                 error_str = str(e)
                 print(f"[CalendarSense] [!] Error ({call_label}, attempt {attempt+1}/{max_retries}): {error_str[:200]}")
+                if attempt == max_retries - 1:
+                    raise
+                
+                # If rate limited, wait 2s
                 if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                    if attempt == max_retries - 1:
-                        raise Exception("Rate limit exceeded after all retries")
-                    wait_time = 10 * (2 ** attempt)  # 10s, 20s, 40s
-                    print(f"[CalendarSense] Rate limited. Waiting {wait_time}s...")
-                    time.sleep(wait_time)
-                    continue
-                else:
-                    raise  # Re-raise non-rate-limit errors
+                    import time
+                    time.sleep(2)
+                continue
     
     def detect_away_periods(self, events, user_home_location):
         if not events:
@@ -346,100 +350,109 @@ class CalendarSenseEngine:
         return recommendations
 
 
+import traceback
+
 def analyze_calendar(home_location: str, subscriptions_list: list, access_token: str | None = None):
     """
     Main entry point for API.
     Connects to calendar, fetches events, queries Gemini, returns savings recommendations.
     """
     try:
-        calendar = CalendarReader(access_token)
-    except Exception as e:
-        return {"error": f"Calendar connection failed: {e}"}
+        try:
+            calendar = CalendarReader(access_token)
+        except Exception as e:
+            print(f"[CalendarSense] Calendar Reader Init Failed: {e}")
+            return {"error": f"Calendar connection failed: {e}"}
+            
+        try:
+            analyzer = GeminiCalendarAnalyzer()
+        except Exception as e:
+            print(f"[CalendarSense] Gemini Analyzer Init Failed: {e}")
+            return {"error": f"Gemini initialization failed: {e}"}
+            
+        events = calendar.get_upcoming_events(months_ahead=6)
+        print(f"[CalendarSense] Fetched {len(events)} events.")
+        # Build event preview for frontend display (like the CLI shows)
+        events_preview = []
+        for ev in events[:15]:  # Show first 15 events
+            start_str = ev.get('start', '')[:10] if ev.get('start') else '?'
+            events_preview.append({
+                "date": start_str,
+                "summary": ev.get('summary', 'No Title'),
+                "location": ev.get('location', ''),
+            })
         
-    try:
-        analyzer = GeminiCalendarAnalyzer()
-    except Exception as e:
-        return {"error": f"Gemini initialization failed: {e}"}
+        away_periods = analyzer.detect_away_periods(events, home_location)
         
-    events = calendar.get_upcoming_events(months_ahead=6)
-    
-    # Build event preview for frontend display (like the CLI shows)
-    events_preview = []
-    for ev in events[:15]:  # Show first 15 events
-        start_str = ev.get('start', '')[:10] if ev.get('start') else '?'
-        events_preview.append({
-            "date": start_str,
-            "summary": ev.get('summary', 'No Title'),
-            "location": ev.get('location', ''),
-        })
-    
-    away_periods = analyzer.detect_away_periods(events, home_location)
-    
-    # --- Parallel classification: fire all at once ---
-    def _classify_one(sub):
-        sub_name = sub.get("name")
-        sub_cost = float(sub.get("cost", 0))
-        classification = analyzer.classify_subscription(sub_name, sub_cost, home_location)
-        classification["name"] = sub_name
-        return classification
-    
-    with ThreadPoolExecutor(max_workers=min(len(subscriptions_list), 100)) as pool:
-        futures = {pool.submit(_classify_one, sub): sub for sub in subscriptions_list}
-        processed_subs = []
-        for future in as_completed(futures):
-            try:
-                processed_subs.append(future.result())
-            except Exception as e:
-                sub = futures[future]
-                processed_subs.append({
-                    "name": sub.get("name"), "is_local": False,
-                    "location_type": "portable", "reason": f"Classification error: {e}"
-                })
-    
-    local_subs = [s for s in processed_subs if s.get("is_local")]
-    
-    recommendations = []
-    if local_subs and away_periods:
-        engine = CalendarSenseEngine()
-        recommendations = engine.calculate_savings(away_periods, local_subs)
+        # --- Parallel classification: fire all at once ---
+        def _classify_one(sub):
+            sub_name = sub.get("name")
+            sub_cost = float(sub.get("cost", 0))
+            classification = analyzer.classify_subscription(sub_name, sub_cost, home_location)
+            classification["name"] = sub_name
+            return classification
         
-        # --- Parallel alternatives search: fire all at once ---
-        def _search_one(rec):
-            dest = rec.get("destination", "")
-            loc_type = rec.get("location_type", "")
-            sub_name = rec.get("subscription", "")
-            if dest and dest != "Unknown" and loc_type != "portable":
+        with ThreadPoolExecutor(max_workers=min(len(subscriptions_list), 100)) as pool:
+            futures = {pool.submit(_classify_one, sub): sub for sub in subscriptions_list}
+            processed_subs = []
+            for future in as_completed(futures):
                 try:
-                    print(f"[CalendarSense] Searching alternatives for '{sub_name}' in {dest}...")
-                    alternatives = analyzer.search_destination_alternatives(
-                        sub_name, loc_type, dest,
-                        sub_reason=next((s.get('reason','') for s in processed_subs if s.get('name') == sub_name), '')
-                    )
-                    if alternatives:
-                        rec["alternatives"] = alternatives
-                    else:
-                        print(f"[CalendarSense] No alternatives returned for '{sub_name}' (Gemini returned None)")
-                        rec["alternatives"] = {"alternatives_found": False, "options": [], "tip": "Could not find alternatives — try again."}
+                    processed_subs.append(future.result())
                 except Exception as e:
-                    print(f"[CalendarSense] Alternatives search failed for '{sub_name}': {e}")
-                    rec["alternatives"] = {"alternatives_found": False, "options": [], "tip": f"Search failed: {str(e)[:100]}"}
-            return rec
+                    sub = futures[future]
+                    processed_subs.append({
+                        "name": sub.get("name"), "is_local": False,
+                        "location_type": "portable", "reason": f"Classification error: {e}"
+                    })
         
-        with ThreadPoolExecutor(max_workers=min(len(recommendations), 100)) as pool:
-            futures = [pool.submit(_search_one, rec) for rec in recommendations]
-            recommendations = [f.result() for f in futures]
+        local_subs = [s for s in processed_subs if s.get("is_local")]
+        
+        recommendations = []
+        if local_subs and away_periods:
+            engine = CalendarSenseEngine()
+            recommendations = engine.calculate_savings(away_periods, local_subs)
+            
+            # --- Parallel alternatives search: fire all at once ---
+            def _search_one(rec):
+                dest = rec.get("destination", "")
+                loc_type = rec.get("location_type", "")
+                sub_name = rec.get("subscription", "")
+                if dest and dest != "Unknown" and loc_type != "portable":
+                    try:
+                        print(f"[CalendarSense] Searching alternatives for '{sub_name}' in {dest}...")
+                        alternatives = analyzer.search_destination_alternatives(
+                            sub_name, loc_type, dest,
+                            sub_reason=next((s.get('reason','') for s in processed_subs if s.get('name') == sub_name), '')
+                        )
+                        if alternatives:
+                            rec["alternatives"] = alternatives
+                        else:
+                            print(f"[CalendarSense] No alternatives returned for '{sub_name}' (Gemini returned None)")
+                            rec["alternatives"] = {"alternatives_found": False, "options": [], "tip": "Could not find alternatives — try again."}
+                    except Exception as e:
+                        print(f"[CalendarSense] Alternatives search failed for '{sub_name}': {e}")
+                        rec["alternatives"] = {"alternatives_found": False, "options": [], "tip": f"Search failed: {str(e)[:100]}"}
+                return rec
+            
+            with ThreadPoolExecutor(max_workers=min(len(recommendations), 100)) as pool:
+                futures = [pool.submit(_search_one, rec) for rec in recommendations]
+                recommendations = [f.result() for f in futures]
 
-    total_savings = sum(r.get("net_savings", 0) for r in recommendations)
-    
-    return {
-        "events_scanned": len(events),
-        "events_preview": events_preview,
-        "away_periods": away_periods,
-        "processed_subscriptions": processed_subs,
-        "recommendations": recommendations,
-        "total_savings": round(total_savings, 2),
-        "home_location": home_location,
-        "local_count": len(local_subs),
-        "portable_count": len(processed_subs) - len(local_subs)
-    }
+        total_savings = sum(r.get("net_savings", 0) for r in recommendations)
+        
+        return {
+            "events_scanned": len(events),
+            "events_preview": events_preview,
+            "away_periods": away_periods,
+            "processed_subscriptions": processed_subs,
+            "recommendations": recommendations,
+            "total_savings": round(total_savings, 2),
+            "home_location": home_location,
+            "local_count": len(local_subs),
+            "portable_count": len(processed_subs) - len(local_subs)
+        }
+    except Exception as e:
+        print("[CalendarSense] CRITICAL ERROR IN ENGINE:")
+        traceback.print_exc()
+        return {"error": f"Internal Engine Error: {str(e)}"}
 

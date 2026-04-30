@@ -68,15 +68,15 @@ class GeminiClassifier:
 
     def analyze_app(self, app_name, cost):
         prompt = f"App: {app_name}, Cost: {cost}"
-        import time as _time
         
         max_retries = 4
         for attempt in range(max_retries):
             try:
+                # Re-enabled Google Search for accuracy as per user request
                 response = self.client.models.generate_content(
                     model="gemini-2.5-flash",
                     config={
-                        "tools": [{"google_search": {}}], 
+                        "tools": [{"google_search": {}}],
                         "system_instruction": self.system_rules,
                         "temperature": 0.0
                     },
@@ -84,6 +84,7 @@ class GeminiClassifier:
                 )
                 
                 raw_text = response.text.strip()
+                print(f"[ScreentimeSense] [+] Got response (grounded search, attempt {attempt+1})")
                 if raw_text.startswith("```json"): 
                     raw_text = raw_text[7:]
                 elif raw_text.startswith("```"): 
@@ -113,19 +114,21 @@ class GeminiClassifier:
                 
             except Exception as e:
                 error_str = str(e)
-                if ("429" in error_str or "RESOURCE_EXHAUSTED" in error_str) and attempt < max_retries - 1:
-                    wait_time = 10 * (2 ** attempt)  # 10s, 20s, 40s
-                    print(f"[ScreentimeSense] Rate limited (attempt {attempt+1}/{max_retries}). Waiting {wait_time}s...")
-                    _time.sleep(wait_time)
-                    continue
-                print(f"Gemini API Error: {e}")
-                return {
-                    "frequency": "monthly", "category": "entertainment", "value_mode": "time_based",
-                    "engagement_type": "active", "is_multi_device": False, "has_free_tier": False, 
-                    "is_shared_plan": False, "student_plan_price": 0,
-                    "pricing_verified": False,
-                    "pricing_tiers": {"monthly": 0, "yearly": 0, "lifetime": 0}
-                }
+                print(f"[ScreentimeSense] [!] Error (attempt {attempt+1}/{max_retries}): {error_str[:200]}")
+                if attempt == max_retries - 1:
+                    return {
+                        "frequency": "monthly", "category": "entertainment", "value_mode": "time_based",
+                        "engagement_type": "active", "is_multi_device": False, "has_free_tier": False, 
+                        "is_shared_plan": False, "student_plan_price": 0,
+                        "pricing_verified": False,
+                        "pricing_tiers": {"monthly": 0, "yearly": 0, "lifetime": 0}
+                    }
+                
+                # If rate limited, wait just a tiny bit (2s) to avoid UI hang while still giving quota a chance
+                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                    import time
+                    time.sleep(2)
+                continue
 
 
 class SubscriptionAnalyzer:
@@ -232,9 +235,21 @@ class SubscriptionAnalyzer:
         return z_score > 1.5 and concentration > 0.40
 
     def compute_plan_recommendation(self, pricing_tiers, months_subscribed, velocity, discount_rate=0.005):
-        monthly_price = pricing_tiers.get("monthly", 0)
-        yearly_price = pricing_tiers.get("yearly", 0)
-        lifetime_price = pricing_tiers.get("lifetime", 0)
+        def _to_float(val):
+            if isinstance(val, dict):
+                # Try to find a 'price' or 'cost' key if it's nested
+                for k in ["price", "cost", "value", "amount"]:
+                    if k in val: return float(val[k])
+                # Otherwise just take the first numeric value
+                for v in val.values():
+                    if isinstance(v, (int, float)): return float(v)
+                return 0.0
+            try: return float(val)
+            except: return 0.0
+
+        monthly_price = _to_float(pricing_tiers.get("monthly", 0))
+        yearly_price = _to_float(pricing_tiers.get("yearly", 0))
+        lifetime_price = _to_float(pricing_tiers.get("lifetime", 0))
         
         if velocity < 0.3:
             projected_months = 3
@@ -439,21 +454,28 @@ class SubscriptionAnalyzer:
         }
 
 
+import traceback
+
 def analyze_screentime(app_name: str, cost: float, months_subscribed: int, weekly_hours: list[float], user_wage: float, style_multiplier: float = 0.10):
     """
     Main entry point for API:
     Analyzes single app screentime stats and returns the full risk/NPV report.
     """
-    classifier = GeminiClassifier()
-    ai_data = classifier.analyze_app(app_name, cost)
-    
-    analyzer = SubscriptionAnalyzer(hourly_wage=user_wage, style_multiplier=style_multiplier) 
-    result = analyzer.evaluate(app_name, cost, weekly_hours, months_subscribed, ai_data)
-    
-    # Bundle the ai_data into the result so frontend can display what was found
-    result["ai_found_data"] = ai_data
-    
-    return result
+    try:
+        classifier = GeminiClassifier()
+        ai_data = classifier.analyze_app(app_name, cost)
+        
+        analyzer = SubscriptionAnalyzer(hourly_wage=user_wage, style_multiplier=style_multiplier) 
+        result = analyzer.evaluate(app_name, cost, weekly_hours, months_subscribed, ai_data)
+        
+        # Bundle the ai_data into the result so frontend can display what was found
+        result["ai_found_data"] = ai_data
+        
+        return result
+    except Exception as e:
+        print("[ScreentimeSense] CRITICAL ERROR IN ENGINE (Single):")
+        traceback.print_exc()
+        return {"error": f"Internal Engine Error: {str(e)}"}
 
 
 def analyze_screentime_batch(subscriptions: list, user_wage: float, style_multiplier: float = 0.10):
@@ -464,50 +486,55 @@ def analyze_screentime_batch(subscriptions: list, user_wage: float, style_multip
     
     Each subscription dict should have: app_name, cost, months_subscribed, weekly_hours
     """
-    classifier = GeminiClassifier()
-    analyzer = SubscriptionAnalyzer(hourly_wage=user_wage, style_multiplier=style_multiplier)
-    
-    # --- Phase 1: Parallel Gemini classification ---
-    def _classify_one(sub):
-        app_name = sub["app_name"]
-        cost = sub["cost"]
-        ai_data = classifier.analyze_app(app_name, cost)
-        return sub, ai_data
-    
-    classified = []
-    with ThreadPoolExecutor(max_workers=min(len(subscriptions), 100)) as pool:
-        futures = {pool.submit(_classify_one, sub): sub for sub in subscriptions}
-        for future in as_completed(futures):
-            try:
-                sub, ai_data = future.result()
-                classified.append((sub, ai_data))
-            except Exception as e:
-                sub = futures[future]
-                # Fallback AI data if classification fails
-                classified.append((sub, {
-                    "frequency": "monthly", "category": "entertainment", "value_mode": "time_based",
-                    "engagement_type": "active", "is_multi_device": False, "has_free_tier": False,
-                    "is_shared_plan": False, "student_plan_price": 0,
-                    "pricing_verified": False,
-                    "pricing_tiers": {"monthly": 0, "yearly": 0, "lifetime": 0}
-                }))
-    
-    # --- Phase 2: Evaluate all (pure math, instant) ---
-    results = []
-    for sub, ai_data in classified:
-        result = analyzer.evaluate(
-            sub["app_name"], sub["cost"],
-            sub["weekly_hours"], sub["months_subscribed"],
-            ai_data
-        )
-        result["ai_found_data"] = ai_data
-        result["app_name"] = sub["app_name"]
-        results.append(result)
-    
-    # --- Phase 3: Portfolio Analysis (cross-subscription intelligence) ---
-    portfolio = analyze_portfolio(results)
-    
-    return {"results": results, "portfolio": portfolio}
+    try:
+        classifier = GeminiClassifier()
+        analyzer = SubscriptionAnalyzer(hourly_wage=user_wage, style_multiplier=style_multiplier)
+        
+        # --- Phase 1: Parallel Gemini classification ---
+        def _classify_one(sub):
+            app_name = sub["app_name"]
+            cost = sub["cost"]
+            ai_data = classifier.analyze_app(app_name, cost)
+            return sub, ai_data
+        
+        classified = []
+        with ThreadPoolExecutor(max_workers=min(len(subscriptions), 100)) as pool:
+            futures = {pool.submit(_classify_one, sub): sub for sub in subscriptions}
+            for future in as_completed(futures):
+                try:
+                    sub, ai_data = future.result()
+                    classified.append((sub, ai_data))
+                except Exception as e:
+                    sub = futures[future]
+                    # Fallback AI data if classification fails
+                    classified.append((sub, {
+                        "frequency": "monthly", "category": "entertainment", "value_mode": "time_based",
+                        "engagement_type": "active", "is_multi_device": False, "has_free_tier": False,
+                        "is_shared_plan": False, "student_plan_price": 0,
+                        "pricing_verified": False,
+                        "pricing_tiers": {"monthly": 0, "yearly": 0, "lifetime": 0}
+                    }))
+        
+        # --- Phase 2: Evaluate all (pure math, instant) ---
+        results = []
+        for sub, ai_data in classified:
+            result = analyzer.evaluate(
+                sub["app_name"], sub["cost"],
+                sub["weekly_hours"], sub["months_subscribed"],
+                ai_data
+            )
+            result["ai_found_data"] = ai_data
+            result["app_name"] = sub["app_name"]
+            results.append(result)
+        
+        # --- Phase 3: Portfolio Analysis (cross-subscription intelligence) ---
+        portfolio = analyze_portfolio(results)
+        
+        return {"results": results, "portfolio": portfolio}
+    except Exception as e:
+        print("[ScreentimeSense] CRITICAL ERROR IN ENGINE (Batch):")
+        traceback.print_exc()
+        return {"error": f"Internal Engine Error: {str(e)}"}
 
 
 def detect_exam_season(results: list):

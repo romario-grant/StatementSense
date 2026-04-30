@@ -93,6 +93,12 @@ async def analyze_batch(request: BatchScreentimeRequest):
                 request.user_wage,
                 request.style_multiplier
             )
+            
+        if "error" in results:
+            raise HTTPException(status_code=500, detail=results["error"])
+            
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
