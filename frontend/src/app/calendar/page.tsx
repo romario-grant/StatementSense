@@ -208,7 +208,7 @@ export default function CalendarSensePage() {
             <div className="absolute inset-0 bg-cover bg-center pointer-events-none" style={{ backgroundImage: 'url(/PLANE.jpg)' }} />
             <div className="absolute inset-0 bg-black/40 pointer-events-none" />
             
-            <div className="relative z-10 h-full">
+            <div className="absolute inset-0 z-10">
               <AnimatePresence mode="wait">
                 {!result ? (
                   <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full flex flex-col p-4 md:p-6">
@@ -227,7 +227,7 @@ export default function CalendarSensePage() {
                         ))}
                       </div>
                     ) : eventsPreview.length > 0 ? (
-                      <div className="flex flex-col gap-1 flex-1 overflow-y-auto pr-1 no-scrollbar pb-6">
+                      <div className="flex flex-col gap-1 flex-1 overflow-y-auto pr-1 no-scrollbar pb-6" style={{ maskImage: 'linear-gradient(to bottom, transparent, black 5%, black 95%, transparent)', WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 5%, black 95%, transparent)' }}>
                         {eventsPreview.map((ev: { date: string; summary: string; location: string }, i: number) => (
                           <motion.div
                             key={i}
@@ -259,7 +259,7 @@ export default function CalendarSensePage() {
                   <motion.div key="results" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="h-full flex flex-col p-4 md:p-6 pb-2">
                     
                     {/* Vertical Scroll Container */}
-                    <div className="flex flex-col gap-6 overflow-y-auto pb-8 h-full pr-2 no-scrollbar">
+                    <div className="flex flex-col gap-6 overflow-y-auto pb-8 h-full pr-2 no-scrollbar pt-2" style={{ maskImage: 'linear-gradient(to bottom, transparent, black 5%, black 95%, transparent)', WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 5%, black 95%, transparent)' }}>
                       
                       {/* Slide 1: Summary Stats */}
                       <div className="flex flex-col gap-2">
