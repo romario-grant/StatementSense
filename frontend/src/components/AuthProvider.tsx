@@ -29,6 +29,7 @@ interface AuthContextValue {
   signup: (email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
 }
 
 /* ── Context ── */
@@ -40,6 +41,7 @@ const AuthContext = createContext<AuthContextValue>({
   signup: async () => {},
   loginWithGoogle: async () => {},
   logout: async () => {},
+  deleteAccount: async () => {},
 });
 
 export function useAuth() {
@@ -106,6 +108,20 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     router.replace("/login");
   }, [router]);
 
+  const deleteAccount = useCallback(async () => {
+    if (!user) return;
+    try {
+      await user.delete();
+      localStorage.removeItem("google_access_token");
+      router.replace("/login");
+    } catch (err: any) {
+      if (err.code === "auth/requires-recent-login") {
+        throw new Error("For security, please log out and log back in before deleting your account.");
+      }
+      throw err;
+    }
+  }, [user, router]);
+
   /* ── Loading Screen ── */
   if (loading) {
     return (
@@ -139,7 +155,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, signup, loginWithGoogle, logout }}
+      value={{ user, loading, login, signup, loginWithGoogle, logout, deleteAccount }}
     >
       {children}
     </AuthContext.Provider>

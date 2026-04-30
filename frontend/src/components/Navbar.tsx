@@ -18,7 +18,7 @@ export default function Navbar() {
   const pathname = usePathname();
   const [hovered, setHovered] = useState<string | null>(null);
   const { theme, toggleTheme } = useTheme();
-  const { logout } = useAuth();
+  const { logout, deleteAccount } = useAuth();
   const isDark = theme === "dark";
   const isHomePage = pathname === "/";
 
@@ -51,7 +51,6 @@ export default function Navbar() {
           const isHovered = hovered === path;
           const showLine = active || isHovered;
 
-          // Tailwind classes mapped
           const activeClass = isHomePage ? "text-white" : "text-foreground";
           const inactiveClass = isHomePage ? "text-white/60" : "text-muted-foreground";
           const currentClass = active ? activeClass : inactiveClass;
@@ -122,9 +121,25 @@ export default function Navbar() {
         <button
           onClick={logout}
           aria-label="Sign out"
-          className="bg-transparent border-none cursor-pointer text-destructive/80 hover:text-destructive text-sm font-medium tracking-tight transition-colors duration-250 py-1 flex items-center gap-1.5"
+          className="bg-transparent border-none cursor-pointer text-muted-foreground hover:text-foreground text-sm font-medium tracking-tight transition-colors duration-250 py-1 flex items-center gap-1.5"
         >
           Sign Out <LogOut size={14} />
+        </button>
+
+        {/* Delete Account */}
+        <button
+          onClick={async () => {
+            if (window.confirm("Are you sure you want to delete your account? This action cannot be undone.")) {
+              try {
+                await deleteAccount();
+              } catch (err: any) {
+                alert(err.message || "Failed to delete account.");
+              }
+            }
+          }}
+          className="bg-transparent border-none cursor-pointer text-destructive/40 hover:text-destructive text-[10px] font-medium tracking-tight transition-colors duration-250 py-1"
+        >
+          Delete Account
         </button>
       </motion.div>
     </nav>
