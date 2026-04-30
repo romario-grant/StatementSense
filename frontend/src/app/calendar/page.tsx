@@ -227,7 +227,7 @@ export default function CalendarSensePage() {
                         ))}
                       </div>
                     ) : eventsPreview.length > 0 ? (
-                      <div className="flex flex-col gap-1 flex-1 overflow-y-auto pr-1 no-scrollbar pb-6" style={{ maskImage: 'linear-gradient(to bottom, transparent, black 5%, black 95%, transparent)', WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 5%, black 95%, transparent)' }}>
+                      <div className="flex flex-col gap-1 flex-1 overflow-y-auto pr-1 no-scrollbar pb-6" style={{ maskImage: 'linear-gradient(to bottom, black 0%, black 95%, transparent)', WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 95%, transparent)' }}>
                         {eventsPreview.map((ev: { date: string; summary: string; location: string }, i: number) => (
                           <motion.div
                             key={i}
@@ -259,16 +259,16 @@ export default function CalendarSensePage() {
                   <motion.div key="results" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="h-full flex flex-col p-4 md:p-6 pb-2">
                     
                     {/* Vertical Scroll Container */}
-                    <div className="flex flex-col gap-6 overflow-y-auto pb-8 h-full pr-2 no-scrollbar pt-2" style={{ maskImage: 'linear-gradient(to bottom, transparent, black 5%, black 95%, transparent)', WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 5%, black 95%, transparent)' }}>
+                    <div className="flex flex-col gap-6 overflow-y-auto pb-8 h-full pr-2 no-scrollbar pt-2" style={{ maskImage: 'linear-gradient(to bottom, black 0%, black 95%, transparent)', WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 95%, transparent)' }}>
                       
                       {/* Slide 1: Summary Stats */}
                       <div className="flex flex-col gap-2">
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-4 gap-2 md:gap-4">
                           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                           {([["Events", result.events_scanned, "text-white"], ["Trips", result.away_periods.length, "text-green-400"], ["Local", result.local_count || 0, "text-yellow-400"], ["Savings", `$${result.total_savings.toFixed(2)}`, "text-yellow-400"]] as [string, any, string][]).map(([label, value, colorClass], i) => (
-                            <motion.div key={label} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.06 }} className="text-center py-6 px-3 rounded-xl bg-black/40 backdrop-blur-xl border border-white/10">
-                              <p className="text-[0.7rem] text-white/70 uppercase tracking-[0.06em] font-medium mb-1.5">{label}</p>
-                              <p className={`text-3xl font-medium ${colorClass}`}>{value}</p>
+                            <motion.div key={label} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.06 }} className="text-center py-3 px-2 rounded-xl bg-black/40 backdrop-blur-xl border border-white/10 flex flex-col justify-center min-h-[80px]">
+                              <p className="text-[0.6rem] md:text-[0.65rem] text-white/70 uppercase tracking-[0.06em] font-medium mb-1">{label}</p>
+                              <p className={`text-xl md:text-2xl font-medium ${colorClass}`}>{value}</p>
                             </motion.div>
                           ))}
                         </div>
