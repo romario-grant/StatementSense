@@ -90,7 +90,7 @@ export default function Home() {
         </div>
 
         {/* ── Foreground Content ── */}
-        <div className="relative z-10 pt-52 pb-20 max-w-7xl mx-auto px-8">
+        <div className="relative z-10 pt-28 md:pt-52 pb-20 max-w-7xl mx-auto px-5 md:px-8">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
