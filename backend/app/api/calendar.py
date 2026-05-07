@@ -9,6 +9,7 @@ from ..engines.calendar_engine import (
     fetch_events,
     classify_and_detect,
     compute_savings,
+    create_reminders,
 )
 
 router = APIRouter(prefix="/api/calendar", tags=["CalendarSense"])
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/api/calendar", tags=["CalendarSense"])
 class SubscriptionInput(BaseModel):
     name: str
     cost: float
+    renewal_day: int | None = None  # v2: Day of month (1-31) for smart timing
 
 class CalendarRequest(BaseModel):
     home_location: str
@@ -34,7 +36,7 @@ async def analyze_user_calendar(request: CalendarRequest):
         if not request.home_location:
             raise ValueError("Home location is required")
             
-        subs_list = [{"name": s.name, "cost": s.cost} for s in request.subscriptions]
+        subs_list = [{"name": s.name, "cost": s.cost, "renewal_day": s.renewal_day} for s in request.subscriptions]
         
         # Run in thread pool because it's a synchronous blocking operation
         loop = asyncio.get_event_loop()
@@ -58,7 +60,7 @@ async def analyze_user_calendar(request: CalendarRequest):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Progressive Loading Endpoints — Phase 1, 2, 3
+# Progressive Loading Endpoints — Phase 1, 2, 3, 4
 # ══════════════════════════════════════════════════════════════════════════════
 
 class EventsRequest(BaseModel):
@@ -96,7 +98,10 @@ async def classify_subscriptions(request: ClassifyRequest):
         if not request.subscriptions:
             raise ValueError("At least one subscription is required")
 
-        subs_list = [{"name": s.name, "cost": s.cost} for s in request.subscriptions]
+        subs_list = [
+            {"name": s.name, "cost": s.cost, "renewal_day": s.renewal_day}
+            for s in request.subscriptions
+        ]
 
         loop = asyncio.get_event_loop()
         with concurrent.futures.ThreadPoolExecutor() as pool:
@@ -119,13 +124,36 @@ class SavingsRequest(BaseModel):
 
 @router.post("/savings")
 async def get_savings(request: SavingsRequest):
-    """Phase 3: Calculate savings + alternatives (~10s). Auto-called when local subs + travel exist."""
+    """Phase 3: Smart timing + Places API alternatives (~5s). Auto-called when local subs + travel exist."""
     try:
         loop = asyncio.get_event_loop()
         with concurrent.futures.ThreadPoolExecutor() as pool:
             result = await loop.run_in_executor(
                 pool, compute_savings,
                 request.away_periods, request.processed_subscriptions
+            )
+        if "error" in result:
+            raise HTTPException(status_code=500, detail=result["error"])
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class RemindersRequest(BaseModel):
+    access_token: str
+    recommendations: list  # The recommendations to create reminders for
+
+@router.post("/reminders")
+async def add_calendar_reminders(request: RemindersRequest):
+    """Phase 4: Create calendar reminder events for cancel/pause/restart dates."""
+    try:
+        loop = asyncio.get_event_loop()
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            result = await loop.run_in_executor(
+                pool, create_reminders,
+                request.access_token, request.recommendations
             )
         if "error" in result:
             raise HTTPException(status_code=500, detail=result["error"])

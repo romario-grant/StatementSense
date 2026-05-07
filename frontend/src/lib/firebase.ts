@@ -27,7 +27,7 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
-googleProvider.addScope("https://www.googleapis.com/auth/calendar.readonly");
+googleProvider.addScope("https://www.googleapis.com/auth/calendar.events");
 
 export {
   auth,

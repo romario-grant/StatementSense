@@ -1,17 +1,21 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
-import { Calendar as CalendarIcon, MapPin, Plus, Trash2, Plane, Activity, CheckCircle, AlertTriangle, Search, Loader2 } from "lucide-react";
+import { Calendar as CalendarIcon, MapPin, Plus, Trash2, Plane, Activity, CheckCircle, AlertTriangle, Search, Loader2, CalendarPlus, Clock } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
 
-interface SubInput { id: number; name: string; cost: string; }
+// Lazy-load map component (requires browser APIs)
+const PlacesMap = dynamic(() => import("./PlacesMap"), { ssr: false });
+
+interface SubInput { id: number; name: string; cost: string; renewalDay: string; }
 
 export default function CalendarSensePage() {
   const [homeLocation, setHomeLocation] = useState("Kingston, Jamaica");
-  const [subscriptions, setSubscriptions] = useState<SubInput[]>([{ id: 1, name: "", cost: "" }]);
+  const [subscriptions, setSubscriptions] = useState<SubInput[]>([{ id: 1, name: "", cost: "", renewalDay: "" }]);
   const [error, setError] = useState<string | null>(null);
 
   // Phase 1: Calendar events (fetched on mount)
@@ -27,12 +31,17 @@ export default function CalendarSensePage() {
   const [classifyResult, setClassifyResult] = useState<any>(null);
   const [classifyLoading, setClassifyLoading] = useState(false);
 
-  // Phase 3: Savings + Alternatives
+  // Phase 3: Savings + Alternatives (Places API)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [savingsResult, setSavingsResult] = useState<any>(null);
   const [savingsLoading, setSavingsLoading] = useState(false);
 
-  // Legacy compat: build a combined result object for the existing render code
+  // Phase 4: Calendar reminders
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [remindersResult, setRemindersResult] = useState<any>(null);
+  const [remindersLoading, setRemindersLoading] = useState(false);
+
+  // Legacy compat: build a combined result object for the render code
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result: any = classifyResult ? {
     events_scanned: eventsCount,
@@ -109,7 +118,7 @@ export default function CalendarSensePage() {
     }
   }, [classifyResult]);
 
-  const handleAddSub = () => setSubscriptions([...subscriptions, { id: Date.now(), name: "", cost: "" }]);
+  const handleAddSub = () => setSubscriptions([...subscriptions, { id: Date.now(), name: "", cost: "", renewalDay: "" }]);
   const handleRemoveSub = (id: number) => setSubscriptions(subscriptions.filter(s => s.id !== id));
   const handleChangeSub = (id: number, field: string, value: string) => setSubscriptions(subscriptions.map(s => s.id === id ? { ...s, [field]: value } : s));
 
@@ -121,14 +130,18 @@ export default function CalendarSensePage() {
     if (validSubs.length === 0) return setError("Please add at least one subscription");
     if (!events || events.length === 0) return setError("Calendar events not loaded yet. Please wait or reconnect.");
 
-    setClassifyLoading(true); setError(null); setClassifyResult(null); setSavingsResult(null); phase3Fired.current = false;
+    setClassifyLoading(true); setError(null); setClassifyResult(null); setSavingsResult(null); setRemindersResult(null); phase3Fired.current = false;
     try {
       const res = await fetch("/api/calendar/classify", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           events,
           home_location: homeLocation,
-          subscriptions: validSubs.map(s => ({ name: s.name, cost: parseFloat(s.cost) })),
+          subscriptions: validSubs.map(s => ({
+            name: s.name,
+            cost: parseFloat(s.cost),
+            renewal_day: s.renewalDay ? parseInt(s.renewalDay) : null,
+          })),
         }),
       });
       const data = await res.json();
@@ -137,6 +150,33 @@ export default function CalendarSensePage() {
     } catch (err) { setError(err instanceof Error ? err.message : "An error occurred"); }
     finally { setClassifyLoading(false); }
   };
+
+  // ── Phase 4: Add reminders to calendar ──
+  const handleAddReminders = async () => {
+    if (!savingsResult?.recommendations?.length) return;
+    const token = localStorage.getItem("google_access_token");
+    if (!token) { setError("Google access token not found. Please re-login."); return; }
+
+    setRemindersLoading(true);
+    try {
+      const res = await fetch("/api/calendar/reminders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          access_token: token,
+          recommendations: savingsResult.recommendations.filter(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (r: any) => r.action !== "KEEP"
+          ),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || data?.error || "Failed to create reminders.");
+      setRemindersResult(data);
+    } catch (err) { setError(err instanceof Error ? err.message : "Failed to create reminders"); }
+    finally { setRemindersLoading(false); }
+  };
+
 
   return (
     <>
@@ -174,7 +214,8 @@ export default function CalendarSensePage() {
                   <div key={sub.id} className="flex items-center gap-2">
                     <span className="text-muted-foreground text-xs w-4 shrink-0">{index + 1}.</span>
                     <input type="text" placeholder="Name" className="flex-1 min-w-0 text-sm px-3 py-2 rounded-md border bg-transparent focus:outline-none focus:ring-2 focus:ring-ring" value={sub.name} onChange={e => handleChangeSub(sub.id, "name", e.target.value)} />
-                    <input type="number" step="0.01" placeholder="$ Cost" className="w-24 min-w-0 text-sm px-3 py-2 rounded-md border bg-transparent focus:outline-none focus:ring-2 focus:ring-ring" value={sub.cost} onChange={e => handleChangeSub(sub.id, "cost", e.target.value)} />
+                    <input type="number" step="0.01" placeholder="$ Cost" className="w-20 min-w-0 text-sm px-3 py-2 rounded-md border bg-transparent focus:outline-none focus:ring-2 focus:ring-ring" value={sub.cost} onChange={e => handleChangeSub(sub.id, "cost", e.target.value)} />
+                    <input type="number" min="1" max="31" placeholder="Day (1-31)" className="w-24 min-w-0 text-sm px-3 py-2 rounded-md border bg-transparent focus:outline-none focus:ring-2 focus:ring-ring" value={sub.renewalDay} onChange={e => handleChangeSub(sub.id, "renewalDay", e.target.value)} title="Renewal Day (1-31)" />
                     <button onClick={() => handleRemoveSub(sub.id)} className="p-2 text-red-500/60 hover:text-red-500 bg-transparent border-none rounded-lg cursor-pointer transition-colors shrink-0"><Trash2 size={15} /></button>
                   </div>
                 ))}
@@ -356,77 +397,99 @@ export default function CalendarSensePage() {
                         </div>
                       </div>
 
-                      {/* Slide 4: Savings Plan */}
+                      {/* Slide 4: Smart Recommendations & Map */}
                       {result.recommendations.length > 0 && (
                         <div>
                           <div className="rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 flex flex-col overflow-hidden">
                             <div className="p-5 border-b border-white/10 flex justify-between items-center">
-                              <h3 className="font-medium flex items-center gap-2 m-0 text-white"><Activity size={18} className="text-white/70" /> Savings Plan</h3>
-                              <span className="font-bold text-yellow-400 text-lg">${result.total_savings.toFixed(2)}</span>
+                              <h3 className="font-medium flex items-center gap-2 m-0 text-white"><Activity size={18} className="text-white/70" /> Smart Recommendations</h3>
+                              <span className="font-bold text-yellow-400 text-lg">${result.total_savings.toFixed(2)} savings</span>
                             </div>
                             <div className="p-5">
-                              <div className="flex flex-col gap-6">
+                              <div className="flex flex-col gap-8">
                                 {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                                 {result.recommendations.map((rec: any, i: number) => (
                                   <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 + i * 0.1 }} className="text-white">
                                     <div className="flex justify-between gap-4 flex-wrap mb-4">
                                       <div className="flex-1">
-                                        <h3 className="text-base font-medium mb-1 text-white">{rec.action}</h3>
-                                        <p className="text-[0.8rem] text-white/70 mb-3">{rec.action_detail}</p>
-                                        <div className="grid grid-cols-2 gap-y-2 text-[0.8rem] bg-white/5 p-3 rounded-lg border border-white/5">
-                                          <p><span className="text-white/50 block text-[0.65rem]">Service</span> <strong>{rec.subscription}</strong></p>
-                                          <p><span className="text-white/50 block text-[0.65rem]">Duration</span> {rec.days_away} days</p>
-                                          <p><span className="text-white/50 block text-[0.65rem]">Trip</span> <span className="truncate block max-w-[8rem]">{rec.away_reason}</span></p>
-                                          <p><span className="text-white/50 block text-[0.65rem]">Net Savings</span> <strong className="text-green-400">${rec.net_savings?.toFixed(2)}</strong></p>
+                                        <div className="flex items-center gap-2 mb-2">
+                                          <h3 className="text-base font-semibold m-0">{rec.action} {rec.subscription}</h3>
+                                          <Badge variant={rec.action === "KEEP" ? "info" : "safe"} className="text-[0.65rem]">{rec.net_savings > 0 ? `$${rec.net_savings.toFixed(2)} saved` : "Advisory"}</Badge>
+                                        </div>
+                                        <p className="text-[0.85rem] text-white/80 mb-2">{rec.action_detail}</p>
+                                        <p className="text-[0.75rem] text-white/50 italic mb-4">"{rec.rationale}"</p>
+                                        
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[0.8rem] bg-white/5 p-4 rounded-xl border border-white/5">
+                                          <div className="flex flex-col gap-1">
+                                            <span className="text-white/50 text-[0.65rem] uppercase tracking-wider flex items-center gap-1"><Clock size={12} /> Timing</span>
+                                            <span className="font-medium">{rec.timing_context || "Unknown"}</span>
+                                          </div>
+                                          <div className="flex flex-col gap-1">
+                                            <span className="text-white/50 text-[0.65rem] uppercase tracking-wider flex items-center gap-1"><Plane size={12} /> Trip</span>
+                                            <span className="font-medium truncate" title={rec.away_reason}>{rec.away_reason}</span>
+                                          </div>
+                                          <div className="flex flex-col gap-1">
+                                            <span className="text-white/50 text-[0.65rem] uppercase tracking-wider flex items-center gap-1"><MapPin size={12} /> Destination</span>
+                                            <span className="font-medium truncate" title={rec.destination}>{rec.destination}</span>
+                                          </div>
+                                          <div className="flex flex-col gap-1">
+                                            <span className="text-white/50 text-[0.65rem] uppercase tracking-wider flex items-center gap-1"><Activity size={12} /> Duration</span>
+                                            <span className="font-medium">{rec.days_away} days</span>
+                                          </div>
                                         </div>
                                       </div>
                                     </div>
 
-                                    {/* Destination Alternatives */}
+                                    {/* Destination Map Integration */}
                                     {rec.alternatives && rec.alternatives.alternatives_found && (
-                                      <div className="rounded-xl p-4 bg-yellow-500/10 border border-yellow-500/20">
-                                        <div className="flex items-center justify-between mb-2">
-                                          <span className="font-medium text-[0.8rem] text-yellow-100">Alternatives in {rec.destination}</span>
-                                          <Badge variant="warn" className="bg-yellow-500 text-black text-[0.6rem] border-none">TIP</Badge>
-                                        </div>
-                                        {rec.alternatives.tip && <p className="text-[0.75rem] italic text-white/60 mb-3">&quot;{rec.alternatives.tip}&quot;</p>}
-                                        
-                                        {/* Cost Comparison */}
-                                        {(() => {
-                                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                          const cheapest = rec.alternatives.options?.reduce((min: number | null, opt: any) => {
-                                            const cost = opt.estimated_monthly_cost;
-                                            return (cost && cost > 0 && (min === null || cost < min)) ? cost : min;
-                                          }, null as number | null);
-                                          if (!cheapest || cheapest <= 0) return null;
-                                          const altCost = cheapest * (rec.months_away || 1);
-                                          return (
-                                            <div className="mt-2 text-[0.85rem] bg-black/20 p-3 rounded-lg">
-                                              <p className="text-center font-medium">Potential savings if you subscribe to alternative:</p>
-                                              <p className="text-center text-xl font-bold text-green-400 mt-1">${(rec.potential_savings - altCost).toFixed(2)}</p>
-                                            </div>
-                                          );
-                                        })()}
+                                      <div className="mt-6 mb-2">
+                                        <PlacesMap
+                                          center={rec.alternatives.destination_center}
+                                          markers={rec.alternatives.options}
+                                          destination={rec.destination}
+                                          subscriptionName={rec.subscription}
+                                        />
+                                      </div>
+                                    )}
 
-                                        <div className="flex flex-col gap-2 mt-3">
-                                          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                          {rec.alternatives.options?.map((opt: any, j: number) => (
-                                            <div key={j} className="flex justify-between items-center text-[0.8rem] pt-2 border-t border-white/10">
-                                              <div>
-                                                {opt.url ? (
-                                                  <a href={opt.url} target="_blank" rel="noopener noreferrer" className="font-medium text-white hover:text-yellow-400 transition-colors">{opt.name} ↗</a>
-                                                ) : (<span className="font-medium text-white">{opt.name}</span>)}
-                                                <span className="text-white/50 ml-2">({opt.type})</span>
-                                              </div>
-                                              <span className="font-medium text-yellow-400">{opt.estimated_cost}</span>
-                                            </div>
+                                    {i < result.recommendations.length - 1 && <hr className="border-t border-white/10 my-8" />}
+                                  </motion.div>
+                                ))}
+
+                                {/* Add to Calendar Button */}
+                                {result.recommendations.some((r: any) => r.action !== "KEEP") && (
+                                  <div className="mt-4 pt-6 border-t border-white/10 flex flex-col items-center">
+                                    {remindersResult ? (
+                                      <div className="bg-green-500/10 border border-green-500/20 text-green-400 p-4 rounded-xl text-sm flex flex-col gap-2 w-full">
+                                        <div className="flex items-center gap-2 font-medium">
+                                          <CheckCircle size={16} /> Successfully created {remindersResult.total_created} calendar reminders!
+                                        </div>
+                                        <div className="flex flex-col gap-1 mt-1">
+                                          {remindersResult.created_events?.map((ev: any, idx: number) => (
+                                            <a key={idx} href={ev.event_link} target="_blank" rel="noopener noreferrer" className="text-xs text-green-400/80 hover:text-green-300 flex items-center gap-1">
+                                              <span>{ev.date}: {ev.summary}</span>
+                                            </a>
                                           ))}
                                         </div>
                                       </div>
+                                    ) : (
+                                      <>
+                                        <button
+                                          onClick={handleAddReminders}
+                                          disabled={remindersLoading}
+                                          className="flex items-center gap-2 px-6 py-3 bg-white text-black font-medium rounded-full hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          {remindersLoading ? <Loader2 size={18} className="animate-spin" /> : <CalendarPlus size={18} />}
+                                          {remindersLoading ? "Creating events..." : "Add Reminders to Google Calendar"}
+                                        </button>
+                                        <p className="text-xs text-white/50 mt-3 text-center">
+                                          Creates events for optimal cancellation/pause dates before your trip,<br />
+                                          and reminders to restart when you return.
+                                        </p>
+                                      </>
                                     )}
-                                    {i < result.recommendations.length - 1 && <hr className="border-t border-white/10 my-6" />}
-                                  </motion.div>
-                                ))}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>

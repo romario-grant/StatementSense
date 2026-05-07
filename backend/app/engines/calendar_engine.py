@@ -282,73 +282,245 @@ Rules:
             return None
 
 
+class SmartTimingEngine:
+    """
+    Context-aware subscription timing analyzer (v2).
+    
+    Instead of simplistic "days_away > 14 → cancel" logic, this engine
+    analyzes the actual renewal cycle relative to travel dates to produce
+    intelligent, actionable recommendations.
+    """
+
+    # Minimum trip length to consider any subscription action
+    MIN_TRIP_DAYS = 14
+    # If the user departs within this many days after renewal, don't recommend cancel
+    RECENTLY_RENEWED_WINDOW = 5
+
+    @staticmethod
+    def _next_renewal_date(renewal_day: int, after_date: datetime) -> datetime:
+        """Calculate the next renewal date on or after `after_date`."""
+        # Try the renewal day in the current month
+        year, month = after_date.year, after_date.month
+        # Clamp to valid day for the month
+        import calendar as cal_mod
+        max_day = cal_mod.monthrange(year, month)[1]
+        day = min(renewal_day, max_day)
+        candidate = datetime(year, month, day)
+        if candidate >= after_date:
+            return candidate
+        # Otherwise, try next month
+        if month == 12:
+            year += 1
+            month = 1
+        else:
+            month += 1
+        max_day = cal_mod.monthrange(year, month)[1]
+        day = min(renewal_day, max_day)
+        return datetime(year, month, day)
+
+    @staticmethod
+    def _count_renewals_during_travel(renewal_day: int, depart: datetime, return_dt: datetime) -> int:
+        """Count how many renewal cycles fall within the travel period."""
+        import calendar as cal_mod
+        count = 0
+        year, month = depart.year, depart.month
+        # Iterate month by month from departure to return
+        while True:
+            max_day = cal_mod.monthrange(year, month)[1]
+            day = min(renewal_day, max_day)
+            renewal = datetime(year, month, day)
+            if renewal > return_dt:
+                break
+            if renewal >= depart:
+                count += 1
+            # Advance to next month
+            if month == 12:
+                year += 1
+                month = 1
+            else:
+                month += 1
+        return count
+
+    def analyze(self, subscription: dict, away_period: dict, today: datetime | None = None) -> dict | None:
+        """
+        Analyze a single subscription against a single away period.
+
+        Returns a recommendation dict, or None if no action is needed.
+
+        Decision logic:
+        1. Trip < MIN_TRIP_DAYS → KEEP (not worth the hassle)
+        2. Subscription just renewed (within RECENTLY_RENEWED_WINDOW before departure)
+           AND trip < 30 days → KEEP (already paid, short trip)
+        3. Renewal falls during travel → CANCEL BEFORE or PAUSE
+        4. Can pause → PAUSE (always preferred over cancel)
+        5. Can cancel+rejoin with no penalty → CANCEL before next renewal
+        6. Penalty exists but savings > 2x penalty → CANCEL WITH NOTE
+        7. Otherwise → KEEP with advisory
+        """
+        if today is None:
+            today = datetime.now()
+
+        monthly_cost = float(subscription.get("monthly_cost", 0))
+        if monthly_cost <= 0:
+            return None
+
+        depart = datetime.strptime(away_period["departure_date"], "%Y-%m-%d")
+        return_dt = datetime.strptime(away_period["return_date"], "%Y-%m-%d")
+
+        # Only count future days
+        effective_depart = max(depart, today)
+        if return_dt <= effective_depart:
+            return None
+
+        days_away = (return_dt - effective_depart).days
+        months_away = math.ceil(days_away / 30.0)
+        daily_cost = monthly_cost / 30.0
+
+        renewal_day = subscription.get("renewal_day")
+        penalty = float(subscription.get("cancellation_penalty", 0))
+        can_pause = subscription.get("can_pause", False)
+        can_cancel = subscription.get("can_cancel_and_rejoin", False)
+
+        # ── Rule 1: Short trips aren't worth the hassle ──
+        if days_away < self.MIN_TRIP_DAYS:
+            return None
+
+        # ── Timing analysis ──
+        if renewal_day:
+            next_renewal = self._next_renewal_date(renewal_day, today)
+            renewals_during_travel = self._count_renewals_during_travel(
+                renewal_day, effective_depart, return_dt
+            )
+            days_until_renewal = (next_renewal - today).days
+            days_renewal_to_depart = (depart - next_renewal).days  # negative = renewal after departure
+            wasted_months = renewals_during_travel
+            potential_savings = monthly_cost * wasted_months
+        else:
+            # No renewal day provided — fall back to daily cost estimate
+            next_renewal = None
+            renewals_during_travel = months_away
+            days_until_renewal = None
+            days_renewal_to_depart = None
+            wasted_months = months_away
+            potential_savings = daily_cost * days_away
+
+        # ── Rule 2: Recently renewed + short trip → KEEP ──
+        if (renewal_day and days_renewal_to_depart is not None
+                and -self.RECENTLY_RENEWED_WINDOW <= days_renewal_to_depart <= 0
+                and days_away < 30):
+            return None  # Already paid, trip is short
+
+        # ── Rule 3+4+5+6: Determine action ──
+        net_savings = potential_savings - penalty
+
+        if net_savings <= 0:
+            return None
+
+        # Determine the optimal action date
+        if renewal_day and next_renewal:
+            # Cancel/pause BEFORE the next renewal to avoid paying
+            if next_renewal > today:
+                action_date = (next_renewal - timedelta(days=1)).strftime("%Y-%m-%d")
+            else:
+                action_date = today.strftime("%Y-%m-%d")
+            restart_date = return_dt.strftime("%Y-%m-%d")
+        else:
+            action_date = (effective_depart - timedelta(days=1)).strftime("%Y-%m-%d")
+            restart_date = return_dt.strftime("%Y-%m-%d")
+
+        # Build timing context string
+        if renewal_day:
+            if days_renewal_to_depart is not None and days_renewal_to_depart < 0:
+                timing_context = (
+                    f"Renews on day {renewal_day} — "
+                    f"{abs(days_renewal_to_depart)} day(s) after departure. "
+                    f"{renewals_during_travel} renewal(s) fall during travel."
+                )
+            elif days_renewal_to_depart is not None and days_renewal_to_depart >= 0:
+                timing_context = (
+                    f"Renews on day {renewal_day} — "
+                    f"{days_renewal_to_depart} day(s) before departure. "
+                    f"{renewals_during_travel} renewal(s) fall during travel."
+                )
+            else:
+                timing_context = f"Renews on day {renewal_day}."
+        else:
+            timing_context = "Renewal day unknown — estimated from daily cost."
+
+        # ── Decision matrix ──
+        if can_pause:
+            action = "PAUSE"
+            detail = f"Pause your membership before {action_date}. Resume on {restart_date}."
+            rationale = "Pausing preserves your membership while avoiding charges during travel."
+        elif can_cancel and penalty == 0:
+            action = "CANCEL & REJOIN"
+            detail = f"Cancel before {action_date}. Rejoin after {restart_date}."
+            rationale = "No penalty to rejoin — clean cancel saves you the most."
+        elif can_cancel and net_savings > penalty * 2:
+            action = "CANCEL & REJOIN"
+            detail = (
+                f"Cancel before {action_date}. Rejoin fee is ${penalty:.2f}, "
+                f"but you save ${net_savings:.2f} net."
+            )
+            rationale = f"Savings outweigh the ${penalty:.2f} rejoin penalty by 2x+."
+        else:
+            action = "KEEP"
+            detail = "The savings don't justify cancellation given the rejoin cost."
+            rationale = "Consider asking your provider about a temporary pause option."
+            # Still return it so the user sees the analysis, but mark action as KEEP
+            if net_savings < 10:
+                return None  # Truly not worth mentioning
+
+        return {
+            "subscription": subscription["name"],
+            "away_reason": away_period["reason"],
+            "away_dates": f"{away_period['departure_date']} to {away_period['return_date']}",
+            "destination": away_period.get("destination", "Unknown"),
+            "days_away": days_away,
+            "months_away": months_away,
+            "monthly_cost": monthly_cost,
+            "renewal_day": renewal_day,
+            "next_renewal_date": next_renewal.strftime("%Y-%m-%d") if next_renewal else None,
+            "renewals_during_travel": renewals_during_travel,
+            "potential_savings": round(potential_savings, 2),
+            "penalty": penalty,
+            "net_savings": round(net_savings, 2),
+            "action": action,
+            "action_detail": detail,
+            "action_date": action_date,
+            "restart_date": restart_date,
+            "timing_context": timing_context,
+            "rationale": rationale,
+            "location_type": subscription.get("location_type", "unknown"),
+            "confidence": away_period.get("confidence", "medium"),
+        }
+
+
 class CalendarSenseEngine:
+    """Thin wrapper around SmartTimingEngine for backward compatibility."""
+
     @staticmethod
     def calculate_overlap_days(away_start, away_end, today=None):
         if today is None:
             today = datetime.now()
-        
         start = datetime.strptime(away_start, "%Y-%m-%d")
         end = datetime.strptime(away_end, "%Y-%m-%d")
-        
         if start < today: start = today
         if end <= start: return 0
-        
         return (end - start).days
-    
+
     @staticmethod
     def calculate_savings(away_periods, local_subs):
+        """Generate recommendations using SmartTimingEngine."""
+        engine = SmartTimingEngine()
         recommendations = []
         for sub in local_subs:
-            if not sub.get("is_local"): continue
-            
-            monthly_cost = float(sub.get("monthly_cost", 0))
-            if monthly_cost <= 0: continue
-            daily_cost = monthly_cost / 30.0
-            
+            if not sub.get("is_local"):
+                continue
             for away in away_periods:
-                days_away = CalendarSenseEngine.calculate_overlap_days(
-                    away["departure_date"], away["return_date"]
-                )
-                
-                if days_away < 14: continue
-                
-                potential_savings = daily_cost * days_away
-                penalty = float(sub.get("cancellation_penalty", 0))
-                net_savings = potential_savings - penalty
-                
-                if net_savings <= 0: continue
-                
-                if sub.get("can_pause"):
-                    action = "PAUSE MEMBERSHIP"
-                    detail = "Freeze your membership during this period."
-                elif sub.get("can_cancel_and_rejoin") and penalty == 0:
-                    action = "CANCEL & REJOIN"
-                    detail = "Cancel before you leave, resubscribe when you return."
-                elif sub.get("can_cancel_and_rejoin") and net_savings > penalty * 2:
-                    action = "CANCEL & REJOIN (WITH PENALTY)"
-                    detail = f"Rejoin fee is ${penalty:.2f}, but you still save ${net_savings:.2f} net."
-                else:
-                    action = "CONSIDER CANCELING"
-                    detail = "Check with the provider about pause options."
-                
-                months_away = math.ceil(days_away / 30.0)
-                recommendations.append({
-                    "subscription": sub["name"],
-                    "away_reason": away["reason"],
-                    "away_dates": f"{away['departure_date']} to {away['return_date']}",
-                    "destination": away.get("destination", "Unknown"),
-                    "days_away": days_away,
-                    "months_away": months_away,
-                    "monthly_cost": monthly_cost,
-                    "potential_savings": round(potential_savings, 2),
-                    "penalty": penalty,
-                    "net_savings": round(net_savings, 2),
-                    "action": action,
-                    "action_detail": detail,
-                    "location_type": sub.get("location_type", "unknown"),
-                    "confidence": away.get("confidence", "medium")
-                })
+                rec = engine.analyze(sub, away)
+                if rec is not None:
+                    recommendations.append(rec)
         return recommendations
 
 
@@ -512,8 +684,11 @@ def classify_and_detect(events: list, home_location: str, subscriptions_list: li
     def _classify_one(sub):
         sub_name = sub.get("name")
         sub_cost = float(sub.get("cost", 0))
+        renewal_day = sub.get("renewal_day")  # v2: carry through for SmartTimingEngine
         classification = analyzer.classify_subscription(sub_name, sub_cost, home_location)
         classification["name"] = sub_name
+        if renewal_day is not None:
+            classification["renewal_day"] = renewal_day
         return classification
 
     try:
@@ -561,13 +736,10 @@ def classify_and_detect(events: list, home_location: str, subscriptions_list: li
 
 def compute_savings(away_periods: list, processed_subscriptions: list):
     """
-    Phase 3: Calculate savings + search destination alternatives.
+    Phase 3: Calculate savings + search destination alternatives via Places API.
     Only called when local subs AND away periods exist.
     """
-    try:
-        analyzer = GeminiCalendarAnalyzer()
-    except Exception as e:
-        return {"error": f"Gemini initialization failed: {e}"}
+    from .places_service import PlacesService
 
     local_subs = [s for s in processed_subscriptions if s.get("is_local")]
 
@@ -577,29 +749,36 @@ def compute_savings(away_periods: list, processed_subscriptions: list):
     engine = CalendarSenseEngine()
     recommendations = engine.calculate_savings(away_periods, local_subs)
 
-    # Parallel alternatives search
+    # Initialize Places API service (falls back gracefully if key missing)
+    places = None
+    try:
+        places = PlacesService()
+    except ValueError as e:
+        print(f"[CalendarSense:Phase3] Places API not available: {e}")
+
+    # Parallel alternatives search via Google Places API
     def _search_one(rec):
         dest = rec.get("destination", "")
         loc_type = rec.get("location_type", "")
         sub_name = rec.get("subscription", "")
-        if dest and dest != "Unknown" and loc_type != "portable":
+        if dest and dest != "Unknown" and loc_type != "portable" and places:
             try:
-                print(f"[CalendarSense:Phase3] Searching alternatives for '{sub_name}' in {dest}...")
-                alternatives = analyzer.search_destination_alternatives(
-                    sub_name, loc_type, dest,
-                    sub_reason=next((s.get('reason', '') for s in processed_subscriptions if s.get('name') == sub_name), '')
-                )
-                if alternatives:
-                    rec["alternatives"] = alternatives
-                else:
-                    rec["alternatives"] = {"alternatives_found": False, "options": [], "tip": "Could not find alternatives."}
+                print(f"[CalendarSense:Phase3] Places API search for '{sub_name}' in {dest}...")
+                alternatives = places.search_alternatives(sub_name, loc_type, dest)
+                rec["alternatives"] = alternatives
             except Exception as e:
-                print(f"[CalendarSense:Phase3] Alternatives search failed for '{sub_name}': {e}")
-                rec["alternatives"] = {"alternatives_found": False, "options": [], "tip": f"Search failed: {str(e)[:100]}"}
+                print(f"[CalendarSense:Phase3] Places search failed for '{sub_name}': {e}")
+                rec["alternatives"] = {
+                    "alternatives_found": False,
+                    "destination": dest,
+                    "destination_center": None,
+                    "options": [],
+                    "search_query": "",
+                }
         return rec
 
     if recommendations:
-        with ThreadPoolExecutor(max_workers=min(len(recommendations), 100)) as pool:
+        with ThreadPoolExecutor(max_workers=min(len(recommendations), 5)) as pool:
             futures = [pool.submit(_search_one, rec) for rec in recommendations]
             recommendations = [f.result() for f in futures]
 
@@ -612,4 +791,130 @@ def compute_savings(away_periods: list, processed_subscriptions: list):
         "total_savings": round(total_savings, 2),
     }
 
+
+def create_reminders(access_token: str, recommendations: list) -> dict:
+    """
+    Phase 4: Create Google Calendar reminder events for actionable recommendations.
+
+    For each recommendation with action != 'KEEP', creates:
+    1. An action event (cancel/pause) on the optimal action date
+    2. A restart event on the return date
+
+    Requires calendar.events scope (read+write).
+    """
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build
+
+    if not access_token:
+        return {"error": "Access token required for calendar write access."}
+
+    try:
+        creds = Credentials(token=access_token)
+        service = build('calendar', 'v3', credentials=creds)
+    except Exception as e:
+        return {"error": f"Calendar authentication failed: {e}"}
+
+    created_events = []
+
+    for rec in recommendations:
+        action = rec.get("action", "KEEP")
+        if action == "KEEP":
+            continue
+
+        sub_name = rec.get("subscription", "Unknown")
+        action_date = rec.get("action_date")
+        restart_date = rec.get("restart_date")
+        destination = rec.get("destination", "")
+        net_savings = rec.get("net_savings", 0)
+
+        # ── Event 1: Action reminder (cancel/pause) ──
+        if action_date:
+            action_verb = "Pause" if action == "PAUSE" else "Cancel"
+            action_event = {
+                "summary": f"📋 {action_verb} {sub_name}",
+                "description": (
+                    f"CalendarSense Reminder\n\n"
+                    f"Action: {action}\n"
+                    f"{rec.get('action_detail', '')}\n\n"
+                    f"Reason: {rec.get('away_reason', '')}\n"
+                    f"Destination: {destination}\n"
+                    f"Estimated savings: ${net_savings:.2f}\n\n"
+                    f"— Generated by StatementSense"
+                ),
+                "start": {"date": action_date},
+                "end": {"date": action_date},
+                "reminders": {
+                    "useDefault": False,
+                    "overrides": [
+                        {"method": "popup", "minutes": 24 * 60},  # 1 day before
+                        {"method": "popup", "minutes": 60},        # 1 hour before
+                    ],
+                },
+            }
+            try:
+                result = service.events().insert(
+                    calendarId='primary', body=action_event
+                ).execute()
+                created_events.append({
+                    "type": "action",
+                    "subscription": sub_name,
+                    "date": action_date,
+                    "summary": action_event["summary"],
+                    "event_link": result.get("htmlLink", ""),
+                })
+                print(f"[CalendarSense:Phase4] Created: {action_event['summary']} on {action_date}")
+            except Exception as e:
+                print(f"[CalendarSense:Phase4] Failed to create action event: {e}")
+                created_events.append({
+                    "type": "action",
+                    "subscription": sub_name,
+                    "date": action_date,
+                    "error": str(e),
+                })
+
+        # ── Event 2: Restart reminder ──
+        if restart_date and action != "KEEP":
+            restart_event = {
+                "summary": f"🔄 Restart {sub_name}",
+                "description": (
+                    f"CalendarSense Reminder\n\n"
+                    f"You're back from {destination}!\n"
+                    f"Re-subscribe to {sub_name} now.\n\n"
+                    f"— Generated by StatementSense"
+                ),
+                "start": {"date": restart_date},
+                "end": {"date": restart_date},
+                "reminders": {
+                    "useDefault": False,
+                    "overrides": [
+                        {"method": "popup", "minutes": 60},
+                    ],
+                },
+            }
+            try:
+                result = service.events().insert(
+                    calendarId='primary', body=restart_event
+                ).execute()
+                created_events.append({
+                    "type": "restart",
+                    "subscription": sub_name,
+                    "date": restart_date,
+                    "summary": restart_event["summary"],
+                    "event_link": result.get("htmlLink", ""),
+                })
+                print(f"[CalendarSense:Phase4] Created: {restart_event['summary']} on {restart_date}")
+            except Exception as e:
+                print(f"[CalendarSense:Phase4] Failed to create restart event: {e}")
+                created_events.append({
+                    "type": "restart",
+                    "subscription": sub_name,
+                    "date": restart_date,
+                    "error": str(e),
+                })
+
+    return {
+        "created_events": created_events,
+        "total_created": len([e for e in created_events if "error" not in e]),
+        "total_failed": len([e for e in created_events if "error" in e]),
+    }
 
