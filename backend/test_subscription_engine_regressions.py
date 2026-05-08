@@ -2,9 +2,11 @@ from datetime import datetime
 import unittest
 
 from backend.app.engines.subscription_engine import (
+    analyze_extracted_subscriptions,
     _classify_transactions,
     _detect_price_changes,
     _detect_trials,
+    _dedupe_raw_transactions,
     _run_subscription_detection,
 )
 
@@ -49,6 +51,7 @@ class SubscriptionEngineRegressionTests(unittest.TestCase):
         self.assertEqual([sub["merchant"] for sub in subscriptions], ["YouTube"])
         self.assertEqual(subscriptions[0]["period"], "monthly")
         self.assertAlmostEqual(subscriptions[0]["amount"], 802.82)
+        self.assertAlmostEqual(subscriptions[0]["confidence"], 0.8)
         self.assertEqual(renewals, [])
 
     def test_transfer_pattern_does_not_create_trial_alert(self):
@@ -66,6 +69,67 @@ class SubscriptionEngineRegressionTests(unittest.TestCase):
         self.assertTrue(service_charge_rows)
         self.assertTrue(all(tx["category"] == "other" for tx in service_charge_rows))
         self.assertTrue(all(tx["excluded_from_subscription_analysis"] for tx in service_charge_rows))
+
+    def test_single_charge_subscription_merchant_is_possible(self):
+        result = analyze_extracted_subscriptions([
+            {
+                "bank": "Scotiabank",
+                "date": "2026-01-08",
+                "description": "POS PURCHASE SPOTIFY AB STOCKHOLM SE",
+                "amount": -559.85,
+                "balance": None,
+                "currency": "JMD",
+            }
+        ])
+
+        self.assertEqual(result["subscriptions"], [])
+        self.assertEqual(result["possible_subscriptions"][0]["merchant"], "Spotify")
+        self.assertEqual(result["summary"]["total_possible_subscriptions"], 1)
+
+    def test_dedupes_overlapping_statement_rows(self):
+        tx = {
+            "bank": "Scotiabank",
+            "date": "2026-01-08",
+            "description": "POS PURCHASE SPOTIFY AB STOCKHOLM SE",
+            "amount": -559.85,
+            "balance": None,
+            "currency": "JMD",
+        }
+
+        self.assertEqual(len(_dedupe_raw_transactions([tx, tx.copy()])), 1)
+
+    def test_three_successive_spotify_charges_become_confirmed(self):
+        result = analyze_extracted_subscriptions([
+            {
+                "bank": "Scotiabank",
+                "date": "2026-01-08",
+                "description": "POS PURCHASE SPOTIFY AB STOCKHOLM SE",
+                "amount": -559.85,
+                "balance": None,
+                "currency": "JMD",
+            },
+            {
+                "bank": "Scotiabank",
+                "date": "2026-02-07",
+                "description": "POS PURCHASE SPOTIFY AB STOCKHOLM SE",
+                "amount": -559.85,
+                "balance": None,
+                "currency": "JMD",
+            },
+            {
+                "bank": "Scotiabank",
+                "date": "2026-03-09",
+                "description": "POS PURCHASE SPOTIFY AB STOCKHOLM SE",
+                "amount": -559.85,
+                "balance": None,
+                "currency": "JMD",
+            },
+        ])
+
+        self.assertEqual(result["subscriptions"][0]["merchant"], "Spotify")
+        self.assertEqual(result["subscriptions"][0]["period"], "monthly")
+        self.assertEqual(result["subscriptions"][0]["charge_count"], 3)
+        self.assertEqual(result["possible_subscriptions"], [])
 
 
 if __name__ == "__main__":

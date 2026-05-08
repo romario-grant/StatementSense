@@ -10,6 +10,10 @@ interface FileUploadProps {
   file: File | null;
   onClear: () => void;
   hint?: string;
+  multiple?: boolean;
+  files?: File[];
+  maxFiles?: number;
+  onFilesSelect?: (files: File[]) => void;
 }
 
 export default function FileUpload({
@@ -18,21 +22,64 @@ export default function FileUpload({
   file,
   onClear,
   hint = "Supports PDF and CSV files",
+  multiple = false,
+  files = [],
+  maxFiles = 3,
+  onFilesSelect,
 }: FileUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0];
+    const selectedFiles = Array.from(e.target.files || []);
+    if (multiple && onFilesSelect) {
+      onFilesSelect(selectedFiles.slice(0, maxFiles));
+      return;
+    }
+    const selected = selectedFiles[0];
     if (selected) onFileSelect(selected);
   };
 
   const handleDrop = (e: DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    const dropped = e.dataTransfer.files?.[0];
+    const droppedFiles = Array.from(e.dataTransfer.files || []);
+    if (multiple && onFilesSelect) {
+      onFilesSelect(droppedFiles.slice(0, maxFiles));
+      return;
+    }
+    const dropped = droppedFiles[0];
     if (dropped) onFileSelect(dropped);
   };
+
+  if (multiple && files.length > 0) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="rounded-xl bg-secondary border border-border overflow-hidden"
+      >
+        <div className="divide-y divide-border">
+          {files.map((selectedFile) => (
+            <div key={`${selectedFile.name}-${selectedFile.size}`} className="flex items-center gap-3 px-5 py-3.5">
+              <FileText size={20} className="text-foreground dark:text-foreground shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm truncate">{selectedFile.name}</p>
+                <p className="text-xs text-muted-foreground">{(selectedFile.size / 1024).toFixed(1)} KB</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={onClear}
+          className="w-full flex items-center justify-center gap-2 px-5 py-3 text-sm text-muted-foreground hover:text-foreground hover:bg-background/70 transition-colors border-t border-border"
+        >
+          <X size={16} />
+          Clear files
+        </button>
+      </motion.div>
+    );
+  }
 
   if (file) {
     return (
@@ -58,7 +105,7 @@ export default function FileUpload({
 
   return (
     <>
-      <input ref={inputRef} type="file" accept={accept} onChange={handleChange} className="hidden" />
+      <input ref={inputRef} type="file" accept={accept} multiple={multiple} onChange={handleChange} className="hidden" />
       <motion.div
         onClick={() => inputRef.current?.click()}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -72,7 +119,9 @@ export default function FileUpload({
         }`}
       >
         <UploadCloud size={40} className="text-foreground dark:text-foreground mb-3 opacity-70" />
-        <p className="font-semibold text-[0.95rem] mb-1">Click to browse or drag file here</p>
+        <p className="font-semibold text-[0.95rem] mb-1">
+          Click to browse or drag {multiple ? "files" : "file"} here
+        </p>
         <p className="text-sm text-muted-foreground">{hint}</p>
       </motion.div>
     </>

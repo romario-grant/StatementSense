@@ -4,13 +4,11 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
-  CheckCircle,
   Info,
   TrendingUp,
   TrendingDown,
   DollarSign,
   Calendar,
-  Shield,
   Zap,
   RefreshCw,
 } from "lucide-react";
@@ -22,11 +20,81 @@ import FileUpload from "@/components/FileUpload";
 const FALLBACK_BACKEND_URL =
   "https://statementsense-backend-430268251728.us-central1.run.app";
 
+type SubscriptionResult = {
+  merchant: string;
+  amount: number;
+  period: string;
+  period_days: number | null;
+  confidence: number;
+  confidence_label?: string;
+  charge_count: number;
+  renewal_day?: number;
+  last_charge: string;
+  reason?: string;
+};
+
+type RenewalPrediction = {
+  subscription: string;
+  next_charge_date: string;
+  days_until_charge: number;
+  period: string;
+  period_days: number;
+  confidence_label: "high" | "medium" | "low";
+  data_points: number;
+};
+
+type TrialAlert = {
+  merchant: string;
+  trial_score: number;
+  type: "trial_to_paid" | "promotional";
+  first_charge: number;
+  current_charge: number;
+  charge_count: number;
+  description: string;
+};
+
+type PriceChange = {
+  subscription: string;
+  type: "price_increase" | "price_decrease";
+  date: string;
+  description: string;
+  old_amount: number;
+  new_amount: number;
+  change_amount: number;
+  change_percent: number;
+};
+
+type SubscriptionAnalysis = {
+  bank_detected: string;
+  transactions_parsed: number;
+  currency: string;
+  categories: Record<string, number>;
+  summary: {
+    total_subscriptions: number;
+    total_possible_subscriptions?: number;
+    total_sub_cost: number;
+    total_trial_alerts: number;
+    total_price_changes: number;
+  };
+  currency_summary?: {
+    exchange_rate: number;
+    original_currency: string;
+    total_debits_local: number;
+    total_debits_usd: number;
+    total_credits_usd: number;
+  };
+  subscriptions: SubscriptionResult[];
+  possible_subscriptions?: SubscriptionResult[];
+  renewal_predictions?: RenewalPrediction[];
+  trial_alerts?: TrialAlert[];
+  price_changes?: PriceChange[];
+};
+
 export default function SubscriptionSensePage() {
   const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [results, setResults] = useState<any>(null);
+  const [results, setResults] = useState<SubscriptionAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleFileSelect = (selected: File) => {
@@ -35,21 +103,52 @@ export default function SubscriptionSensePage() {
       selected.name.endsWith(".csv")
     ) {
       setFile(selected);
+      setFiles([selected]);
       setError(null);
     } else {
       setFile(null);
+      setFiles([]);
       setError("Please select a valid PDF or CSV bank statement.");
     }
   };
 
+  const handleFilesSelect = (selectedFiles: File[]) => {
+    const validFiles = selectedFiles.filter(
+      (selected) =>
+        selected.type === "application/pdf" ||
+        selected.name.toLowerCase().endsWith(".pdf") ||
+        selected.name.toLowerCase().endsWith(".csv")
+    );
+
+    if (validFiles.length !== selectedFiles.length) {
+      setError("Please select only PDF or CSV bank statements.");
+      setFile(null);
+      setFiles([]);
+      return;
+    }
+
+    if (validFiles.length > 3) {
+      setError("Please select a maximum of 3 statements.");
+      setFile(null);
+      setFiles([]);
+      return;
+    }
+
+    setFiles(validFiles);
+    setFile(validFiles[0] || null);
+    setError(null);
+  };
+
   const handleUpload = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
     setLoading(true);
     setError(null);
     setResults(null);
 
     const formData = new FormData();
-    formData.append("file", file);
+    files.forEach((selectedFile) => {
+      formData.append(files.length > 1 ? "files" : "file", selectedFile);
+    });
 
     try {
       const apiBase =
@@ -59,7 +158,10 @@ export default function SubscriptionSensePage() {
               ""
             )
           : "";
-      const uploadUrl = `${apiBase}/api/subscription/upload`;
+      const uploadUrl =
+        files.length > 1
+          ? `${apiBase}/api/subscription/upload-multiple`
+          : `${apiBase}/api/subscription/upload`;
       const response = await fetch(uploadUrl, {
         method: "POST",
         body: formData,
@@ -78,7 +180,7 @@ export default function SubscriptionSensePage() {
         throw new Error(
           data.detail || data.error || "Failed to process statement"
         );
-      setResults(data);
+      setResults(data as SubscriptionAnalysis);
     } catch (err) {
       if (err instanceof TypeError && err.message === "Failed to fetch") {
         setError(
@@ -137,8 +239,15 @@ export default function SubscriptionSensePage() {
                   <FileUpload
                     file={file}
                     onFileSelect={handleFileSelect}
-                    onClear={() => setFile(null)}
-                    hint="Supports any bank — Scotiabank, NCB, JMMB, and more"
+                    files={files}
+                    onFilesSelect={handleFilesSelect}
+                    multiple
+                    maxFiles={3}
+                    onClear={() => {
+                      setFile(null);
+                      setFiles([]);
+                    }}
+                    hint="Upload 1-3 successive statements from any supported bank"
                   />
                 </div>
 
@@ -154,7 +263,7 @@ export default function SubscriptionSensePage() {
                 )}
 
                 <button
-                  disabled={!file || loading}
+                  disabled={files.length === 0 || loading}
                   onClick={handleUpload}
                   className="w-full py-3 flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-medium transition-colors shadow-sm"
                 >
@@ -164,7 +273,7 @@ export default function SubscriptionSensePage() {
                       Analyzing Subscriptions...
                     </>
                   ) : (
-                    "Detect Subscriptions"
+                    files.length > 1 ? "Analyze Statements" : "Detect Subscriptions"
                   )}
                 </button>
               </MotionCard>
@@ -202,6 +311,11 @@ export default function SubscriptionSensePage() {
                       "Subscriptions Found",
                       results.summary.total_subscriptions,
                       "text-green-600 dark:text-green-400",
+                    ],
+                    [
+                      "Possible Subs",
+                      results.summary.total_possible_subscriptions || 0,
+                      "text-yellow-600 dark:text-yellow-500",
                     ],
                     [
                       "Monthly Sub Cost",
@@ -339,6 +453,7 @@ export default function SubscriptionSensePage() {
                   onClick={() => {
                     setResults(null);
                     setFile(null);
+                    setFiles([]);
                   }}
                   className="w-full py-2.5 bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded-xl text-sm font-medium transition-colors border border-border"
                 >
@@ -364,9 +479,8 @@ export default function SubscriptionSensePage() {
                         <Badge variant="info">PREDICTED</Badge>
                       </div>
                       <div className="flex flex-col gap-3">
-                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                         {results.renewal_predictions.map(
-                          (pred: any, idx: number) => {
+                          (pred: RenewalPrediction, idx: number) => {
                             const urgencyColor =
                               pred.days_until_charge <= 3
                                 ? "text-red-600 dark:text-red-400"
@@ -444,8 +558,7 @@ export default function SubscriptionSensePage() {
                   </h2>
                 </motion.div>
 
-                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                {results.subscriptions.map((sub: any, idx: number) => {
+                {results.subscriptions.map((sub: SubscriptionResult, idx: number) => {
                   const confColor =
                     sub.confidence >= 0.8
                       ? "border-l-green-500"
@@ -533,6 +646,44 @@ export default function SubscriptionSensePage() {
                   </MotionCard>
                 )}
 
+                {results.possible_subscriptions &&
+                  results.possible_subscriptions.length > 0 && (
+                    <MotionCard hover={false} delay={0.3}>
+                      <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-lg font-medium flex items-center gap-2 m-0">
+                          <Info size={18} />
+                          Possible Subscriptions
+                        </h2>
+                        <Badge variant="warn">NEEDS HISTORY</Badge>
+                      </div>
+                      <div className="flex flex-col gap-3">
+                        {results.possible_subscriptions.map((sub: SubscriptionResult, idx: number) => (
+                          <div
+                            key={idx}
+                            className="p-3.5 rounded-xl bg-background border border-border"
+                          >
+                            <div className="flex justify-between gap-4 mb-1.5">
+                              <span className="font-medium text-sm">
+                                {sub.merchant}
+                              </span>
+                              <span className="font-medium text-yellow-600 dark:text-yellow-500">
+                                $
+                                {sub.amount.toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </span>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              One eligible charge on {sub.last_charge}. Upload
+                              more successive statements to confirm the billing
+                              cycle.
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </MotionCard>
+                  )}
+
                 {/* ── Trial Alerts ── */}
                 {results.trial_alerts && results.trial_alerts.length > 0 && (
                   <MotionCard
@@ -555,9 +706,8 @@ export default function SubscriptionSensePage() {
                       converting to a paid subscription.
                     </p>
                     <div className="flex flex-col gap-3">
-                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                       {results.trial_alerts.map(
-                        (alert: any, idx: number) => (
+                        (alert: TrialAlert, idx: number) => (
                           <div
                             key={idx}
                             className="p-3.5 rounded-xl bg-background border border-border"
@@ -634,8 +784,7 @@ export default function SubscriptionSensePage() {
                       <div className="flex items-center justify-between mb-4">
                         <h2 className="text-lg font-medium flex items-center gap-2 m-0">
                           {results.price_changes.some(
-                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                            (c: any) => c.type === "price_increase"
+                            (c: PriceChange) => c.type === "price_increase"
                           ) ? (
                             <TrendingUp
                               size={18}
@@ -656,9 +805,8 @@ export default function SubscriptionSensePage() {
                         analysis.
                       </p>
                       <div className="flex flex-col gap-3">
-                        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                         {results.price_changes.map(
-                          (change: any, idx: number) => (
+                          (change: PriceChange, idx: number) => (
                             <div
                               key={idx}
                               className="p-3.5 rounded-xl bg-background border border-border"

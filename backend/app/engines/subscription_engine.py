@@ -214,6 +214,29 @@ def _is_subscription_candidate(tx: dict) -> bool:
     )
 
 
+def _dedupe_raw_transactions(transactions: list[dict]) -> list[dict]:
+    """Remove duplicate rows from overlapping statements while preserving order."""
+    seen = set()
+    deduped = []
+
+    for tx in transactions:
+        amount = tx.get("amount", 0) or 0
+        balance = tx.get("balance")
+        key = (
+            tx.get("date"),
+            (tx.get("description") or "").strip().lower(),
+            round(float(amount), 2),
+            round(float(balance), 2) if isinstance(balance, (int, float)) else None,
+            tx.get("currency", "JMD"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(tx)
+
+    return deduped
+
+
 def _classify_transactions(transactions: list[dict]) -> list[dict]:
     """Add category and vendor_name fields to transactions."""
     for tx in transactions:
@@ -235,6 +258,40 @@ def _classify_transactions(transactions: list[dict]) -> list[dict]:
         tx["excluded_from_subscription_analysis"] = excluded
 
     return transactions
+
+
+def _find_possible_subscriptions(classified_txs: list[dict]) -> list[dict]:
+    """Known subscription merchants with one eligible charge need more history."""
+    vendor_groups: dict[str, list[dict]] = defaultdict(list)
+    for tx in classified_txs:
+        if _is_subscription_candidate(tx):
+            vendor = (tx.get("vendor_name") or tx["description"]).strip()
+            vendor_groups[vendor].append(tx)
+
+    possible = []
+    for vendor, charges in vendor_groups.items():
+        if len(charges) != 1:
+            continue
+
+        charge = charges[0]
+        date_str = charge["date"]
+        if isinstance(date_str, datetime):
+            date_str = date_str.strftime("%Y-%m-%d")
+
+        possible.append({
+            "merchant": vendor,
+            "amount": round(charge["debit"], 2),
+            "period": "unknown",
+            "period_days": None,
+            "confidence": 0.4,
+            "confidence_label": "possible",
+            "charge_count": 1,
+            "last_charge": date_str,
+            "reason": "Known subscription merchant, but only one eligible charge was found.",
+        })
+
+    possible.sort(key=lambda item: item["merchant"].lower())
+    return possible
 
 
 # =====================================================================
@@ -301,6 +358,10 @@ def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict],
     today = datetime.now()
 
     for sub in detected_subs:
+        display_confidence = sub.confidence
+        if len(sub.transactions) == 2:
+            display_confidence = min(display_confidence, 0.8)
+
         # Determine typical renewal day-of-month
         days = [t.date.day if hasattr(t.date, "day") else t.date
                 for t in sub.transactions]
@@ -311,7 +372,7 @@ def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict],
             "amount": round(sub.avg_amount, 2),
             "period": sub.period or "unknown",
             "period_days": sub.period_days,
-            "confidence": sub.confidence,
+            "confidence": display_confidence,
             "charge_count": len(sub.transactions),
             "renewal_day": renewal_day,
             "last_charge": max(t.date for t in sub.transactions).strftime("%Y-%m-%d"),
@@ -332,14 +393,14 @@ def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict],
 
             days_until = (next_date - today).days
 
-            if sub.confidence >= 0.8:
+            if display_confidence >= 0.8:
                 conf_label = "high"
-            elif sub.confidence >= 0.5:
+            elif display_confidence >= 0.5:
                 conf_label = "medium"
             else:
                 conf_label = "low"
 
-            band = max(2, round((1 - sub.confidence) * 10))
+            band = max(2, round((1 - display_confidence) * 10))
 
             renewal_predictions.append({
                 "subscription": sub.merchant,
@@ -347,7 +408,7 @@ def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict],
                 "days_until_charge": days_until,
                 "period": sub.period,
                 "period_days": sub.period_days,
-                "confidence": sub.confidence,
+                "confidence": display_confidence,
                 "confidence_label": conf_label,
                 "confidence_window": {
                     "earliest": (next_date - timedelta(days=band)).strftime("%Y-%m-%d"),
@@ -474,7 +535,7 @@ def _normalize_currency(classified_txs: list[dict]) -> dict:
 # MAIN ENTRY POINT
 # =====================================================================
 
-def analyze_subscriptions(file_bytes: bytes) -> dict:
+def _build_subscription_analysis(raw_transactions: list[dict], dedupe: bool = False) -> dict:
     """
     Main entry point: takes PDF bytes, returns full subscription analysis.
 
@@ -486,21 +547,24 @@ def analyze_subscriptions(file_bytes: bytes) -> dict:
       5. Detect price changes (CUSUM)
       6. Normalize currency (JMD → USD)
     """
-    # 1. Extract
-    logger.info("Step 1: Extracting transactions...")
-    raw_transactions = extract_from_bytes(file_bytes)
     if not raw_transactions:
         return {"error": "No transactions found in the PDF. Check the statement format."}
 
+    if dedupe:
+        raw_transactions = _dedupe_raw_transactions(raw_transactions)
+
     # Detect bank/currency from raw output
-    bank_detected = raw_transactions[0].get("bank", "Unknown") if raw_transactions else "Unknown"
-    currency_detected = raw_transactions[0].get("currency", "JMD") if raw_transactions else "JMD"
+    banks = sorted({tx.get("bank", "Unknown") for tx in raw_transactions})
+    currencies = sorted({tx.get("currency", "JMD") for tx in raw_transactions})
+    bank_detected = ", ".join(banks)
+    currency_detected = currencies[0] if len(currencies) == 1 else "Mixed"
 
     # Convert format
     transactions = _convert_to_engine_format(raw_transactions)
     if not transactions:
         return {"error": "Could not parse any valid transactions from the PDF."}
 
+    transactions.sort(key=lambda tx: tx["date"])
     logger.info(f"Step 1 complete: {len(transactions)} transactions from {bank_detected}")
 
     # 2. Classify
@@ -515,7 +579,9 @@ def analyze_subscriptions(file_bytes: bytes) -> dict:
     # 3. Detect subscriptions
     logger.info("Step 3: Detecting subscriptions...")
     subscriptions, renewal_predictions = _run_subscription_detection(classified)
+    possible_subscriptions = _find_possible_subscriptions(classified)
     logger.info(f"Step 3 complete: {len(subscriptions)} subscription(s), "
+                f"{len(possible_subscriptions)} possible, "
                 f"{len(renewal_predictions)} prediction(s)")
 
     # 4. Detect free trials
@@ -555,12 +621,14 @@ def analyze_subscriptions(file_bytes: bytes) -> dict:
         "categories": categories,
         "transactions": tx_list,
         "subscriptions": subscriptions,
+        "possible_subscriptions": possible_subscriptions,
         "renewal_predictions": renewal_predictions,
         "trial_alerts": trial_alerts,
         "price_changes": price_changes,
         "currency_summary": currency_summary,
         "summary": {
             "total_subscriptions": len(subscriptions),
+            "total_possible_subscriptions": len(possible_subscriptions),
             "total_sub_cost": round(total_sub_cost, 2),
             "total_trial_alerts": len(trial_alerts),
             "total_price_changes": len(price_changes),
@@ -568,3 +636,17 @@ def analyze_subscriptions(file_bytes: bytes) -> dict:
             "total_credits": round(sum(tx["credit"] for tx in classified), 2),
         },
     }
+
+
+def analyze_subscriptions(file_bytes: bytes) -> dict:
+    """
+    Main entry point: takes PDF bytes, returns full subscription analysis.
+    """
+    logger.info("Step 1: Extracting transactions...")
+    raw_transactions = extract_from_bytes(file_bytes)
+    return _build_subscription_analysis(raw_transactions)
+
+
+def analyze_extracted_subscriptions(raw_transactions: list[dict]) -> dict:
+    """Analyze pre-extracted transactions from one or more statements."""
+    return _build_subscription_analysis(raw_transactions, dedupe=True)
