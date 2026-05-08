@@ -12,8 +12,10 @@ No code is copied from RenewalSense — each module is imported from its source.
 
 import logging
 import math
+from contextlib import redirect_stdout
 from collections import defaultdict
 from datetime import datetime, timedelta
+from io import StringIO
 from statistics import mean, stdev
 
 logger = logging.getLogger(__name__)
@@ -63,10 +65,10 @@ def _detect_price_changes(transactions: list[dict]) -> list[dict]:
     Groups transactions by vendor, computes running CUSUM on the
     charge amounts, and flags significant deviations.
     """
-    # Group debits by vendor
+    # Group eligible recurring merchant debits by vendor.
     vendor_charges: dict[str, list[dict]] = defaultdict(list)
     for tx in transactions:
-        if tx.get("debit", 0) > 0:
+        if _is_subscription_candidate(tx) and not _is_variable_spend(tx):
             vendor = tx.get("vendor_name") or tx.get("description", "")
             vendor_charges[vendor.strip().lower()].append(tx)
 
@@ -78,6 +80,8 @@ def _detect_price_changes(transactions: list[dict]) -> list[dict]:
 
         # Sort chronologically
         sorted_charges = sorted(charges, key=lambda t: t["date"])
+        if len({c["date"].date() if isinstance(c["date"], datetime) else c["date"] for c in sorted_charges}) < 3:
+            continue
         amounts = [c["debit"] for c in sorted_charges]
 
         # Compute baseline (mean of first half)
@@ -90,7 +94,8 @@ def _detect_price_changes(transactions: list[dict]) -> list[dict]:
         # CUSUM: cumulative deviation from baseline
         cusum_pos = 0.0
         cusum_neg = 0.0
-        threshold = baseline * 0.20  # 20% deviation triggers alert
+        threshold = baseline * 0.20  # 20% cumulative deviation triggers alert
+        min_display_change_pct = 5.0
 
         for i in range(half, len(amounts)):
             deviation = amounts[i] - baseline
@@ -101,6 +106,8 @@ def _detect_price_changes(transactions: list[dict]) -> list[dict]:
                 # Price increase detected
                 new_avg = mean(amounts[i:]) if i < len(amounts) else amounts[i]
                 change_pct = ((new_avg - baseline) / baseline) * 100
+                if change_pct < min_display_change_pct:
+                    continue
 
                 display_name = sorted_charges[0].get("vendor_name") or vendor.title()
                 date_str = sorted_charges[i]["date"]
@@ -126,6 +133,8 @@ def _detect_price_changes(transactions: list[dict]) -> list[dict]:
                 # Price decrease detected
                 new_avg = mean(amounts[i:]) if i < len(amounts) else amounts[i]
                 change_pct = ((new_avg - baseline) / baseline) * 100
+                if abs(change_pct) < min_display_change_pct:
+                    continue
 
                 display_name = sorted_charges[0].get("vendor_name") or vendor.title()
                 date_str = sorted_charges[i]["date"]
@@ -169,6 +178,41 @@ _SUBSCRIPTION_KEYWORDS = {
     'nintendo': 'Nintendo', 'steam': 'Steam',
 }
 
+_NON_SUBSCRIPTION_KEYWORDS = {
+    "transfer to", "transfer from", "funds transfer", "third party trf",
+    "itb-customer tran", "service charge", "gct", "govt tax",
+    "tax on service charge",
+}
+
+_VARIABLE_SPEND_KEYWORDS = {
+    "uber", "trip", "taxi", "ride", "rideshare", "knutsford", "airbnb",
+    "hotel", "restaurant", "grocery", "supermarket",
+}
+
+
+def _description(tx: dict) -> str:
+    return (tx.get("description") or "").strip()
+
+
+def _is_excluded_transaction(tx: dict) -> bool:
+    """Return True for bank movements, fees, and tax rows."""
+    desc_lower = _description(tx).lower()
+    return any(keyword in desc_lower for keyword in _NON_SUBSCRIPTION_KEYWORDS)
+
+
+def _is_variable_spend(tx: dict) -> bool:
+    desc_lower = _description(tx).lower()
+    return any(keyword in desc_lower for keyword in _VARIABLE_SPEND_KEYWORDS)
+
+
+def _is_subscription_candidate(tx: dict) -> bool:
+    """Only real merchant debits should feed subscription-style detectors."""
+    return (
+        tx.get("debit", 0) > 0
+        and tx.get("category") == "subscription"
+        and not tx.get("excluded_from_subscription_analysis", False)
+    )
+
 
 def _classify_transactions(transactions: list[dict]) -> list[dict]:
     """Add category and vendor_name fields to transactions."""
@@ -177,14 +221,18 @@ def _classify_transactions(transactions: list[dict]) -> list[dict]:
         vendor_name = tx.get("description", "")
         category = "other"
 
-        for keyword, name in _SUBSCRIPTION_KEYWORDS.items():
-            if keyword in desc_lower:
-                category = "subscription"
-                vendor_name = name
-                break
+        excluded = _is_excluded_transaction(tx)
+
+        if not excluded:
+            for keyword, name in _SUBSCRIPTION_KEYWORDS.items():
+                if keyword in desc_lower:
+                    category = "subscription"
+                    vendor_name = name
+                    break
 
         tx["category"] = category
         tx["vendor_name"] = vendor_name
+        tx["excluded_from_subscription_analysis"] = excluded
 
     return transactions
 
@@ -232,10 +280,10 @@ def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict],
     Convert engine transactions → classmate's Transaction objects,
     run detect_subscriptions(), return (subscriptions, renewal_predictions).
     """
-    # Build Detection Transactions from debits
+    # Build Detection Transactions from eligible merchant debits only.
     detection_txs = []
     for tx in classified_txs:
-        if tx["debit"] > 0:
+        if _is_subscription_candidate(tx):
             detection_txs.append(DetectionTransaction(
                 date=tx["date"],
                 amount=tx["debit"],
@@ -245,7 +293,8 @@ def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict],
     if not detection_txs:
         return [], []
 
-    detected_subs = _detect_subs(detection_txs, min_occurrences=2)
+    with redirect_stdout(StringIO()):
+        detected_subs = _detect_subs(detection_txs, min_occurrences=2)
 
     subscriptions = []
     renewal_predictions = []
@@ -276,8 +325,10 @@ def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict],
             else:
                 next_date = datetime.combine(next_due, datetime.min.time())
 
-            while next_date < today:
-                next_date += timedelta(days=int(sub.period_days or 30))
+            period_days = int(sub.period_days or 30)
+            stale_grace = timedelta(days=max(7, round(period_days * 0.5)))
+            if next_date < today - stale_grace:
+                continue
 
             days_until = (next_date - today).days
 
@@ -321,10 +372,10 @@ def _detect_trials(classified_txs: list[dict]) -> list[dict]:
     Group transactions by vendor, run trial classifier on each group.
     Returns list of merchants flagged as likely free trial → paid conversions.
     """
-    # Group by vendor
+    # Group by eligible subscription-like merchant charges only.
     vendor_groups: dict[str, list[dict]] = defaultdict(list)
     for tx in classified_txs:
-        if tx["debit"] > 0:
+        if _is_subscription_candidate(tx):
             vendor = (tx.get("vendor_name") or tx["description"]).strip()
             vendor_groups[vendor].append({
                 "date": tx["date"].strftime("%Y-%m-%d") if isinstance(tx["date"], datetime) else str(tx["date"]),
@@ -336,6 +387,8 @@ def _detect_trials(classified_txs: list[dict]) -> list[dict]:
 
     for vendor, txns in vendor_groups.items():
         if len(txns) < 2:
+            continue
+        if len({t["date"] for t in txns}) < 2:
             continue
 
         score = predict_trial_intent(txns, _trial_model)
