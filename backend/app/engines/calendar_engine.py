@@ -141,12 +141,14 @@ class GeminiCalendarAnalyzer:
     
     def _call_gemini(self, prompt, use_search=False, max_retries=4):
         """Call Gemini API. Search enabled for accuracy as per user request."""
-        config = {"temperature": 0.0, "response_mime_type": "application/json"}
+        config = {"temperature": 0.0}
         if use_search:
             config["tools"] = [{"google_search": {}}]
+        else:
+            config["response_mime_type"] = "application/json"
         
         call_label = "grounded-search" if use_search else "standard"
-        print(f"[CalendarSense] Calling gemini-3.1-pro-preview ({call_label})...")
+        print(f"[CalendarSense] Calling gemini-2.5-flash ({call_label})...")
         
         for attempt in range(max_retries):
             try:
@@ -160,7 +162,17 @@ class GeminiCalendarAnalyzer:
                 if raw_text.startswith("```json"): raw_text = raw_text[7:]
                 elif raw_text.startswith("```"): raw_text = raw_text[3:]
                 if raw_text.endswith("```"): raw_text = raw_text[:-3]
-                return json.loads(raw_text.strip())
+                
+                raw_text = raw_text.strip()
+                try:
+                    return json.loads(raw_text)
+                except json.JSONDecodeError:
+                    # Robust fallback: extract first {} or [] block if Gemini added conversational text
+                    import re
+                    match = re.search(r'(\{.*\}|\[.*\])', raw_text, re.DOTALL)
+                    if match:
+                        return json.loads(match.group(1))
+                    raise
             except Exception as e:
                 error_str = str(e)
                 print(f"[CalendarSense] [!] Error ({call_label}, attempt {attempt+1}/{max_retries}): {error_str[:200]}")
