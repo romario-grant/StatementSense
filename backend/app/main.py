@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.renewal import router as renewal_router
 from .api.screentime import router as screentime_router
 from .api.calendar import router as calendar_router
+from .api.subscription import router as subscription_router
 
 app = FastAPI(
     title="StatementSense API",
@@ -48,6 +49,7 @@ app.add_middleware(
 app.include_router(renewal_router)
 app.include_router(screentime_router)
 app.include_router(calendar_router)
+app.include_router(subscription_router)
 
 
 @app.get("/")

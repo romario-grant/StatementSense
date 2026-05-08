@@ -4,10 +4,33 @@ Stripped of CLI code, ready for API integration.
 """
 
 import os
+import io
 import math
 import csv
 import re
+import logging
 from datetime import datetime
+
+# ── Universal extractor (capstone_revised) ─────────────────────────
+# Falls back to the legacy Scotiabank-only parser if this import fails
+# (e.g. missing camelot dependency in some environments).
+try:
+    from capstone_revised.extract_transactions import extract_from_bytes as _universal_extract
+    _HAS_UNIVERSAL = True
+except ImportError:
+    _HAS_UNIVERSAL = False
+
+# ── Classmate’s subscription detection algorithm ───────────────
+try:
+    from subscription_detection_alg import (
+        Transaction as DetectionTransaction,
+        detect_subscriptions as _detect_subs,
+    )
+    _HAS_DETECTION_ALG = True
+except ImportError:
+    _HAS_DETECTION_ALG = False
+
+logger = logging.getLogger(__name__)
 
 
 # ==========================================
@@ -15,208 +38,83 @@ from datetime import datetime
 # ==========================================
 
 class StatementParser:
-    """Extracts transactions from bank statements (PDF + CSV)."""
+    """Extracts transactions from bank statements (PDF + CSV).
+    
+    Uses the universal extractor (capstone_revised) — works with ANY bank.
+    """
     
     @staticmethod
-    def parse_pdf(file_path):
-        """Scotia Bank Jamaica PDF format parser."""
-        import pdfplumber
+    def _convert_universal_to_engine_format(universal_txs):
+        """
+        Convert capstone_revised output format into the dict format expected
+        by the downstream classifier/detector pipeline.
         
-        if not os.path.exists(file_path):
-            return []
+        capstone_revised outputs:
+            {bank, date (str), description, amount (signed float), balance, currency, source_file}
         
-        transactions = []
-        statement_year = datetime.now().year
+        Engine expects:
+            {date (datetime), description, debit (float), credit (float), balance (float)}
+        """
+        converted = []
+        for tx in universal_txs:
+            # Parse date string → datetime
+            date_val = tx.get("date")
+            if isinstance(date_val, str):
+                try:
+                    date_val = datetime.strptime(date_val, "%Y-%m-%d")
+                except ValueError:
+                    continue  # Skip unparseable dates
+            elif not isinstance(date_val, datetime):
+                continue
+            
+            # Split signed amount → debit / credit
+            amount = tx.get("amount", 0) or 0
+            if amount < 0:
+                debit = abs(amount)
+                credit = 0
+            else:
+                debit = 0
+                credit = amount
+            
+            balance = tx.get("balance") or 0
+            
+            converted.append({
+                "date": date_val,
+                "description": tx.get("description", ""),
+                "debit": debit,
+                "credit": credit,
+                "balance": balance,
+            })
         
-        try:
-            with pdfplumber.open(file_path) as pdf:
-                first_page_text = pdf.pages[0].extract_text() or ""
-                year_match = re.search(
-                    r'Statement Period:.*?(\d{2}[A-Z]{3})(\d{2})\s+to\s+(\d{2}[A-Z]{3})(\d{2})',
-                    first_page_text
-                )
-                if year_match:
-                    statement_year = 2000 + int(year_match.group(4))
-                
-                for page in pdf.pages:
-                    text = page.extract_text()
-                    if not text:
-                        continue
-                    
-                    lines = text.split('\n')
-                    i = 0
-                    while i < len(lines):
-                        line = lines[i].strip()
-                        
-                        tx_match = re.match(
-                            r'^(\d{2})([A-Z]{3})\s+(.+?)\s+J\$\s+([\d,]+\.\d{2})\s*([+\-])',
-                            line
-                        )
-                        
-                        if tx_match:
-                            day = int(tx_match.group(1))
-                            month_str = tx_match.group(2)
-                            description = tx_match.group(3).strip()
-                            amount = float(tx_match.group(4).replace(',', ''))
-                            direction = tx_match.group(5)
-                            
-                            balance = 0
-                            balance_match = re.search(r'J\$\s+([\d,]+\.\d{2})\s*$', line)
-                            if balance_match:
-                                bal_amount = float(balance_match.group(1).replace(',', ''))
-                                if bal_amount != amount:
-                                    balance = bal_amount
-                            
-                            month_map = {
-                                'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4,
-                                'MAY': 5, 'JUN': 6, 'JUL': 7, 'AUG': 8,
-                                'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
-                            }
-                            month_num = month_map.get(month_str, 1)
-                            
-                            tx_year = statement_year
-                            if month_num > 9 and statement_year > 2000:
-                                if year_match:
-                                    start_month_str = year_match.group(1)[2:5]
-                                    start_month = month_map.get(start_month_str, 1)
-                                    if start_month >= 10 and month_num >= start_month:
-                                        tx_year = statement_year - 1
-                            
-                            try:
-                                tx_date = datetime(tx_year, month_num, day)
-                            except ValueError:
-                                i += 1
-                                continue
-                            
-                            if i + 1 < len(lines):
-                                next_line = lines[i + 1].strip()
-                                if next_line and not re.match(r'^\d{2}[A-Z]{3}\s', next_line):
-                                    if not next_line.startswith('*') and not next_line.startswith('Page '):
-                                        if 'SERVICE CHARGE' not in description and 'GCT' not in description:
-                                            description += " | " + next_line
-                            
-                            if any(skip in description for skip in ['SERVICE CHARGE', 'GCT/GOVT TAX', 'GCT TAX']):
-                                i += 1
-                                continue
-                            
-                            credit = amount if direction == '+' else 0
-                            debit = amount if direction == '-' else 0
-                            
-                            transactions.append({
-                                "date": tx_date,
-                                "description": description,
-                                "debit": debit,
-                                "credit": credit,
-                                "balance": balance
-                            })
-                        
-                        i += 1
-        
-        except Exception as e:
-            print(f"PDF parsing error: {e}")
-        
-        return transactions
+        return converted
     
     @staticmethod
     def parse_pdf_bytes(file_bytes):
-        """Parse PDF from bytes (for file upload).
-        NOTE: Shares extraction logic with parse_pdf — if you fix a bug
-        in one, also fix it in the other (or refactor into a shared helper).
         """
-        import pdfplumber
-        import io
-        
-        transactions = []
-        statement_year = datetime.now().year
+        Parse PDF from bytes (for file upload).
+        Uses the universal extractor (capstone_revised) — works with any bank.
+        """
+        if not _HAS_UNIVERSAL:
+            logger.error("capstone_revised module not available — cannot extract transactions")
+            return []
         
         try:
-            with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
-                first_page_text = pdf.pages[0].extract_text() or ""
-                year_match = re.search(
-                    r'Statement Period:.*?(\d{2}[A-Z]{3})(\d{2})\s+to\s+(\d{2}[A-Z]{3})(\d{2})',
-                    first_page_text
-                )
-                if year_match:
-                    statement_year = 2000 + int(year_match.group(4))
-                
-                for page in pdf.pages:
-                    text = page.extract_text()
-                    if not text:
-                        continue
-                    
-                    lines = text.split('\n')
-                    i = 0
-                    while i < len(lines):
-                        line = lines[i].strip()
-                        
-                        tx_match = re.match(
-                            r'^(\d{2})([A-Z]{3})\s+(.+?)\s+J\$\s+([\d,]+\.\d{2})\s*([+\-])',
-                            line
-                        )
-                        
-                        if tx_match:
-                            day = int(tx_match.group(1))
-                            month_str = tx_match.group(2)
-                            description = tx_match.group(3).strip()
-                            amount = float(tx_match.group(4).replace(',', ''))
-                            direction = tx_match.group(5)
-                            
-                            balance = 0
-                            balance_match = re.search(r'J\$\s+([\d,]+\.\d{2})\s*$', line)
-                            if balance_match:
-                                bal_amount = float(balance_match.group(1).replace(',', ''))
-                                if bal_amount != amount:
-                                    balance = bal_amount
-                            
-                            month_map = {
-                                'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4,
-                                'MAY': 5, 'JUN': 6, 'JUL': 7, 'AUG': 8,
-                                'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
-                            }
-                            month_num = month_map.get(month_str, 1)
-                            
-                            tx_year = statement_year
-                            if month_num > 9 and statement_year > 2000:
-                                if year_match:
-                                    start_month_str = year_match.group(1)[2:5]
-                                    start_month = month_map.get(start_month_str, 1)
-                                    if start_month >= 10 and month_num >= start_month:
-                                        tx_year = statement_year - 1
-                            
-                            try:
-                                tx_date = datetime(tx_year, month_num, day)
-                            except ValueError:
-                                i += 1
-                                continue
-                            
-                            if i + 1 < len(lines):
-                                next_line = lines[i + 1].strip()
-                                if next_line and not re.match(r'^\d{2}[A-Z]{3}\s', next_line):
-                                    if not next_line.startswith('*') and not next_line.startswith('Page '):
-                                        if 'SERVICE CHARGE' not in description and 'GCT' not in description:
-                                            description += " | " + next_line
-                            
-                            if any(skip in description for skip in ['SERVICE CHARGE', 'GCT/GOVT TAX', 'GCT TAX']):
-                                i += 1
-                                continue
-                            
-                            credit = amount if direction == '+' else 0
-                            debit = amount if direction == '-' else 0
-                            
-                            transactions.append({
-                                "date": tx_date,
-                                "description": description,
-                                "debit": debit,
-                                "credit": credit,
-                                "balance": balance
-                            })
-                        
-                        i += 1
-        
+            logger.info("Using universal extractor (capstone_revised)...")
+            universal_txs = _universal_extract(file_bytes)
+            if universal_txs:
+                converted = StatementParser._convert_universal_to_engine_format(universal_txs)
+                if converted:
+                    logger.info(f"Universal extractor found {len(converted)} transactions")
+                    return converted
+                else:
+                    logger.warning("Universal extractor returned data but conversion produced 0 rows")
+            else:
+                logger.warning("Universal extractor returned 0 transactions")
         except Exception as e:
-            print(f"PDF parsing error: {e}")
+            logger.error(f"Universal extractor failed: {e}")
         
-        return transactions
+        return []
+
 
 
 # ==========================================
@@ -892,7 +790,7 @@ def analyze_statement(file_bytes):
     if not transactions:
         return {"error": "No transactions found in the PDF. Check the statement format."}
     
-    # Classify
+    # Classify (categories, vendor names, etc.)
     classifier = RuleBasedClassifier()
     classified = classifier.classify(transactions)
     
@@ -904,8 +802,18 @@ def analyze_statement(file_bytes):
     
     # Detect patterns
     salary_info = PatternDetector.detect_salary(classified)
-    subscriptions = PatternDetector.detect_subscriptions(classified)
     expenses = PatternDetector.detect_expenses(classified)
+    
+    # ── Subscription detection ──────────────────────────────────────
+    # Use classmate's subscription_detection_alg if available,
+    # otherwise fall back to built-in PatternDetector.
+    if _HAS_DETECTION_ALG:
+        logger.info("Using classmate's subscription detection algorithm")
+        subscriptions, renewal_predictions = _run_classmate_detection(classified)
+    else:
+        logger.info("subscription_detection_alg not available, using built-in detector")
+        subscriptions = PatternDetector.detect_subscriptions(classified)
+        renewal_predictions = RenewalPredictor.predict_renewals(classified)
     
     if not salary_info:
         return {
@@ -974,9 +882,6 @@ def analyze_statement(file_bytes):
     # 6.5 — Price Change & Trial Conversion Detection (CUSUM)
     price_changes = PriceChangeDetector.detect_price_changes(classified)
     
-    # 6.4 — Renewal Time Prediction (Median + IQR)
-    renewal_predictions = RenewalPredictor.predict_renewals(classified)
-    
     return {
         "transactions_parsed": len(transactions),
         "categories": categories,
@@ -995,3 +900,102 @@ def analyze_statement(file_bytes):
             "income_remaining": round(salary_info["amount"] - total_expenses - total_sub_cost, 2)
         }
     }
+
+
+def _run_classmate_detection(classified_transactions):
+    """
+    Convert engine transactions → classmate's Transaction objects,
+    run detect_subscriptions(), and map results back to the API format
+    expected by the frontend (subscriptions list + renewal_predictions list).
+    """
+    from datetime import timedelta
+
+    # Convert to classmate's Transaction format
+    # The algorithm needs: date (date/datetime), amount (float), merchant (str)
+    # We only pass debits (outgoing money) since subscriptions are charges
+    detection_txs = []
+    for tx in classified_transactions:
+        if tx["debit"] > 0:
+            detection_txs.append(DetectionTransaction(
+                date=tx["date"] if isinstance(tx["date"], datetime) else datetime.strptime(str(tx["date"]), "%Y-%m-%d"),
+                amount=tx["debit"],
+                merchant=tx.get("vendor_name") or tx["description"],
+            ))
+    
+    if not detection_txs:
+        return [], []
+    
+    # Run classmate's detection algorithm
+    detected_subs = _detect_subs(detection_txs, min_occurrences=2)
+    
+    # Map to the format expected by the risk engine and API
+    subscriptions = []
+    renewal_predictions = []
+    today = datetime.now()
+    
+    for sub in detected_subs:
+        # Determine the typical renewal day-of-month
+        days = [t.date.day if hasattr(t.date, 'day') else t.date for t in sub.transactions]
+        renewal_day = max(set(days), key=days.count) if days else 1
+        
+        # Count "failures" (charges that were far from the expected day)
+        failures = sum(1 for d in days if abs(d - renewal_day) > 3)
+        
+        subscriptions.append({
+            "name": sub.merchant,
+            "amount": round(sub.avg_amount, 2),
+            "renewal_day": renewal_day,
+            "past_failures": failures,
+            "total_months": len(sub.transactions),
+            "fail_rate": failures / max(len(sub.transactions), 1),
+        })
+        
+        # Build renewal prediction from classmate's algorithm
+        next_due = sub.next_expected()
+        if next_due is not None:
+            # Ensure next_due is in the future
+            if isinstance(next_due, datetime):
+                next_date = next_due
+            else:
+                next_date = datetime.combine(next_due, datetime.min.time())
+            
+            while next_date < today:
+                next_date += timedelta(days=int(sub.period_days or 30))
+            
+            days_until = (next_date - today).days
+            
+            # Confidence label from classmate's confidence score
+            if sub.confidence >= 0.8:
+                conf_label = "high"
+            elif sub.confidence >= 0.5:
+                conf_label = "medium"
+            else:
+                conf_label = "low"
+            
+            # Confidence window (tighter for higher confidence)
+            band = max(2, round((1 - sub.confidence) * 10))
+            earliest = next_date - timedelta(days=band)
+            latest = next_date + timedelta(days=band)
+            
+            renewal_predictions.append({
+                "subscription": sub.merchant,
+                "next_charge_date": next_date.strftime("%Y-%m-%d"),
+                "days_until_charge": days_until,
+                "median_interval_days": sub.period_days or 30,
+                "confidence_window": {
+                    "earliest": earliest.strftime("%Y-%m-%d"),
+                    "latest": latest.strftime("%Y-%m-%d"),
+                    "band_days": band,
+                },
+                "confidence_label": conf_label,
+                "method": f"classmate_alg_{sub.period or 'unknown'}",
+                "data_points": len(sub.transactions),
+                "last_charge_date": max(t.date for t in sub.transactions).strftime("%Y-%m-%d") if sub.transactions else None,
+            })
+    
+    # Sort predictions by soonest first
+    renewal_predictions.sort(key=lambda p: p["days_until_charge"])
+    
+    logger.info(f"Classmate's algorithm detected {len(subscriptions)} subscription(s), {len(renewal_predictions)} prediction(s)")
+    return subscriptions, renewal_predictions
+

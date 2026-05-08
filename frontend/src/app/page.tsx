@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Clock, Calendar as CalendarIcon, Wallet, ArrowRight } from "lucide-react";
+import { Clock, Calendar as CalendarIcon, Wallet, CreditCard, ArrowRight } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
 import { useTheme } from "@/components/ThemeProvider";
@@ -25,6 +25,12 @@ const features = [
     imgSrc: "/bankcard.png",
     title: "RenewalSense",
     desc: "Predict subscription renewal failures. Analyze bank statements to map paycycles against recurring charges.",
+  },
+  {
+    href: "/subscription",
+    icon: CreditCard,
+    title: "SubscriptionSense",
+    desc: "Detect, classify, and predict all recurring subscriptions. Includes trial detection and price change alerts.",
   },
   {
     href: "/screentime",
@@ -111,7 +117,7 @@ export default function Home() {
             variants={containerVariants}
             initial="hidden"
             animate="show"
-            className="grid grid-cols-1 md:grid-cols-3 gap-5 w-full mx-auto"
+            className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-4xl mx-auto"
           >
             {features.map(({ href, icon: Icon, title, desc }) => {
               return (
