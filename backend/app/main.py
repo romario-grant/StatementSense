@@ -58,6 +58,7 @@ app.add_middleware(
         "https://statementsense-84a99.web.app",
         "https://statementsense-84a99.firebaseapp.com",
     ],
+    allow_origin_regex=r"https://.*\.(web\.app|firebaseapp\.com|hosted\.app)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -113,4 +114,3 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8080))
     uvicorn.run(app, host="0.0.0.0", port=port)
-

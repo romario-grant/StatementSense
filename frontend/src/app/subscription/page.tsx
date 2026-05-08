@@ -49,11 +49,24 @@ export default function SubscriptionSensePage() {
     formData.append("file", file);
 
     try {
-      const response = await fetch("/api/subscription/upload", {
+      const apiBase =
+        process.env.NODE_ENV === "production"
+          ? process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ?? ""
+          : "";
+      const response = await fetch(`${apiBase}/api/subscription/upload`, {
         method: "POST",
         body: formData,
       });
-      const data = await response.json();
+      const raw = await response.text();
+      let data: { detail?: string; error?: string; [key: string]: unknown } = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        if (!response.ok) {
+          throw new Error(raw || `Request failed with status ${response.status}`);
+        }
+        throw new Error("The server returned an invalid response.");
+      }
       if (!response.ok)
         throw new Error(
           data.detail || data.error || "Failed to process statement"
