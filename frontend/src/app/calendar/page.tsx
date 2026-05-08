@@ -211,12 +211,21 @@ export default function CalendarSensePage() {
               <hr className="border-t border-border my-0" />
               <div className="flex flex-col gap-3 mt-4">
                 {subscriptions.map((sub, index) => (
-                  <div key={sub.id} className="flex items-center gap-2">
-                    <span className="text-muted-foreground text-xs w-4 shrink-0">{index + 1}.</span>
-                    <input type="text" placeholder="Name" className="flex-1 min-w-0 text-sm px-3 py-2 rounded-md border bg-transparent focus:outline-none focus:ring-2 focus:ring-ring" value={sub.name} onChange={e => handleChangeSub(sub.id, "name", e.target.value)} />
-                    <input type="number" step="0.01" placeholder="$ Cost" className="w-20 min-w-0 text-sm px-3 py-2 rounded-md border bg-transparent focus:outline-none focus:ring-2 focus:ring-ring" value={sub.cost} onChange={e => handleChangeSub(sub.id, "cost", e.target.value)} />
-                    <input type="number" min="1" max="31" placeholder="Day (1-31)" className="w-24 min-w-0 text-sm px-3 py-2 rounded-md border bg-transparent focus:outline-none focus:ring-2 focus:ring-ring" value={sub.renewalDay} onChange={e => handleChangeSub(sub.id, "renewalDay", e.target.value)} title="Renewal Day (1-31)" />
-                    <button onClick={() => handleRemoveSub(sub.id)} className="p-2 text-red-500/60 hover:text-red-500 bg-transparent border-none rounded-lg cursor-pointer transition-colors shrink-0"><Trash2 size={15} /></button>
+                  <div key={sub.id} className="flex flex-col gap-2 p-3 rounded-xl border bg-background/30 shadow-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-1">
+                        <span className="text-muted-foreground text-xs w-4 shrink-0 font-medium">{index + 1}.</span>
+                        <input type="text" placeholder="Subscription Name" className="flex-1 min-w-0 text-sm px-3 py-2 rounded-md border bg-transparent focus:outline-none focus:ring-2 focus:ring-ring" value={sub.name} onChange={e => handleChangeSub(sub.id, "name", e.target.value)} />
+                      </div>
+                      <button onClick={() => handleRemoveSub(sub.id)} className="p-2 text-red-500/60 hover:text-red-500 bg-transparent border-none rounded-lg cursor-pointer transition-colors shrink-0"><Trash2 size={15} /></button>
+                    </div>
+                    <div className="flex items-center gap-2 pl-8">
+                      <div className="relative flex-1">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                        <input type="number" step="0.01" placeholder="Cost/mo" className="w-full text-sm pl-7 pr-3 py-2 rounded-md border bg-transparent focus:outline-none focus:ring-2 focus:ring-ring" value={sub.cost} onChange={e => handleChangeSub(sub.id, "cost", e.target.value)} />
+                      </div>
+                      <input type="number" min="1" max="31" placeholder="Renewal Day (1-31)" className="flex-1 min-w-0 text-sm px-3 py-2 rounded-md border bg-transparent focus:outline-none focus:ring-2 focus:ring-ring" value={sub.renewalDay} onChange={e => handleChangeSub(sub.id, "renewalDay", e.target.value)} />
+                    </div>
                   </div>
                 ))}
                 {subscriptions.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No subscriptions added.</p>}
