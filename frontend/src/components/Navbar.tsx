@@ -10,6 +10,7 @@ import { useAuth } from "./AuthProvider";
 
 const navLinks = [
   { path: "/renewal", label: "RenewalSense" },
+  { path: "/subscription", label: "SubscriptionSense" },
   { path: "/screentime", label: "ScreentimeSense" },
   { path: "/calendar", label: "CalendarSense" },
 ];
