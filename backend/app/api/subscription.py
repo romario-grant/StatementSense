@@ -1,10 +1,13 @@
 """SubscriptionSense API endpoints."""
 
+import logging
+
 from fastapi import APIRouter, UploadFile, File, HTTPException
 
 from ..engines.subscription_engine import analyze_subscriptions
 
 router = APIRouter(prefix="/api/subscription", tags=["SubscriptionSense"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/upload")
@@ -30,7 +33,14 @@ async def upload_statement(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Empty file uploaded.")
 
     # Run analysis
-    result = analyze_subscriptions(file_bytes)
+    try:
+        result = analyze_subscriptions(file_bytes)
+    except Exception as exc:
+        logger.exception("Subscription analysis failed for %s", file.filename)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Subscription analysis failed: {exc}",
+        ) from exc
 
     if "error" in result:
         raise HTTPException(status_code=422, detail=result["error"])

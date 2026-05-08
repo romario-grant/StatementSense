@@ -19,6 +19,9 @@ import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
 import FileUpload from "@/components/FileUpload";
 
+const FALLBACK_BACKEND_URL =
+  "https://statementsense-backend-430268251728.us-central1.run.app";
+
 export default function SubscriptionSensePage() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -51,9 +54,13 @@ export default function SubscriptionSensePage() {
     try {
       const apiBase =
         process.env.NODE_ENV === "production"
-          ? process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "") ?? ""
+          ? (process.env.NEXT_PUBLIC_BACKEND_URL || FALLBACK_BACKEND_URL).replace(
+              /\/$/,
+              ""
+            )
           : "";
-      const response = await fetch(`${apiBase}/api/subscription/upload`, {
+      const uploadUrl = `${apiBase}/api/subscription/upload`;
+      const response = await fetch(uploadUrl, {
         method: "POST",
         body: formData,
       });
@@ -73,7 +80,13 @@ export default function SubscriptionSensePage() {
         );
       setResults(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
+      if (err instanceof TypeError && err.message === "Failed to fetch") {
+        setError(
+          "Could not reach the backend. Check that the backend Cloud Run service is deployed and allows this Firebase domain."
+        );
+      } else {
+        setError(err instanceof Error ? err.message : "An error occurred");
+      }
     } finally {
       setLoading(false);
     }

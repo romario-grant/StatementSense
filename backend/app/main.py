@@ -50,16 +50,8 @@ app = FastAPI(
 # Allow frontend to connect — local dev + Cloud Run / Firebase App Hosting
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://statementsense-84a99.web.app",
-        "https://statementsense-84a99.firebaseapp.com",
-    ],
-    allow_origin_regex=r"https://.*\.(web\.app|firebaseapp\.com|hosted\.app)",
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
