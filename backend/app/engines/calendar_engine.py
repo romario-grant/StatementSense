@@ -141,7 +141,7 @@ class GeminiCalendarAnalyzer:
     
     def _call_gemini(self, prompt, use_search=False, max_retries=4):
         """Call Gemini API. Search enabled for accuracy as per user request."""
-        config = {"temperature": 0.0}
+        config = {"temperature": 0.0, "response_mime_type": "application/json"}
         if use_search:
             config["tools"] = [{"google_search": {}}]
         
