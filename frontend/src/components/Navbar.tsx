@@ -22,6 +22,9 @@ export default function Navbar() {
   const { logout, deleteAccount } = useAuth();
   const isDark = theme === "dark";
   const isHomePage = pathname === "/";
+  const navSurfaceClass = isHomePage
+    ? ""
+    : "bg-background/95 border-b border-border/60 shadow-sm backdrop-blur-md";
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // Close mobile menu on route change
@@ -44,7 +47,7 @@ export default function Navbar() {
   return (
     <>
       {/* ── Desktop Navbar ── */}
-      <nav className="fixed top-0 left-0 right-0 z-[999] px-12 pt-8 pb-5 pointer-events-none hidden md:block">
+      <nav className={`fixed top-0 left-0 right-0 z-[999] px-12 pt-8 pb-5 pointer-events-none hidden md:block ${navSurfaceClass}`}>
         {/* ── Brand — absolute left ── */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -166,7 +169,7 @@ export default function Navbar() {
       </nav>
 
       {/* ── Mobile Navbar ── */}
-      <nav className="fixed top-0 left-0 right-0 z-[999] md:hidden">
+      <nav className={`fixed top-0 left-0 right-0 z-[999] md:hidden ${navSurfaceClass}`}>
         <div className="flex items-center justify-between px-5 pt-5 pb-4">
           {/* Brand */}
           <motion.div
