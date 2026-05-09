@@ -623,18 +623,7 @@ export default function RenewalSensePage() {
                                     </div>
                                   </div>
                                   <p className="mt-3 text-xs text-muted-foreground">
-                                    {selected.advice}
-                                  </p>
-                                  <p className="mt-2 text-[0.7rem] text-muted-foreground">
-                                    Likely current plan: {data.likely_current_plan.name}. Pricing searched for {data.country || "your country"}.
-                                    {data.source_summary ? ` Source: ${data.source_summary}.` : ""}
-                                  </p>
-                                  <p className="mt-1 text-[0.7rem] text-muted-foreground">
-                                    Exchange rate: 1 USD = {data.exchange_rate} JMD
-                                    {data.exchange_rate_source === "fallback_rate"
-                                      ? " (fallback estimate)"
-                                      : " (from saved statement analysis)"}
-                                    .
+                                    You are on the {data.likely_current_plan.name} plan.
                                   </p>
                                 </>
                               );

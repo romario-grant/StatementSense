@@ -1323,10 +1323,7 @@ def simulate_plan_options(
             "plan": plan,
             "delta_jmd": round(plan["monthly_equivalent_jmd"] - current_amount, 2),
             "risk": risk,
-            "advice": (
-                f"Your renewal day stays Day {renewal_day}. "
-                f"This plan changes your monthly equivalent by JMD ${plan['monthly_equivalent_jmd'] - current_amount:,.2f}."
-            ),
+            "advice": f"You are on the {current_match['name']} plan.",
         })
 
     simulations.sort(key=lambda item: item["plan"]["monthly_equivalent_jmd"])
