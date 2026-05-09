@@ -61,9 +61,9 @@ export default function PlacesMap({
   }
 
   return (
-    <div className="rounded-xl overflow-hidden border border-white/10">
+    <div className="rounded-2xl overflow-hidden border border-white/10 bg-[#05080c] shadow-xl">
       {/* Map Header */}
-      <div className="bg-black/60 backdrop-blur-xl px-4 py-3 flex items-center justify-between border-b border-white/10">
+      <div className="bg-[#05080c] px-4 py-3 flex items-center justify-between border-b border-white/10">
         <div className="flex items-center gap-2">
           <MapPin size={16} className="text-yellow-400" />
           <span className="text-sm font-medium text-white">
@@ -75,7 +75,7 @@ export default function PlacesMap({
 
       {/* Map Container */}
       <APIProvider apiKey={apiKey}>
-        <div style={{ height: "320px", width: "100%" }}>
+        <div className="overflow-hidden" style={{ height: "320px", width: "100%" }}>
           <Map
             defaultCenter={center}
             defaultZoom={13}
@@ -174,7 +174,7 @@ export default function PlacesMap({
       </APIProvider>
 
       {/* Places List (below map) */}
-      <div className="bg-black/40 backdrop-blur-xl divide-y divide-white/5">
+      <div className="bg-[#05080c] divide-y divide-white/5">
         {markers.map((marker) => (
           <button
             key={marker.place_id}

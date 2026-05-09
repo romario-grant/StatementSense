@@ -365,9 +365,7 @@ export default function SubscriptionSensePage() {
                     {loading ? (
                       <>
                         <span className="animate-spin inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />
-                        {files.length > 1
-                          ? "Analyzing statements. This can take about a minute..."
-                          : "Analyzing subscriptions..."}
+                        Analyzing subscriptions...
                       </>
                     ) : (
                       files.length > 1 ? "Analyze Statements" : "Detect Subscriptions"

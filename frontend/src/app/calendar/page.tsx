@@ -77,6 +77,7 @@ export default function CalendarSensePage() {
   useEffect(() => {
     const token = localStorage.getItem("google_access_token") || "";
     if (!token) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setEventsLoading(true);
     fetch("/api/calendar/events", {
       method: "POST",
@@ -119,6 +120,7 @@ export default function CalendarSensePage() {
     const hasTravel = (classifyResult.away_periods || []).length > 0;
     if (hasLocal && hasTravel) {
       phase3Fired.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSavingsLoading(true);
       fetch("/api/calendar/savings", {
         method: "POST",
@@ -451,7 +453,7 @@ export default function CalendarSensePage() {
                                           <Badge variant={rec.action === "KEEP" ? "info" : "safe"} className="text-[0.65rem]">{rec.net_savings > 0 ? `$${rec.net_savings.toFixed(2)} saved` : "Advisory"}</Badge>
                                         </div>
                                         <p className="text-[0.85rem] text-white/80 mb-2">{rec.action_detail}</p>
-                                        <p className="text-[0.75rem] text-white/50 italic mb-4">"{rec.rationale}"</p>
+                                        <p className="text-[0.75rem] text-white/50 italic mb-4">&ldquo;{rec.rationale}&rdquo;</p>
                                         
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[0.8rem] bg-white/5 p-4 rounded-xl border border-white/5">
                                           <div className="flex flex-col gap-1">
@@ -483,6 +485,34 @@ export default function CalendarSensePage() {
                                           destination={rec.destination}
                                           subscriptionName={rec.subscription}
                                         />
+                                        {rec.alternatives.cost_comparison && (
+                                          <div className="mt-3 rounded-xl border border-white/10 bg-[#05080c] p-4 text-sm text-white">
+                                            <div className="flex flex-wrap items-start justify-between gap-3">
+                                              <div>
+                                                <p className="text-xs uppercase tracking-wider text-white/45">Alternative Cost Outlook</p>
+                                                <p className="mt-1 font-medium">
+                                                  Cheapest likely option: {rec.alternatives.cost_comparison.cheapest_option_name}
+                                                </p>
+                                                <p className="text-white/55">
+                                                  Estimated cost: {rec.alternatives.cost_comparison.estimated_cost}
+                                                </p>
+                                              </div>
+                                              <div className="text-left md:text-right">
+                                                <p className="text-xs uppercase tracking-wider text-white/45">Compared With Current Plan</p>
+                                                <p className={`mt-1 font-semibold ${rec.alternatives.cost_comparison.comparison_to_subscription <= 0 ? "text-green-400" : "text-yellow-400"}`}>
+                                                  {rec.alternatives.cost_comparison.comparison_to_subscription <= 0 ? "About " : "About +"}
+                                                  ${Math.abs(rec.alternatives.cost_comparison.comparison_to_subscription).toFixed(2)}
+                                                  {rec.alternatives.cost_comparison.comparison_to_subscription <= 0 ? " less" : " more"} per month
+                                                </p>
+                                              </div>
+                                            </div>
+                                            {rec.alternatives.cost_comparison.explanation && (
+                                              <p className="mt-3 text-xs leading-relaxed text-white/55">
+                                                {rec.alternatives.cost_comparison.explanation}
+                                              </p>
+                                            )}
+                                          </div>
+                                        )}
                                       </div>
                                     )}
 
@@ -491,7 +521,7 @@ export default function CalendarSensePage() {
                                 ))}
 
                                 {/* Add to Calendar Button */}
-                                {result.recommendations.some((r: any) => r.action !== "KEEP") && (
+                                {result.recommendations.some((r: { action?: string }) => r.action !== "KEEP") && (
                                   <div className="mt-4 pt-6 border-t border-white/10 flex flex-col items-center">
                                     {remindersResult ? (
                                       <div className="bg-green-500/10 border border-green-500/20 text-green-400 p-4 rounded-xl text-sm flex flex-col gap-2 w-full">
@@ -499,7 +529,7 @@ export default function CalendarSensePage() {
                                           <CheckCircle size={16} /> Successfully created {remindersResult.total_created} calendar reminders!
                                         </div>
                                         <div className="flex flex-col gap-1 mt-1">
-                                          {remindersResult.created_events?.map((ev: any, idx: number) => (
+                                          {remindersResult.created_events?.map((ev: { event_link: string; date: string; summary: string }, idx: number) => (
                                             <a key={idx} href={ev.event_link} target="_blank" rel="noopener noreferrer" className="text-xs text-green-400/80 hover:text-green-300 flex items-center gap-1">
                                               <span>{ev.date}: {ev.summary}</span>
                                             </a>
@@ -514,11 +544,11 @@ export default function CalendarSensePage() {
                                           className="flex items-center gap-2 px-6 py-3 bg-white text-black font-medium rounded-full hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                           {remindersLoading ? <Loader2 size={18} className="animate-spin" /> : <CalendarPlus size={18} />}
-                                          {remindersLoading ? "Creating events..." : "Add Reminders to Google Calendar"}
+                                          {remindersLoading ? "Creating calendar events..." : "Add Dates to Google Calendar"}
                                         </button>
                                         <p className="text-xs text-white/50 mt-3 text-center">
-                                          Creates events for optimal cancellation/pause dates before your trip,<br />
-                                          and reminders to restart when you return.
+                                          Adds calendar events for the recommended pause or cancel date,<br />
+                                          plus a restart date for when you return.
                                         </p>
                                       </>
                                     )}

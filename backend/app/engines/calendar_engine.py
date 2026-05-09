@@ -328,6 +328,57 @@ Return JSON only:
             print(f"Gemini Error (places query): {e}")
             return None
 
+    def estimate_alternative_cost(self, sub_name, monthly_cost, destination, places_result):
+        options = places_result.get("options", []) if isinstance(places_result, dict) else []
+        place_names = [
+            {
+                "name": option.get("name", ""),
+                "address": option.get("address", ""),
+                "website": option.get("website", ""),
+            }
+            for option in options[:5]
+        ]
+        prompt = f"""Estimate the likely cheapest practical alternative cost for a traveler.
+
+Original subscription: "{sub_name}"
+Original monthly cost: ${float(monthly_cost):.2f}
+Destination: {destination}
+Places found:
+{json.dumps(place_names, indent=2)}
+
+Use Google Search when useful to estimate current drop-in/day-pass/short-term pricing for these places or similar services in the destination. If exact pricing is unavailable, return a conservative estimate and mark confidence as low or medium.
+
+Return JSON only:
+{{
+    "cheapest_option_name": "name of likely cheapest option or 'Unknown'",
+    "estimated_cost": "$20 day pass",
+    "estimated_trip_cost": 80.0,
+    "estimated_monthly_equivalent": 120.0,
+    "comparison_to_subscription": -40.0,
+    "confidence": "low",
+    "explanation": "One short user-facing sentence"
+}}
+
+comparison_to_subscription = estimated_monthly_equivalent - original monthly cost.
+Negative means the alternative is cheaper than the user's current subscription. Positive means it is more expensive.
+"""
+        try:
+            result = self._call_gemini(prompt, use_search=True)
+            if not isinstance(result, dict):
+                return None
+            return {
+                "cheapest_option_name": str(result.get("cheapest_option_name", "Unknown")),
+                "estimated_cost": str(result.get("estimated_cost", "Unknown")),
+                "estimated_trip_cost": float(result.get("estimated_trip_cost") or 0),
+                "estimated_monthly_equivalent": float(result.get("estimated_monthly_equivalent") or 0),
+                "comparison_to_subscription": float(result.get("comparison_to_subscription") or 0),
+                "confidence": str(result.get("confidence", "low")),
+                "explanation": str(result.get("explanation", "")).strip(),
+            }
+        except Exception as e:
+            print(f"Gemini Error (alternative cost estimate): {e}")
+            return None
+
 
 class SmartTimingEngine:
     """
@@ -838,6 +889,15 @@ def compute_savings(away_periods: list, processed_subscriptions: list):
                 )
                 if query_plan:
                     alternatives["query_reason"] = query_plan.get("reason", "")
+                if alternatives.get("alternatives_found") and analyzer:
+                    cost_estimate = analyzer.estimate_alternative_cost(
+                        sub_name,
+                        rec.get("monthly_cost", 0),
+                        dest,
+                        alternatives,
+                    )
+                    if cost_estimate:
+                        alternatives["cost_comparison"] = cost_estimate
                 rec["alternatives"] = alternatives
             except Exception as e:
                 print(f"[CalendarSense:Phase3] Places search failed for '{sub_name}': {e}")

@@ -298,34 +298,35 @@ export default function RenewalSensePage() {
                     ))}
                     {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                     {results.paycycle_map.map((day: any) => {
-                      const zoneClass =
+                      const zoneAccent =
                         day.zone === "safe"
-                          ? "bg-green-500 text-white"
+                          ? "bg-green-500"
                           : day.zone === "moderate"
-                            ? "bg-yellow-500 text-white"
+                            ? "bg-yellow-500"
                             : day.zone === "high"
-                              ? "bg-orange-500 text-white"
-                              : "bg-red-500 text-white";
+                              ? "bg-orange-500"
+                              : "bg-red-500";
                       const isBest = results.start_day_advice?.best_day?.day === getDay(day);
                       return (
                         <div
                           key={day.day}
                           title={`${day.date}: ${day.zone.toUpperCase()}${day.renewals?.length ? `, ${day.renewals.join(", ")}` : ""}`}
-                          className={`relative aspect-square rounded-lg flex items-center justify-center text-[0.75rem] font-medium ${zoneClass} ${day.is_today ? "ring-2 ring-foreground" : ""} ${isBest ? "outline outline-2 outline-primary outline-offset-2" : ""}`}
+                          className={`relative aspect-square rounded-lg border bg-secondary/60 text-foreground flex items-center justify-center text-[0.75rem] font-medium ${day.is_today ? "border-foreground/40" : "border-border"} ${isBest ? "ring-2 ring-green-500/40" : ""}`}
                         >
-                          <span className="absolute left-1 top-0.5 text-[0.55rem] opacity-80">
+                          <span className={`absolute inset-x-1 top-1 h-1 rounded-full ${zoneAccent}`} />
+                          <span className="absolute left-1.5 top-2 text-[0.58rem] text-muted-foreground">
                             {day.day}
                           </span>
                           {day.is_payday && (
-                            <span className="absolute -top-2 right-0 rounded bg-background px-1 text-[0.5rem] text-foreground shadow-sm">
+                            <span className="absolute -top-2 right-0 rounded bg-background px-1 text-[0.5rem] text-foreground border border-border shadow-sm">
                               PAY
                             </span>
                           )}
                           {day.renewals?.length > 0 && (
-                            <span className="text-sm">{day.renewals[0].substring(0, 1)}</span>
+                            <span className="text-sm font-semibold">{day.renewals[0].substring(0, 1)}</span>
                           )}
                           {isBest && (
-                            <Sparkles size={10} className="absolute bottom-1 right-1" />
+                            <span className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-green-500" />
                           )}
                         </div>
                       );
@@ -347,16 +348,22 @@ export default function RenewalSensePage() {
                 </MotionCard>
 
                 {results.start_day_advice?.best_day && (
-                  <MotionCard hover={false} delay={0.12} className="border-green-500/30 bg-green-500/5">
-                    <h3 className="font-medium mb-2 text-[0.95rem] flex items-center gap-2">
-                      <Sparkles size={16} />
-                      Best Day To Start
+                  <MotionCard hover={false} delay={0.12} className="border-border bg-background">
+                    <h3 className="font-medium mb-2 text-[0.95rem]">
+                      Best Day To Start A New Subscription
                     </h3>
                     <p className="text-2xl font-medium text-green-600 dark:text-green-400 mb-1">
                       {results.calendar.month_name} {results.start_day_advice.best_day.day}
                     </p>
-                    <p className="text-xs text-muted-foreground mb-3">
-                      {results.start_day_advice.best_day.reason}
+                    <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
+                      This day has the lowest estimated payment risk based on your payday,
+                      nearby spending, and existing renewals. It is{" "}
+                      {results.start_day_advice.best_day.days_since_payday} day(s) after payday,
+                      with ${results.start_day_advice.best_day.cluster_amount.toLocaleString()} in nearby spending
+                      and {results.start_day_advice.best_day.collision_count} existing renewal(s).
+                    </p>
+                    <p className="text-[0.7rem] font-medium text-muted-foreground mb-2">
+                      Other low-risk options
                     </p>
                     <div className="flex flex-wrap gap-2 text-xs">
                       {results.start_day_advice.alternatives.map(
