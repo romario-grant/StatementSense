@@ -20,6 +20,7 @@ import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
 import { readSharedSubscriptions } from "@/lib/subscriptionStore";
+import { clearPageSession, readPageSession, savePageSession } from "@/lib/pageSessionStore";
 
 /* ─── Types ─── */
 
@@ -47,6 +48,16 @@ interface FormData {
   w3: string;
   w4: string;
 }
+
+type ScreentimeSession = {
+  globalSettings: GlobalSettings;
+  formData: FormData;
+  subscriptions: SubscriptionEntry[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  batchResults: any;
+  expandedResult: number | null;
+  showAddSubscription: boolean;
+};
 
 /* ─── Helpers ─── */
 
@@ -100,8 +111,25 @@ export default function ScreentimeSensePage() {
   const [expandedResult, setExpandedResult] = useState<number | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [showAddSubscription, setShowAddSubscription] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
+    const saved = readPageSession<ScreentimeSession>("screentime");
+    if (saved) {
+      // Restore the in-progress ScreentimeSense workflow when returning to the page.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setGlobalSettings(saved.globalSettings);
+      setFormData(saved.formData);
+      setSubscriptions(saved.subscriptions);
+      setBatchResults(saved.batchResults);
+      setExpandedResult(saved.expandedResult);
+      setShowAddSubscription(saved.showAddSubscription);
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated || subscriptions.length > 0 || batchResults) return;
     const detected = readSharedSubscriptions();
     if (detected.length === 0) return;
     // Load the browser handoff once when the queue opens.
@@ -115,7 +143,19 @@ export default function ScreentimeSensePage() {
         weekly_hours: [0, 0, 0, 0],
       }))
     );
-  }, []);
+  }, [batchResults, hydrated, subscriptions.length]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    savePageSession("screentime", {
+      globalSettings,
+      formData,
+      subscriptions,
+      batchResults,
+      expandedResult,
+      showAddSubscription,
+    });
+  }, [batchResults, expandedResult, formData, globalSettings, hydrated, showAddSubscription, subscriptions]);
 
   /* ── Event Handlers ── */
 
@@ -211,6 +251,7 @@ export default function ScreentimeSensePage() {
     setSubscriptions([]);
     setExpandedResult(null);
     setError(null);
+    clearPageSession("screentime");
   };
 
   /* ── Render ── */

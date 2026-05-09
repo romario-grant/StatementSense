@@ -15,6 +15,7 @@ import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
 import { readSubscriptionAnalysis } from "@/lib/subscriptionStore";
+import { readPageSession, savePageSession } from "@/lib/pageSessionStore";
 
 const FALLBACK_BACKEND_URL =
   "https://statementsense-backend-430268251728.us-central1.run.app";
@@ -40,6 +41,16 @@ type PlanSimulatorState = {
   selectedIndex?: number;
 };
 
+type RenewalSession = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  results: any;
+  hasSourceAnalysis: boolean;
+  exchangeRate: number | null;
+  exchangeRateSource: string | null;
+  localCurrency: string;
+  planSimulators: Record<string, PlanSimulatorState>;
+};
+
 export default function RenewalSensePage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [results, setResults] = useState<any>(null);
@@ -54,14 +65,30 @@ export default function RenewalSensePage() {
   const [exchangeRateSource, setExchangeRateSource] = useState<string | null>(null);
   const [localCurrency, setLocalCurrency] = useState("JMD");
   const [planSimulators, setPlanSimulators] = useState<Record<string, PlanSimulatorState>>({});
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
+    const saved = readPageSession<RenewalSession>("renewal");
+    if (saved?.results) {
+      // Restore the completed RenewalSense workflow when returning to the page.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setResults(saved.results);
+      setHasSourceAnalysis(saved.hasSourceAnalysis);
+      setExchangeRate(saved.exchangeRate);
+      setExchangeRateSource(saved.exchangeRateSource);
+      setLocalCurrency(saved.localCurrency);
+      setPlanSimulators(saved.planSimulators || {});
+      setLoading(false);
+      setHydrated(true);
+      return;
+    }
+
     const source = readSubscriptionAnalysis<SavedSubscriptionAnalysis>();
     if (!source?.transactions?.length) {
       // Load the saved browser handoff once when RenewalSense opens.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setHasSourceAnalysis(false);
       setLoading(false);
+      setHydrated(true);
       return;
     }
 
@@ -100,7 +127,20 @@ export default function RenewalSensePage() {
     setExchangeRate(source.currency_summary?.exchange_rate || null);
     setExchangeRateSource(source.currency_summary?.exchange_rate_source || null);
     setLocalCurrency(source.currency_summary?.original_currency || "JMD");
+    setHydrated(true);
   }, [currentMonth.month, currentMonth.year]);
+
+  useEffect(() => {
+    if (!hydrated || !results) return;
+    savePageSession("renewal", {
+      results,
+      hasSourceAnalysis,
+      exchangeRate,
+      exchangeRateSource,
+      localCurrency,
+      planSimulators,
+    });
+  }, [exchangeRate, exchangeRateSource, hasSourceAnalysis, hydrated, localCurrency, planSimulators, results]);
 
   const apiBase =
     process.env.NODE_ENV === "production"

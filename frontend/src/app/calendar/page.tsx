@@ -8,11 +8,28 @@ import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
 import { readSharedSubscriptions } from "@/lib/subscriptionStore";
+import { readPageSession, savePageSession } from "@/lib/pageSessionStore";
 
 // Lazy-load map component (requires browser APIs)
 const PlacesMap = dynamic(() => import("./PlacesMap"), { ssr: false });
 
 interface SubInput { id: number; name: string; cost: string; renewalDay: string; }
+
+type CalendarSession = {
+  homeLocation: string;
+  subscriptions: SubInput[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  events: any[] | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  eventsPreview: any[];
+  eventsCount: number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  classifyResult: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  savingsResult: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  remindersResult: any;
+};
 
 export default function CalendarSensePage() {
   const [homeLocation, setHomeLocation] = useState("Kingston, Jamaica");
@@ -57,8 +74,28 @@ export default function CalendarSensePage() {
   } : null;
 
   const phase3Fired = useRef(false);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
+    const saved = readPageSession<CalendarSession>("calendar");
+    if (saved) {
+      // Restore the in-progress CalendarSense workflow when returning to the page.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setHomeLocation(saved.homeLocation);
+      setSubscriptions(saved.subscriptions);
+      setEvents(saved.events);
+      setEventsPreview(saved.eventsPreview);
+      setEventsCount(saved.eventsCount);
+      setClassifyResult(saved.classifyResult);
+      setSavingsResult(saved.savingsResult);
+      setRemindersResult(saved.remindersResult);
+      phase3Fired.current = Boolean(saved.savingsResult);
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated || subscriptions.length > 0) return;
     const detected = readSharedSubscriptions();
     if (detected.length === 0) return;
     // Load the browser handoff once when CalendarSense opens.
@@ -71,10 +108,35 @@ export default function CalendarSensePage() {
         renewalDay: sub.renewalDay ? String(sub.renewalDay) : "",
       }))
     );
-  }, []);
+  }, [hydrated, subscriptions.length]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    savePageSession("calendar", {
+      homeLocation,
+      subscriptions,
+      events,
+      eventsPreview,
+      eventsCount,
+      classifyResult,
+      savingsResult,
+      remindersResult,
+    });
+  }, [
+    classifyResult,
+    events,
+    eventsCount,
+    eventsPreview,
+    homeLocation,
+    hydrated,
+    remindersResult,
+    savingsResult,
+    subscriptions,
+  ]);
 
   // ── Phase 1: Auto-fetch calendar events on mount ──
   useEffect(() => {
+    if (!hydrated || events) return;
     const token = localStorage.getItem("google_access_token") || "";
     if (!token) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -111,7 +173,7 @@ export default function CalendarSensePage() {
         setError(err.message);
       })
       .finally(() => setEventsLoading(false));
-  }, []);
+  }, [events, hydrated]);
 
   // ── Phase 3: Auto-fire when Phase 2 reveals local subs + travel ──
   useEffect(() => {
