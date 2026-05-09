@@ -330,7 +330,7 @@ export default function RenewalSensePage() {
                       return (
                         <div
                           key={day.day}
-                          title={`${day.date}: ${day.zone.toUpperCase()}${day.renewals?.length ? `, ${day.renewals.join(", ")}` : ""}`}
+                          title={`${day.date}: ${day.zone.toUpperCase()} renewal timing risk${day.renewals?.length ? `, ${day.renewals.join(", ")}` : ""}`}
                           className={`relative aspect-square rounded-lg border bg-secondary/60 text-foreground flex items-center justify-center text-[0.75rem] font-medium ${day.is_today ? "border-foreground/40" : "border-border"} ${isBest ? "ring-2 ring-green-500/40" : ""}`}
                         >
                           <span className={`absolute inset-x-1 top-1 h-1 rounded-full ${zoneAccent}`} />
@@ -352,12 +352,13 @@ export default function RenewalSensePage() {
                       );
                     })}
                   </div>
-                  <div className="flex gap-3 mt-3 text-[0.7rem] text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-3 text-[0.7rem] text-muted-foreground">
+                    <span className="font-medium text-foreground">Renewal timing risk:</span>
                     {[
-                      ["Safe", "bg-green-500"],
-                      ["Mid", "bg-yellow-500"],
-                      ["Caution", "bg-orange-500"],
-                      ["Danger", "bg-red-500"],
+                      ["Low risk", "bg-green-500"],
+                      ["Moderate risk", "bg-yellow-500"],
+                      ["High risk", "bg-orange-500"],
+                      ["Critical risk", "bg-red-500"],
                     ].map(([label, colorClass]) => (
                       <div key={label} className="flex items-center gap-1">
                         <span className={`w-2.5 h-2.5 rounded-sm ${colorClass}`} />
