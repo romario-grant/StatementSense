@@ -9,7 +9,17 @@ import math
 import csv
 import re
 import logging
+import json
+import calendar
 from datetime import datetime, timedelta
+
+from Capstone.Capstone.currency_normaliser import FALLBACK_RATE, get_rate_with_fallback
+
+try:
+    from google import genai
+    _HAS_GEMINI = True
+except ImportError:
+    _HAS_GEMINI = False
 
 # ── Universal extractor (capstone_revised) ─────────────────────────
 # Falls back to the legacy Scotiabank-only parser if this import fails
@@ -875,7 +885,82 @@ def _predict_from_provided_subscriptions(subscriptions, today=None):
     predictions.sort(key=lambda p: p["days_until_charge"])
     return predictions
 
-def _build_analysis(transactions, provided_subscriptions=None, price_changes=None):
+
+def _month_context(year=None, month=None):
+    today = datetime.now()
+    year = int(year or today.year)
+    month = int(month or today.month)
+    month = min(max(month, 1), 12)
+    days_in_month = calendar.monthrange(year, month)[1]
+    return {
+        "year": year,
+        "month": month,
+        "month_name": calendar.month_name[month],
+        "days_in_month": days_in_month,
+        "first_weekday": (datetime(year, month, 1).weekday() + 1) % 7,
+        "today": today.day if today.year == year and today.month == month else None,
+    }
+
+
+def _subscription_names_on_day(subscriptions, day):
+    return [sub["name"] for sub in subscriptions if sub["renewal_day"] == day]
+
+
+def _score_start_day(day, amount, salary_tracker, expense_profiler, subscriptions):
+    fake_subscription = {
+        "name": "New Subscription",
+        "amount": amount,
+        "renewal_day": day,
+        "past_failures": 0,
+        "total_months": 1,
+        "fail_rate": 0,
+    }
+    risk = RiskScoreEngine().calculate_risk(fake_subscription, salary_tracker, expense_profiler)
+    collision_count = len(_subscription_names_on_day(subscriptions, day))
+    collision_penalty = min(collision_count * 0.1, 0.25)
+    score = min(risk["risk_score"] + collision_penalty, 1)
+    return score, risk, collision_count
+
+
+def _recommend_start_days(subscriptions, salary_tracker, expense_profiler, days_in_month, amount=None):
+    test_amount = amount if amount and amount > 0 else (
+        sum(sub["amount"] for sub in subscriptions) / len(subscriptions)
+        if subscriptions else salary_tracker.salary_amount * 0.02
+    )
+    scored = []
+    for day in range(1, days_in_month + 1):
+        score, risk, collision_count = _score_start_day(
+            min(day, 30), test_amount, salary_tracker, expense_profiler, subscriptions
+        )
+        scored.append({
+            "day": day,
+            "score": round(score, 3),
+            "risk_level": risk["risk_level"],
+            "risk_label": risk["risk_label"],
+            "days_since_payday": risk["breakdown"]["days_since_payday"],
+            "cluster_amount": risk["breakdown"]["cluster_amount"],
+            "collision_count": collision_count,
+        })
+
+    scored.sort(key=lambda item: (item["score"], item["collision_count"], item["day"]))
+    best = scored[0] if scored else None
+    alternatives = scored[:3]
+    avoid = sorted(scored[-5:], key=lambda item: item["day"])
+    if best:
+        best["reason"] = (
+            f"Day {best['day']} is {best['days_since_payday']} day(s) after payday, "
+            f"with ${best['cluster_amount']:.2f} clustered nearby and "
+            f"{best['collision_count']} existing renewal(s) on that day."
+        )
+    return {
+        "best_day": best,
+        "alternatives": alternatives,
+        "avoid_days": avoid,
+        "amount_tested": round(test_amount, 2),
+    }
+
+
+def _build_analysis(transactions, provided_subscriptions=None, price_changes=None, year=None, month=None):
     if not transactions:
         return {"error": "No transactions found. Run SubscriptionSense first."}
 
@@ -932,26 +1017,27 @@ def _build_analysis(transactions, provided_subscriptions=None, price_changes=Non
     
     risk_results.sort(key=lambda r: r["risk_score"], reverse=True)
     
-    # Build paycycle map (30 days)
+    calendar_context = _month_context(year, month)
+
+    # Build paycycle map for the actual selected month.
     paycycle_map = []
-    for d in range(1, 31):
-        pos = salary_tracker.paycycle_position(d)
-        zone_label, zone_level = salary_tracker.get_zone(d)
-        is_payday = d == salary_info["pay_day"]
-        
-        # Check if any subscription renews on this day
-        sub_on_day = None
-        for sub in subscriptions:
-            if sub["renewal_day"] == d:
-                sub_on_day = sub["name"]
-                break
-        
+    for d in range(1, calendar_context["days_in_month"] + 1):
+        engine_day = min(d, 30)
+        pos = salary_tracker.paycycle_position(engine_day)
+        zone_label, zone_level = salary_tracker.get_zone(engine_day)
+        is_payday = engine_day == salary_info["pay_day"]
+        renewals = _subscription_names_on_day(subscriptions, engine_day)
+
         paycycle_map.append({
             "day": d,
+            "date": f"{calendar_context['year']}-{calendar_context['month']:02d}-{d:02d}",
+            "weekday": (datetime(calendar_context["year"], calendar_context["month"], d).weekday() + 1) % 7,
             "position": round(pos, 2),
             "zone": zone_level,
             "is_payday": is_payday,
-            "subscription": sub_on_day
+            "is_today": calendar_context["today"] == d,
+            "subscription": renewals[0] if renewals else None,
+            "renewals": renewals,
         })
     
     # Transaction list for display (serializable)
@@ -970,6 +1056,12 @@ def _build_analysis(transactions, provided_subscriptions=None, price_changes=Non
     total_sub_cost = sum(r["amount"] for r in risk_results)
     total_expenses = expense_profiler.total_monthly_expenses()
     high_risk_count = sum(1 for r in risk_results if r["risk_level"] in ("high", "critical"))
+    start_day_advice = _recommend_start_days(
+        subscriptions,
+        salary_tracker,
+        expense_profiler,
+        calendar_context["days_in_month"],
+    )
     
     # 6.5 — Price Change & Trial Conversion Detection (CUSUM)
     if price_changes is None:
@@ -981,7 +1073,9 @@ def _build_analysis(transactions, provided_subscriptions=None, price_changes=Non
         "salary": salary_info,
         "subscriptions": risk_results,
         "expenses": expenses,
+        "calendar": calendar_context,
         "paycycle_map": paycycle_map,
+        "start_day_advice": start_day_advice,
         "transactions": tx_list,
         "price_changes": price_changes,
         "renewal_predictions": renewal_predictions,
@@ -1006,7 +1100,7 @@ def analyze_statement(file_bytes):
     return _build_analysis(transactions)
 
 
-def analyze_existing_data(transactions, subscriptions, price_changes=None):
+def analyze_existing_data(transactions, subscriptions, price_changes=None, year=None, month=None):
     """
     Run RenewalSense from the already-parsed SubscriptionSense result.
     This skips bank parsing entirely.
@@ -1015,7 +1109,188 @@ def analyze_existing_data(transactions, subscriptions, price_changes=None):
         _coerce_transaction_rows(transactions),
         provided_subscriptions=subscriptions,
         price_changes=price_changes,
+        year=year,
+        month=month,
     )
+
+
+def _extract_json(text):
+    text = text.strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    elif text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        text = text[start:end + 1]
+    return json.loads(text)
+
+
+def _lookup_plan_prices(subscription_name):
+    """
+    Ask Gemini for verified public plan prices. Returns an empty unverified
+    result if Gemini/search is unavailable or cannot verify official pricing.
+    """
+    if not _HAS_GEMINI:
+        return {"pricing_verified": False, "plans": [], "message": "Gemini pricing lookup is unavailable."}
+
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        try:
+            from dotenv import load_dotenv
+            project_root = os.environ.get("STATEMENTSENSE_ROOT", "")
+            if project_root:
+                load_dotenv(os.path.join(project_root, ".env"))
+            api_key = os.getenv("GEMINI_API_KEY")
+        except Exception:
+            api_key = None
+    if not api_key:
+        return {"pricing_verified": False, "plans": [], "message": "GEMINI_API_KEY is missing."}
+
+    prompt = f"""
+Look up official subscription plans for {subscription_name}. Use Google Search.
+Return strict JSON only:
+{{
+  "pricing_verified": true,
+  "currency": "USD",
+  "source_summary": "official pricing page or app store listing",
+  "plans": [
+    {{"name": "Individual", "price": 10.99, "billing_period": "monthly"}},
+    {{"name": "Family", "price": 16.99, "billing_period": "monthly"}}
+  ]
+}}
+Rules:
+- Use official provider pricing pages, app store listings, or other reliable public pricing pages.
+- If pricing is not verified, return pricing_verified false and plans [].
+- Include monthly, yearly, student, duo, family, or lifetime plans when official pricing exists.
+- Do not invent prices.
+"""
+    try:
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model="gemini-3.1-pro-preview",
+            config={
+                "tools": [{"google_search": {}}],
+                "temperature": 0.0,
+            },
+            contents=prompt,
+        )
+        data = _extract_json(response.text or "")
+        if not data.get("pricing_verified") or not isinstance(data.get("plans"), list):
+            return {"pricing_verified": False, "plans": [], "message": "Pricing could not be verified."}
+        return data
+    except Exception as exc:
+        logger.warning("Plan pricing lookup failed: %s", exc)
+        return {"pricing_verified": False, "plans": [], "message": "Pricing lookup failed."}
+
+
+def _convert_plan_to_jmd(plan, default_currency, exchange_rate):
+    currency = str(plan.get("currency") or default_currency or "USD").upper()
+    price = float(plan.get("price") or 0)
+    if price <= 0:
+        return None
+    if currency == "JMD":
+        amount_jmd = price
+        amount_usd = price / exchange_rate
+    else:
+        amount_usd = price
+        amount_jmd = price * exchange_rate
+    billing_period = str(plan.get("billing_period") or "monthly").lower()
+    monthly_equivalent = amount_jmd / 12 if billing_period == "yearly" else amount_jmd
+    return {
+        "name": str(plan.get("name") or "Plan"),
+        "billing_period": billing_period,
+        "price": round(price, 2),
+        "currency": currency,
+        "amount_jmd": round(amount_jmd, 2),
+        "amount_usd": round(amount_usd, 2),
+        "monthly_equivalent_jmd": round(monthly_equivalent, 2),
+    }
+
+
+def simulate_plan_options(subscription, salary, expenses, year=None, month=None, exchange_rate=None):
+    """
+    Compare verified alternative plans on the subscription's existing renewal day.
+    This does not recommend a new renewal date because plan switches normally keep
+    the same billing day.
+    """
+    name = (subscription.get("subscription") or subscription.get("merchant") or subscription.get("name") or "").strip()
+    current_amount = float(subscription.get("amount") or 0)
+    renewal_day = int(subscription.get("renewal_day") or 0)
+    if not name or current_amount <= 0 or renewal_day <= 0:
+        return {"error": "Subscription name, amount, and renewal day are required."}
+
+    if not exchange_rate:
+        exchange_rate = get_rate_with_fallback(datetime.now().strftime("%Y-%m-%d"), {})
+
+    salary_tracker = SalaryCycleTracker(
+        float(salary.get("amount") or 0),
+        int(salary.get("pay_day") or 1),
+        salary.get("frequency", "monthly"),
+    )
+    expense_profiler = ExpenseProfiler()
+    for expense in expenses or []:
+        expense_profiler.add_expense(
+            expense.get("name", "Expense"),
+            float(expense.get("amount") or 0),
+            int(expense.get("day") or 1),
+        )
+
+    pricing = _lookup_plan_prices(name)
+    converted_plans = []
+    for plan in pricing.get("plans", []):
+        converted = _convert_plan_to_jmd(plan, pricing.get("currency", "USD"), float(exchange_rate))
+        if converted:
+            converted_plans.append(converted)
+
+    if not converted_plans:
+        return {
+            "subscription": name,
+            "pricing_verified": False,
+            "plans": [],
+            "message": pricing.get("message") or "No verified plans found.",
+            "exchange_rate": round(float(exchange_rate), 2),
+        }
+
+    current_match = min(
+        converted_plans,
+        key=lambda plan: abs(plan["monthly_equivalent_jmd"] - current_amount),
+    )
+    simulations = []
+    for plan in converted_plans:
+        risk_input = {
+            "name": name,
+            "amount": plan["amount_jmd"],
+            "renewal_day": min(max(renewal_day, 1), 30),
+            "past_failures": 0,
+            "total_months": 1,
+            "fail_rate": 0,
+        }
+        risk = RiskScoreEngine().calculate_risk(risk_input, salary_tracker, expense_profiler)
+        simulations.append({
+            "plan": plan,
+            "delta_jmd": round(plan["monthly_equivalent_jmd"] - current_amount, 2),
+            "risk": risk,
+            "advice": (
+                f"Your renewal day stays Day {renewal_day}. "
+                f"This plan changes your monthly equivalent by JMD ${plan['monthly_equivalent_jmd'] - current_amount:,.2f}."
+            ),
+        })
+
+    simulations.sort(key=lambda item: item["plan"]["monthly_equivalent_jmd"])
+    return {
+        "subscription": name,
+        "pricing_verified": bool(pricing.get("pricing_verified")),
+        "source_summary": pricing.get("source_summary", ""),
+        "exchange_rate": round(float(exchange_rate), 2),
+        "current_amount_jmd": round(current_amount, 2),
+        "renewal_day": renewal_day,
+        "likely_current_plan": current_match,
+        "simulations": simulations,
+    }
 
 
 def _run_classmate_detection(classified_transactions):

@@ -3,7 +3,11 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from pydantic import BaseModel, Field
 
-from ..engines.renewal_engine import analyze_existing_data, analyze_statement
+from ..engines.renewal_engine import (
+    analyze_existing_data,
+    analyze_statement,
+    simulate_plan_options,
+)
 
 router = APIRouter(prefix="/api/renewal", tags=["RenewalSense"])
 
@@ -12,6 +16,17 @@ class RenewalFromExistingRequest(BaseModel):
     transactions: list[dict] = Field(default_factory=list)
     subscriptions: list[dict] = Field(default_factory=list)
     price_changes: list[dict] | None = None
+    year: int | None = None
+    month: int | None = None
+
+
+class PlanSimulatorRequest(BaseModel):
+    subscription: dict = Field(default_factory=dict)
+    salary: dict = Field(default_factory=dict)
+    expenses: list[dict] = Field(default_factory=list)
+    year: int | None = None
+    month: int | None = None
+    exchange_rate: float | None = None
 
 
 @router.post("/upload")
@@ -58,9 +73,32 @@ async def analyze_existing(request: RenewalFromExistingRequest):
         request.transactions,
         request.subscriptions,
         request.price_changes,
+        request.year,
+        request.month,
     )
 
     if "error" in result:
         raise HTTPException(status_code=422, detail=result["error"])
+
+    return result
+
+
+@router.post("/plan-simulator")
+async def plan_simulator(request: PlanSimulatorRequest):
+    """
+    Look up verified plan alternatives and simulate each plan on the existing
+    renewal day. This is for switching plans, not choosing a new renewal day.
+    """
+    result = simulate_plan_options(
+        request.subscription,
+        request.salary,
+        request.expenses,
+        request.year,
+        request.month,
+        request.exchange_rate,
+    )
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
 
     return result

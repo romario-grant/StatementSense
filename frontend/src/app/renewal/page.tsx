@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
+  CalendarDays,
   CheckCircle,
   Info,
   Loader2,
   RefreshCw,
+  Sparkles,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
@@ -22,6 +24,17 @@ type SavedSubscriptionAnalysis = {
   subscriptions?: Record<string, unknown>[];
   price_changes?: Record<string, unknown>[];
   transactions_parsed?: number;
+  currency_summary?: {
+    exchange_rate?: number;
+  };
+};
+
+type PlanSimulatorState = {
+  loading?: boolean;
+  error?: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data?: any;
+  selectedIndex?: number;
 };
 
 export default function RenewalSensePage() {
@@ -30,12 +43,17 @@ export default function RenewalSensePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasSourceAnalysis, setHasSourceAnalysis] = useState(false);
+  const [currentMonth] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  });
+  const [exchangeRate, setExchangeRate] = useState<number | null>(null);
+  const [planSimulators, setPlanSimulators] = useState<Record<string, PlanSimulatorState>>({});
 
   useEffect(() => {
     const source = readSubscriptionAnalysis<SavedSubscriptionAnalysis>();
     if (!source?.transactions?.length) {
       // Load the saved browser handoff once when RenewalSense opens.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setHasSourceAnalysis(false);
       setLoading(false);
       return;
@@ -57,6 +75,8 @@ export default function RenewalSensePage() {
         transactions: source.transactions || [],
         subscriptions: source.subscriptions || [],
         price_changes: source.price_changes || [],
+        year: currentMonth.year,
+        month: currentMonth.month,
       }),
     })
       .then(async (response) => {
@@ -71,7 +91,64 @@ export default function RenewalSensePage() {
         setError(err instanceof Error ? err.message : "An error occurred");
       })
       .finally(() => setLoading(false));
-  }, []);
+    setExchangeRate(source.currency_summary?.exchange_rate || null);
+  }, [currentMonth.month, currentMonth.year]);
+
+  const apiBase =
+    process.env.NODE_ENV === "production"
+      ? (process.env.NEXT_PUBLIC_BACKEND_URL || FALLBACK_BACKEND_URL).replace(
+          /\/$/,
+          ""
+        )
+      : "";
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const loadPlanSimulator = async (sub: any, key: string) => {
+    setPlanSimulators((current) => ({
+      ...current,
+      [key]: { loading: true, error: null, data: current[key]?.data },
+    }));
+    try {
+      const response = await fetch(`${apiBase}/api/renewal/plan-simulator`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subscription: sub,
+          salary: results.salary,
+          expenses: results.expenses || [],
+          year: currentMonth.year,
+          month: currentMonth.month,
+          exchange_rate: exchangeRate,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || data.error || "Plan comparison failed.");
+      }
+      setPlanSimulators((current) => ({
+        ...current,
+        [key]: { loading: false, error: null, data, selectedIndex: 0 },
+      }));
+    } catch (err) {
+      setPlanSimulators((current) => ({
+        ...current,
+        [key]: {
+          loading: false,
+          error: err instanceof Error ? err.message : "Plan comparison failed.",
+        },
+      }));
+    }
+  };
+
+  const selectPlan = (key: string, selectedIndex: number) => {
+    setPlanSimulators((current) => ({
+      ...current,
+      [key]: { ...current[key], selectedIndex },
+    }));
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const getDay = (day: any) => day.day as number;
 
   return (
     <>
@@ -193,33 +270,52 @@ export default function RenewalSensePage() {
                 </MotionCard>
 
                 <MotionCard hover={false} delay={0.1}>
-                  <h3 className="font-medium mb-1 text-[0.95rem]">30-Day Paycycle Map</h3>
+                  <h3 className="font-medium mb-1 text-[0.95rem] flex items-center gap-2">
+                    <CalendarDays size={16} />
+                    {results.calendar.month_name} {results.calendar.year}
+                  </h3>
                   <p className="text-xs text-muted-foreground mb-4">
-                    Payday on Day {results.salary.pay_day}.
+                    Payday is marked on Day {results.salary.pay_day}. Renewals appear by initial.
                   </p>
-                  <div className="flex flex-wrap gap-[3px]">
+                  <div className="grid grid-cols-7 gap-1.5 text-center text-[0.65rem] text-muted-foreground mb-2">
+                    {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                      <span key={day}>{day}</span>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {Array.from({ length: results.calendar.first_weekday }).map((_, idx) => (
+                      <div key={`blank-${idx}`} className="aspect-square" />
+                    ))}
                     {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                     {results.paycycle_map.map((day: any) => {
-                      let bg = "bg-secondary";
-                      if (day.zone === "safe") bg = "bg-green-500 text-white";
-                      if (day.zone === "moderate") bg = "bg-yellow-500 text-white";
-                      if (day.zone === "high") bg = "bg-orange-500 text-white";
-                      if (day.zone === "critical") bg = "bg-red-500 text-white";
+                      const zoneClass =
+                        day.zone === "safe"
+                          ? "bg-green-500 text-white"
+                          : day.zone === "moderate"
+                            ? "bg-yellow-500 text-white"
+                            : day.zone === "high"
+                              ? "bg-orange-500 text-white"
+                              : "bg-red-500 text-white";
+                      const isBest = results.start_day_advice?.best_day?.day === getDay(day);
                       return (
                         <div
                           key={day.day}
-                          title={`Day ${day.day}: ${day.zone.toUpperCase()} ZONE`}
-                          className={`w-[calc(10%-3px)] h-7 rounded flex items-center justify-center relative cursor-pointer ${bg} ${day.is_payday ? "border-2 border-border" : ""}`}
+                          title={`${day.date}: ${day.zone.toUpperCase()}${day.renewals?.length ? `, ${day.renewals.join(", ")}` : ""}`}
+                          className={`relative aspect-square rounded-lg flex items-center justify-center text-[0.75rem] font-medium ${zoneClass} ${day.is_today ? "ring-2 ring-foreground" : ""} ${isBest ? "outline outline-2 outline-primary outline-offset-2" : ""}`}
                         >
+                          <span className="absolute left-1 top-0.5 text-[0.55rem] opacity-80">
+                            {day.day}
+                          </span>
                           {day.is_payday && (
-                            <span className="absolute -top-4 text-[0.5rem] font-medium bg-primary text-white px-1 py-px rounded-[3px] whitespace-nowrap">
+                            <span className="absolute -top-2 right-0 rounded bg-background px-1 text-[0.5rem] text-foreground shadow-sm">
                               PAY
                             </span>
                           )}
-                          {day.subscription && (
-                            <span className="text-[0.6rem] font-medium text-white">
-                              {day.subscription.substring(0, 1)}
-                            </span>
+                          {day.renewals?.length > 0 && (
+                            <span className="text-sm">{day.renewals[0].substring(0, 1)}</span>
+                          )}
+                          {isBest && (
+                            <Sparkles size={10} className="absolute bottom-1 right-1" />
                           )}
                         </div>
                       );
@@ -239,6 +335,31 @@ export default function RenewalSensePage() {
                     ))}
                   </div>
                 </MotionCard>
+
+                {results.start_day_advice?.best_day && (
+                  <MotionCard hover={false} delay={0.12} className="border-green-500/30 bg-green-500/5">
+                    <h3 className="font-medium mb-2 text-[0.95rem] flex items-center gap-2">
+                      <Sparkles size={16} />
+                      Best Day To Start
+                    </h3>
+                    <p className="text-2xl font-medium text-green-600 dark:text-green-400 mb-1">
+                      {results.calendar.month_name} {results.start_day_advice.best_day.day}
+                    </p>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      {results.start_day_advice.best_day.reason}
+                    </p>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      {results.start_day_advice.alternatives.map(
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        (day: any) => (
+                          <span key={day.day} className="rounded-full bg-background px-2 py-1 border border-border">
+                            Day {day.day}
+                          </span>
+                        )
+                      )}
+                    </div>
+                  </MotionCard>
+                )}
 
                 <a
                   href="/subscription"
@@ -380,6 +501,95 @@ export default function RenewalSensePage() {
                             <span className="font-medium">{val}</span>
                           </div>
                         ))}
+                      </div>
+
+                      <div className="mt-4 border-t border-border pt-4">
+                        <button
+                          type="button"
+                          onClick={() => loadPlanSimulator(sub, `${sub.subscription}-${idx}`)}
+                          disabled={planSimulators[`${sub.subscription}-${idx}`]?.loading}
+                          className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-secondary disabled:opacity-60"
+                        >
+                          {planSimulators[`${sub.subscription}-${idx}`]?.loading ? (
+                            <Loader2 size={15} className="animate-spin" />
+                          ) : (
+                            <Sparkles size={15} />
+                          )}
+                          Compare Plans
+                        </button>
+
+                        {planSimulators[`${sub.subscription}-${idx}`]?.error && (
+                          <p className="mt-3 text-sm text-red-600 dark:text-red-400">
+                            {planSimulators[`${sub.subscription}-${idx}`]?.error}
+                          </p>
+                        )}
+
+                        {planSimulators[`${sub.subscription}-${idx}`]?.data && (
+                          <div className="mt-4 rounded-xl bg-secondary p-4">
+                            {(() => {
+                              const key = `${sub.subscription}-${idx}`;
+                              const simulator = planSimulators[key];
+                              const data = simulator.data;
+                              if (!data.pricing_verified) {
+                                return (
+                                  <p className="text-sm text-muted-foreground">
+                                    {data.message || "Verified plan prices were not found."}
+                                  </p>
+                                );
+                              }
+                              const selected =
+                                data.simulations[simulator.selectedIndex || 0] || data.simulations[0];
+                              return (
+                                <>
+                                  <div className="flex flex-wrap gap-2 mb-4">
+                                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                    {data.simulations.map((item: any, planIdx: number) => (
+                                      <button
+                                        key={`${item.plan.name}-${planIdx}`}
+                                        type="button"
+                                        onClick={() => selectPlan(key, planIdx)}
+                                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                                          (simulator.selectedIndex || 0) === planIdx
+                                            ? "border-primary bg-primary text-primary-foreground"
+                                            : "border-border bg-background hover:bg-card"
+                                        }`}
+                                      >
+                                        {item.plan.name}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Plan Cost</p>
+                                      <p className="font-medium">
+                                        JMD ${selected.plan.amount_jmd.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </p>
+                                      <p className="text-[0.7rem] text-muted-foreground">
+                                        {selected.plan.billing_period}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">Monthly Change</p>
+                                      <p className={`font-medium ${selected.delta_jmd > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
+                                        {selected.delta_jmd > 0 ? "+" : ""}JMD ${selected.delta_jmd.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-muted-foreground">New Risk</p>
+                                      <p className="font-medium">{selected.risk.risk_label}</p>
+                                    </div>
+                                  </div>
+                                  <p className="mt-3 text-xs text-muted-foreground">
+                                    {selected.advice}
+                                  </p>
+                                  <p className="mt-2 text-[0.7rem] text-muted-foreground">
+                                    Likely current plan: {data.likely_current_plan.name}. Exchange rate: 1 USD = {data.exchange_rate} JMD.
+                                  </p>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        )}
                       </div>
                     </MotionCard>
                   );
