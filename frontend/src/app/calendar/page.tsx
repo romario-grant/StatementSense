@@ -7,6 +7,7 @@ import { Calendar as CalendarIcon, MapPin, Plus, Trash2, Plane, Activity, CheckC
 import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
+import { readSharedSubscriptions } from "@/lib/subscriptionStore";
 
 // Lazy-load map component (requires browser APIs)
 const PlacesMap = dynamic(() => import("./PlacesMap"), { ssr: false });
@@ -15,7 +16,8 @@ interface SubInput { id: number; name: string; cost: string; renewalDay: string;
 
 export default function CalendarSensePage() {
   const [homeLocation, setHomeLocation] = useState("Kingston, Jamaica");
-  const [subscriptions, setSubscriptions] = useState<SubInput[]>([{ id: 1, name: "", cost: "", renewalDay: "" }]);
+  const [subscriptions, setSubscriptions] = useState<SubInput[]>([]);
+  const [showAddSubscription, setShowAddSubscription] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Phase 1: Calendar events (fetched on mount)
@@ -55,6 +57,21 @@ export default function CalendarSensePage() {
   } : null;
 
   const phase3Fired = useRef(false);
+
+  useEffect(() => {
+    const detected = readSharedSubscriptions();
+    if (detected.length === 0) return;
+    // Load the browser handoff once when CalendarSense opens.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSubscriptions(
+      detected.map((sub, index) => ({
+        id: sub.id || Date.now() + index,
+        name: sub.name,
+        cost: sub.cost.toString(),
+        renewalDay: sub.renewalDay ? String(sub.renewalDay) : "",
+      }))
+    );
+  }, []);
 
   // ── Phase 1: Auto-fetch calendar events on mount ──
   useEffect(() => {
@@ -118,7 +135,10 @@ export default function CalendarSensePage() {
     }
   }, [classifyResult]);
 
-  const handleAddSub = () => setSubscriptions([...subscriptions, { id: Date.now(), name: "", cost: "", renewalDay: "" }]);
+  const handleAddSub = () => {
+    setShowAddSubscription(true);
+    setSubscriptions([...subscriptions, { id: Date.now(), name: "", cost: "", renewalDay: "" }]);
+  };
   const handleRemoveSub = (id: number) => setSubscriptions(subscriptions.filter(s => s.id !== id));
   const handleChangeSub = (id: number, field: string, value: string) => setSubscriptions(subscriptions.map(s => s.id === id ? { ...s, [field]: value } : s));
 
@@ -205,10 +225,15 @@ export default function CalendarSensePage() {
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-medium tracking-tight m-0">Subscriptions</h2>
                 <button type="button" onClick={handleAddSub} className="flex items-center gap-1 text-xs px-3 py-1.5 text-foreground bg-primary/10 rounded-full border-none cursor-pointer hover:bg-primary/90 transition-colors">
-                  <Plus size={14} /> Add
+                  <Plus size={14} /> {subscriptions.length ? "Add another" : "Add subscription"}
                 </button>
               </div>
               <hr className="border-t border-border my-0" />
+              {subscriptions.length > 0 && (
+                <p className="text-xs text-muted-foreground mt-3 mb-0">
+                  Detected subscriptions are prefilled from SubscriptionSense. Add another if anything is missing.
+                </p>
+              )}
               <div className="flex flex-col gap-3 mt-4">
                 {subscriptions.map((sub, index) => (
                   <div key={sub.id} className="flex flex-col gap-2 p-3 rounded-xl border bg-background/30 shadow-sm">
@@ -228,7 +253,7 @@ export default function CalendarSensePage() {
                     </div>
                   </div>
                 ))}
-                {subscriptions.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No subscriptions added.</p>}
+                {subscriptions.length === 0 && !showAddSubscription && <p className="text-sm text-muted-foreground text-center py-4">Run SubscriptionSense first, or add a subscription manually.</p>}
               </div>
             </MotionCard>
 

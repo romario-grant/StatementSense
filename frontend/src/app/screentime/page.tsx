@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Clock,
@@ -14,12 +14,12 @@ import {
   Trash2,
   BarChart3,
   Layers,
-  Activity,
   Loader2,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
+import { readSharedSubscriptions } from "@/lib/subscriptionStore";
 
 /* ─── Types ─── */
 
@@ -99,6 +99,23 @@ export default function ScreentimeSensePage() {
   const [batchResults, setBatchResults] = useState<any>(null);
   const [expandedResult, setExpandedResult] = useState<number | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [showAddSubscription, setShowAddSubscription] = useState(false);
+
+  useEffect(() => {
+    const detected = readSharedSubscriptions();
+    if (detected.length === 0) return;
+    // Load the browser handoff once when the queue opens.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSubscriptions(
+      detected.map((sub, index) => ({
+        id: sub.id || Date.now() + index,
+        app_name: sub.name,
+        cost: sub.cost,
+        months_subscribed: 1,
+        weekly_hours: [0, 0, 0, 0],
+      }))
+    );
+  }, []);
 
   /* ── Event Handlers ── */
 
@@ -124,14 +141,35 @@ export default function ScreentimeSensePage() {
     };
     setSubscriptions((prev) => [...prev, newSub]);
     setFormData({ app_name: "", cost: "", months_subscribed: "1", w1: "", w2: "", w3: "", w4: "" });
+    setShowAddSubscription(false);
   };
 
   const removeSubscription = (id: number) => {
     setSubscriptions((prev) => prev.filter((s) => s.id !== id));
   };
 
+  const updateSubscriptionHours = (id: number, weekIndex: number, value: string) => {
+    const hours = value === "" ? 0 : parseFloat(value);
+    setSubscriptions((prev) =>
+      prev.map((sub) =>
+        sub.id === id
+          ? {
+              ...sub,
+              weekly_hours: sub.weekly_hours.map((current, index) =>
+                index === weekIndex ? (Number.isFinite(hours) ? hours : current) : current
+              ),
+            }
+          : sub
+      )
+    );
+  };
+
   const handleAnalyzeBatch = async () => {
     if (subscriptions.length === 0) return;
+    if (subscriptions.some((sub) => sub.weekly_hours.every((hours) => hours <= 0))) {
+      setError("Add weekly screen time for each subscription before analyzing.");
+      return;
+    }
     setLoading(true);
     setError(null);
     setBatchResults(null);
@@ -340,6 +378,21 @@ export default function ScreentimeSensePage() {
             >
               {/* ── Left: Add Subscription Form ── */}
               <div>
+                {!showAddSubscription ? (
+                  <MotionCard hover={false}>
+                    <h2 className="text-lg font-medium mb-2">Subscriptions</h2>
+                    <p className="text-[0.85rem] text-muted-foreground mb-5">
+                      Detected subscriptions are prefilled from SubscriptionSense. Add another if anything is missing.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddSubscription(true)}
+                      className="w-full flex items-center justify-center gap-2 py-3 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl font-medium transition-colors shadow-sm"
+                    >
+                      <Plus size={16} /> Add another subscription
+                    </button>
+                  </MotionCard>
+                ) : (
                 <MotionCard hover={false}>
                   <div className="flex justify-between items-center pb-4 mb-5 border-b border-border">
                     <h2 className="text-lg font-medium flex items-center gap-2 m-0">
@@ -403,6 +456,7 @@ export default function ScreentimeSensePage() {
                     </button>
                   </form>
                 </MotionCard>
+                )}
               </div>
 
               {/* ── Right: Queue List ── */}
@@ -435,7 +489,7 @@ export default function ScreentimeSensePage() {
                       <Clock size={48} className="text-muted-foreground mb-4" />
                       <p className="text-base font-medium tracking-wide uppercase text-muted-foreground">No Subscriptions Yet</p>
                       <p className="text-[0.85rem] text-muted-foreground text-center max-w-[18rem] mt-2">
-                        Add subscriptions using the form to build your analysis queue.
+                        Run SubscriptionSense first, or add a subscription manually.
                       </p>
                     </div>
                   ) : (
@@ -444,9 +498,10 @@ export default function ScreentimeSensePage() {
                       {subscriptions.map((sub, i) => (
                         <div
                           key={sub.id}
-                          className="flex items-center justify-between px-5 py-4 rounded-xl bg-secondary transition-all duration-200"
+                          className="flex flex-col gap-3 px-5 py-4 rounded-xl bg-secondary transition-all duration-200"
                         >
-                          <div className="flex items-center gap-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex items-center gap-4">
                             <span className="w-8 h-8 rounded-lg bg-secondary text-foreground dark:text-foreground flex items-center justify-center text-[0.8rem] font-medium">
                               {i + 1}
                             </span>
@@ -457,13 +512,32 @@ export default function ScreentimeSensePage() {
                                 {sub.weekly_hours.reduce((a, b) => a + b, 0).toFixed(1)} hrs total
                               </p>
                             </div>
-                          </div>
-                          <button
+                            </div>
+                            <button
                             onClick={() => removeSubscription(sub.id)}
                             className="bg-transparent border-none p-1.5 text-red-500/60 hover:text-red-500 cursor-pointer transition-colors"
                           >
                             <Trash2 size={16} />
-                          </button>
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-4 gap-2">
+                            {sub.weekly_hours.map((hours, weekIndex) => (
+                              <label key={weekIndex} className="text-[0.7rem] text-muted-foreground">
+                                Wk {weekIndex + 1}
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  value={hours || ""}
+                                  onChange={(event) =>
+                                    updateSubscriptionHours(sub.id, weekIndex, event.target.value)
+                                  }
+                                  placeholder="hrs"
+                                  className="mt-1 w-full min-w-0 text-center text-sm"
+                                />
+                              </label>
+                            ))}
+                          </div>
                         </div>
                       ))}
 

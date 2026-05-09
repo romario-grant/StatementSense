@@ -1,0 +1,66 @@
+export type SharedSubscription = {
+  id: number;
+  name: string;
+  cost: number;
+  renewalDay?: number | null;
+  period?: string;
+  source?: "subscription-sense" | "manual";
+};
+
+const STORAGE_KEY = "statementsense.subscriptions";
+
+const parseNumber = (value: unknown): number => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+};
+
+export const readSharedSubscriptions = (): SharedSubscription[] => {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item, index) => ({
+        id: parseNumber(item.id) || Date.now() + index,
+        name: String(item.name || "").trim(),
+        cost: parseNumber(item.cost),
+        renewalDay:
+          item.renewalDay === null || item.renewalDay === undefined
+            ? null
+            : parseNumber(item.renewalDay),
+        period: item.period ? String(item.period) : undefined,
+        source: (item.source === "manual"
+          ? "manual"
+          : "subscription-sense") as SharedSubscription["source"],
+      }))
+      .filter((item) => item.name && item.cost > 0);
+  } catch {
+    return [];
+  }
+};
+
+export const saveSharedSubscriptions = (subscriptions: SharedSubscription[]) => {
+  if (typeof window === "undefined") return;
+
+  const unique = new Map<string, SharedSubscription>();
+  subscriptions.forEach((sub, index) => {
+    const name = sub.name.trim();
+    if (!name || !Number.isFinite(sub.cost) || sub.cost <= 0) return;
+    unique.set(name.toLowerCase(), {
+      id: sub.id || Date.now() + index,
+      name,
+      cost: Number(sub.cost.toFixed(2)),
+      renewalDay: sub.renewalDay ?? null,
+      period: sub.period,
+      source: sub.source ?? "subscription-sense",
+    });
+  });
+
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify([...unique.values()]));
+};

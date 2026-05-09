@@ -1,21 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
   Info,
   TrendingUp,
   TrendingDown,
-  DollarSign,
   Calendar,
-  Zap,
   RefreshCw,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
 import FileUpload from "@/components/FileUpload";
+import { saveSharedSubscriptions } from "@/lib/subscriptionStore";
 
 const FALLBACK_BACKEND_URL =
   "https://statementsense-backend-430268251728.us-central1.run.app";
@@ -85,6 +84,8 @@ type SubscriptionAnalysis = {
     total_debits_local: number;
     total_debits_usd: number;
     total_credits_usd: number;
+    subscription_spend_local?: number;
+    subscription_spend_usd?: number;
   };
   subscriptions: SubscriptionResult[];
   possible_subscriptions?: SubscriptionResult[];
@@ -100,6 +101,24 @@ export default function SubscriptionSensePage() {
   const [results, setResults] = useState<SubscriptionAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [merchantLabels, setMerchantLabels] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!results) return;
+
+    saveSharedSubscriptions(
+      (results.subscriptions || []).map((sub, idx) => {
+        const labelKey = `${sub.merchant}-${sub.last_charge}-${idx}`;
+        return {
+          id: idx + 1,
+          name: (merchantLabels[labelKey] || sub.merchant).trim(),
+          cost: sub.amount,
+          renewalDay: sub.renewal_day,
+          period: sub.period,
+          source: "subscription-sense",
+        };
+      })
+    );
+  }, [results, merchantLabels]);
 
   const handleFileSelect = (selected: File) => {
     if (
@@ -363,8 +382,7 @@ export default function SubscriptionSensePage() {
                 {/* Currency Summary */}
                 {results.currency_summary && (
                   <MotionCard hover={false} delay={0.1}>
-                    <h3 className="font-medium mb-3 text-[0.95rem] flex items-center gap-2">
-                      <DollarSign size={16} />
+                    <h3 className="font-medium mb-3 text-[0.95rem]">
                       Currency Summary
                     </h3>
                     <div className="text-sm space-y-2">
@@ -380,38 +398,31 @@ export default function SubscriptionSensePage() {
                       </div>
                       <div className="flex justify-between py-1.5 border-b border-border">
                         <span className="text-muted-foreground">
-                          Total Spent ({results.currency_summary.original_currency})
+                          Subscription Spend ({results.currency_summary.original_currency})
                         </span>
                         <span className="font-medium text-red-600 dark:text-red-400">
                           $
-                          {results.currency_summary.total_debits_local.toLocaleString(
-                            undefined,
-                            { minimumFractionDigits: 2 }
-                          )}
+                          {(
+                            results.currency_summary.subscription_spend_local ??
+                            results.summary.total_sub_cost
+                          ).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                          })}
                         </span>
                       </div>
                       <div className="flex justify-between py-1.5 border-b border-border">
                         <span className="text-muted-foreground">
-                          Total Spent (USD)
+                          Subscription Spend (USD)
                         </span>
                         <span className="font-medium text-red-600 dark:text-red-400">
                           $
-                          {results.currency_summary.total_debits_usd.toLocaleString(
-                            undefined,
-                            { minimumFractionDigits: 2 }
-                          )}
-                        </span>
-                      </div>
-                      <div className="flex justify-between py-1.5">
-                        <span className="text-muted-foreground">
-                          Total Received (USD)
-                        </span>
-                        <span className="font-medium text-green-600 dark:text-green-400">
-                          $
-                          {results.currency_summary.total_credits_usd.toLocaleString(
-                            undefined,
-                            { minimumFractionDigits: 2 }
-                          )}
+                          {(
+                            results.currency_summary.subscription_spend_usd ??
+                            results.summary.total_sub_cost /
+                              results.currency_summary.exchange_rate
+                          ).toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                          })}
                         </span>
                       </div>
                     </div>
@@ -741,13 +752,7 @@ export default function SubscriptionSensePage() {
                     className="border-orange-500/30 bg-orange-500/5"
                   >
                     <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-lg font-medium flex items-center gap-2 m-0">
-                        <Zap
-                          size={18}
-                          className="text-orange-600 dark:text-orange-400"
-                        />
-                        Free Trial Alerts
-                      </h2>
+                      <h2 className="text-lg font-medium m-0">Free Trial Alerts</h2>
                       <Badge variant="warn">ML DETECTED</Badge>
                     </div>
                     <p className="text-sm text-muted-foreground mb-4">
@@ -847,11 +852,10 @@ export default function SubscriptionSensePage() {
                           )}
                           Price Changes
                         </h2>
-                        <Badge variant="warn">CUSUM</Badge>
                       </div>
                       <p className="text-sm text-muted-foreground mb-4">
-                        Structural billing changes detected using Cumulative Sum
-                        analysis.
+                        We noticed a possible subscription price increase based
+                        on your past billing pattern.
                       </p>
                       <div className="flex flex-col gap-3">
                         {results.price_changes.map(

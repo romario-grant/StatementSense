@@ -695,10 +695,11 @@ def _detect_trials(classified_txs: list[dict]) -> list[dict]:
 # Currency normalization
 # =====================================================================
 
-def _normalize_currency(classified_txs: list[dict]) -> dict:
+def _normalize_currency(classified_txs: list[dict], subscription_total_local: float = 0.0) -> dict:
     """
-    Compute USD equivalents for all transactions.
-    Returns a summary dict with exchange rate and totals.
+    Compute USD equivalents for subscription spend.
+    Statement-wide debit/credit totals stay in the main summary; this card is
+    scoped to the subscription product surface.
     """
     rate_cache: dict[str, float] = {}
     total_debits_jmd = 0.0
@@ -727,6 +728,8 @@ def _normalize_currency(classified_txs: list[dict]) -> dict:
             "total_credits_local": round(total_credits_jmd, 2),
             "total_debits_usd": round(total_debits_jmd, 2),
             "total_credits_usd": round(total_credits_jmd, 2),
+            "subscription_spend_local": round(subscription_total_local, 2),
+            "subscription_spend_usd": round(subscription_total_local, 2),
         }
 
     return {
@@ -736,6 +739,8 @@ def _normalize_currency(classified_txs: list[dict]) -> dict:
         "total_credits_local": round(total_credits_jmd, 2),
         "total_debits_usd": round(normalise_amount(total_debits_jmd, rate), 2),
         "total_credits_usd": round(normalise_amount(total_credits_jmd, rate), 2),
+        "subscription_spend_local": round(subscription_total_local, 2),
+        "subscription_spend_usd": round(normalise_amount(subscription_total_local, rate), 2),
     }
 
 
@@ -803,9 +808,11 @@ def _build_subscription_analysis(raw_transactions: list[dict], dedupe: bool = Fa
     price_changes = _detect_price_changes(classified, confirmed_merchants)
     logger.info(f"Step 5 complete: {len(price_changes)} price change(s)")
 
+    total_sub_cost = sum(s["amount"] for s in subscriptions)
+
     # 6. Currency normalization
     logger.info("Step 6: Normalizing currency...")
-    currency_summary = _normalize_currency(classified)
+    currency_summary = _normalize_currency(classified, total_sub_cost)
     logger.info(f"Step 6 complete: {currency_summary['original_currency']} → USD "
                 f"@ {currency_summary['exchange_rate']}")
 
@@ -820,8 +827,6 @@ def _build_subscription_analysis(raw_transactions: list[dict], dedupe: bool = Fa
             "category": tx.get("category", "other"),
             "vendor_name": tx.get("vendor_name", ""),
         })
-
-    total_sub_cost = sum(s["amount"] for s in subscriptions)
 
     return {
         "transactions_parsed": len(transactions),
