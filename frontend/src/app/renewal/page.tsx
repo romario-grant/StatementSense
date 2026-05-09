@@ -122,6 +122,7 @@ export default function RenewalSensePage() {
           subscription: sub,
           salary: results.salary,
           expenses: results.expenses || [],
+          transactions: results.transactions || [],
           year: currentMonth.year,
           month: currentMonth.month,
           exchange_rate: exchangeRate,
@@ -501,9 +502,10 @@ export default function RenewalSensePage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-[0.82rem]">
                         {[
                           ["Paycycle Position", `${sub.breakdown.days_since_payday} days after payday`],
-                          ["Financial Load", `${Math.round(sub.breakdown.load_factor * 100)}% of salary consumed`],
-                          ["Failure History", `${sub.fail_history} failed attempts`],
-                          ["Expense Clustering", `$${sub.breakdown.cluster_amount.toLocaleString()} within +/-3 days`],
+                          ["Subscription Load", `${Math.round(sub.breakdown.subscription_load_factor * 100)}% of salary`],
+                          ["Nearby Spending", `$${sub.breakdown.nearby_spend.toLocaleString()} within +/-3 days`],
+                          ["Spent Before Renewal", `${Math.round(sub.breakdown.spend_before_factor * 100)}% of salary`],
+                          ["Payment Pattern", `${sub.fail_history} irregular cycles`],
                         ].map(([label, val], i) => (
                           <div key={i} className="flex justify-between pb-1.5 border-b border-border">
                             <span className="text-muted-foreground">{label}</span>

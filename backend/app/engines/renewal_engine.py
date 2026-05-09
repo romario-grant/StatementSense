@@ -5,7 +5,6 @@ Stripped of CLI code, ready for API integration.
 
 import os
 import io
-import math
 import csv
 import re
 import logging
@@ -706,6 +705,10 @@ class ExpenseProfiler:
     
     def add_expense(self, name, amount, day):
         self.expenses.append({"name": name, "amount": amount, "day": day})
+
+    def add_debit(self, name, amount, day):
+        if amount > 0 and 1 <= day <= 30:
+            self.add_expense(name, amount, day)
     
     def total_monthly_expenses(self):
         return sum(e["amount"] for e in self.expenses)
@@ -729,24 +732,30 @@ class ExpenseProfiler:
 class RiskScoreEngine:
     def __init__(self):
         self.w_paycycle = 0.35
-        self.w_cluster = 0.25
-        self.w_history = 0.25
-        self.w_load = 0.15
+        self.w_nearby_spend = 0.25
+        self.w_subscription_load = 0.20
+        self.w_spend_before = 0.15
+        self.w_history = 0.05
     
     def calculate_risk(self, subscription, salary_tracker, expense_profiler):
         day = subscription["renewal_day"]
+        salary = salary_tracker.salary_amount
         
         paycycle_factor = salary_tracker.paycycle_position(day)
-        cluster_amount = expense_profiler.cluster_penalty(day)
-        cluster_factor = min(cluster_amount / salary_tracker.salary_amount, 1.0) if salary_tracker.salary_amount > 0 else 0.5
+        nearby_spend = expense_profiler.cluster_penalty(day)
+        nearby_spend_factor = min(nearby_spend / salary, 1.0) if salary > 0 else 0.5
+        subscription_load_factor = min(subscription["amount"] / salary, 1.0) if salary > 0 else 0.5
+        spend_before_factor = expense_profiler.expense_load_ratio(day, salary)
         fail_rate = subscription.get("fail_rate", 0.0)
-        load_factor = expense_profiler.expense_load_ratio(day, salary_tracker.salary_amount)
         
-        raw = (self.w_paycycle * paycycle_factor + self.w_cluster * cluster_factor +
-               self.w_history * fail_rate + self.w_load * load_factor)
-        
-        risk_score = 1 / (1 + math.exp(-8 * (raw - 0.45)))
-        risk_score = round(risk_score, 2)
+        raw = (
+            self.w_paycycle * paycycle_factor
+            + self.w_nearby_spend * nearby_spend_factor
+            + self.w_subscription_load * subscription_load_factor
+            + self.w_spend_before * spend_before_factor
+            + self.w_history * fail_rate
+        )
+        risk_score = round(min(max(raw, 0.0), 1.0), 2)
         
         if risk_score <= 0.30:
             label, level = "LOW", "low"
@@ -774,14 +783,16 @@ class RiskScoreEngine:
             "fail_history": f"{subscription.get('past_failures', 0)}/{subscription.get('total_months', 4)}",
             "breakdown": {
                 "paycycle_factor": round(paycycle_factor, 2),
-                "cluster_factor": round(cluster_factor, 2),
+                "nearby_spend_factor": round(nearby_spend_factor, 2),
+                "subscription_load_factor": round(subscription_load_factor, 2),
                 "fail_rate": round(fail_rate, 2),
-                "load_factor": round(load_factor, 2),
+                "spend_before_factor": round(spend_before_factor, 2),
                 "zone_label": zone_label,
                 "zone_level": zone_level,
                 "days_since_payday": salary_tracker.days_since_payday(day),
                 "days_until_payday": salary_tracker.days_until_payday(day),
-                "cluster_amount": round(cluster_amount, 2)
+                "nearby_spend": round(nearby_spend, 2),
+                "cluster_amount": round(nearby_spend, 2),
             }
         }
 
@@ -999,10 +1010,15 @@ def _build_analysis(transactions, provided_subscriptions=None, price_changes=Non
             "categories": categories
         }
     
-    # Build expense profiler
+    # Build cashflow profiler from observable debits, not guessed categories.
     expense_profiler = ExpenseProfiler()
-    for e in expenses:
-        expense_profiler.add_expense(e["name"], e["amount"], e["day"])
+    for tx in classified:
+        if tx.get("debit", 0) > 0 and isinstance(tx.get("date"), datetime):
+            expense_profiler.add_debit(
+                tx.get("vendor_name") or tx.get("description") or "Debit",
+                float(tx.get("debit") or 0),
+                min(max(tx["date"].day, 1), 30),
+            )
     
     # Calculate risk for each subscription
     salary_tracker = SalaryCycleTracker(
@@ -1222,6 +1238,7 @@ def simulate_plan_options(
     subscription,
     salary,
     expenses,
+    transactions=None,
     year=None,
     month=None,
     exchange_rate=None,
@@ -1252,12 +1269,21 @@ def simulate_plan_options(
         salary.get("frequency", "monthly"),
     )
     expense_profiler = ExpenseProfiler()
-    for expense in expenses or []:
-        expense_profiler.add_expense(
-            expense.get("name", "Expense"),
-            float(expense.get("amount") or 0),
-            int(expense.get("day") or 1),
-        )
+    tx_rows = _coerce_transaction_rows(transactions or [])
+    if tx_rows:
+        for tx in tx_rows:
+            expense_profiler.add_debit(
+                tx.get("vendor_name") or tx.get("description") or "Debit",
+                float(tx.get("debit") or 0),
+                min(max(tx["date"].day, 1), 30),
+            )
+    else:
+        for expense in expenses or []:
+            expense_profiler.add_expense(
+                expense.get("name", "Expense"),
+                float(expense.get("amount") or 0),
+                int(expense.get("day") or 1),
+            )
 
     pricing = _lookup_plan_prices(name, country, local_currency)
     converted_plans = []

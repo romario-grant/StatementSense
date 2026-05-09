@@ -23,6 +23,7 @@ import {
 
 const FALLBACK_BACKEND_URL =
   "https://statementsense-backend-430268251728.us-central1.run.app";
+const UPLOAD_TIMEOUT_MS = 180_000;
 
 type SubscriptionResult = {
   merchant: string;
@@ -197,6 +198,8 @@ export default function SubscriptionSensePage() {
       formData.append(files.length > 1 ? "files" : "file", selectedFile);
     });
 
+    let timeoutId: number | null = null;
+
     try {
       const apiBase =
         process.env.NODE_ENV === "production"
@@ -209,9 +212,12 @@ export default function SubscriptionSensePage() {
         files.length > 1
           ? `${apiBase}/api/subscription/upload-multiple`
           : `${apiBase}/api/subscription/upload`;
+      const controller = new AbortController();
+      timeoutId = window.setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
       const response = await fetch(uploadUrl, {
         method: "POST",
         body: formData,
+        signal: controller.signal,
       });
       const raw = await response.text();
       let data: { detail?: string; error?: string; [key: string]: unknown } = {};
@@ -232,7 +238,11 @@ export default function SubscriptionSensePage() {
       setResults(analysis);
       setMerchantLabels({});
     } catch (err) {
-      if (err instanceof TypeError && err.message === "Failed to fetch") {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setError(
+          "This analysis is taking longer than expected. Try again with fewer statements, or try one statement first to confirm the backend is responding."
+        );
+      } else if (err instanceof TypeError && err.message === "Failed to fetch") {
         setError(
           "Could not reach the backend. Check that the backend Cloud Run service is deployed and allows this Firebase domain."
         );
@@ -240,6 +250,7 @@ export default function SubscriptionSensePage() {
         setError(err instanceof Error ? err.message : "An error occurred");
       }
     } finally {
+      if (timeoutId) window.clearTimeout(timeoutId);
       setLoading(false);
     }
   };
@@ -354,7 +365,9 @@ export default function SubscriptionSensePage() {
                     {loading ? (
                       <>
                         <span className="animate-spin inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />
-                        Analyzing Subscriptions...
+                        {files.length > 1
+                          ? "Analyzing statements. This can take about a minute..."
+                          : "Analyzing subscriptions..."}
                       </>
                     ) : (
                       files.length > 1 ? "Analyze Statements" : "Detect Subscriptions"

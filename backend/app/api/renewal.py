@@ -24,6 +24,7 @@ class PlanSimulatorRequest(BaseModel):
     subscription: dict = Field(default_factory=dict)
     salary: dict = Field(default_factory=dict)
     expenses: list[dict] = Field(default_factory=list)
+    transactions: list[dict] = Field(default_factory=list)
     year: int | None = None
     month: int | None = None
     exchange_rate: float | None = None
@@ -96,6 +97,7 @@ async def plan_simulator(request: PlanSimulatorRequest):
         request.subscription,
         request.salary,
         request.expenses,
+        request.transactions,
         request.year,
         request.month,
         request.exchange_rate,
