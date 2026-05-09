@@ -18,6 +18,7 @@ import { readSubscriptionAnalysis } from "@/lib/subscriptionStore";
 
 const FALLBACK_BACKEND_URL =
   "https://statementsense-backend-430268251728.us-central1.run.app";
+const PLAN_SIMULATOR_TIMEOUT_MS = 90_000;
 
 type SavedSubscriptionAnalysis = {
   transactions?: Record<string, unknown>[];
@@ -58,6 +59,7 @@ export default function RenewalSensePage() {
     const source = readSubscriptionAnalysis<SavedSubscriptionAnalysis>();
     if (!source?.transactions?.length) {
       // Load the saved browser handoff once when RenewalSense opens.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setHasSourceAnalysis(false);
       setLoading(false);
       return;
@@ -110,14 +112,18 @@ export default function RenewalSensePage() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const loadPlanSimulator = async (sub: any, key: string) => {
+    let timeoutId: number | null = null;
     setPlanSimulators((current) => ({
       ...current,
       [key]: { loading: true, error: null, data: current[key]?.data },
     }));
     try {
+      const controller = new AbortController();
+      timeoutId = window.setTimeout(() => controller.abort(), PLAN_SIMULATOR_TIMEOUT_MS);
       const response = await fetch(`${apiBase}/api/renewal/plan-simulator`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           subscription: sub,
           salary: results.salary,
@@ -131,7 +137,13 @@ export default function RenewalSensePage() {
           local_currency: localCurrency,
         }),
       });
-      const data = await response.json();
+      const raw = await response.text();
+      let data: { detail?: string; error?: string; [key: string]: unknown } = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error(raw || `Plan comparison failed with status ${response.status}.`);
+      }
       if (!response.ok) {
         throw new Error(data.detail || data.error || "Plan comparison failed.");
       }
@@ -140,13 +152,21 @@ export default function RenewalSensePage() {
         [key]: { loading: false, error: null, data, selectedIndex: 0 },
       }));
     } catch (err) {
+      const message =
+        err instanceof DOMException && err.name === "AbortError"
+          ? "Plan comparison took too long. Try again in a moment."
+          : err instanceof Error
+            ? err.message
+            : "Plan comparison failed.";
       setPlanSimulators((current) => ({
         ...current,
         [key]: {
           loading: false,
-          error: err instanceof Error ? err.message : "Plan comparison failed.",
+          error: message,
         },
       }));
+    } finally {
+      if (timeoutId) window.clearTimeout(timeoutId);
     }
   };
 
@@ -529,11 +549,16 @@ export default function RenewalSensePage() {
                           className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-secondary disabled:opacity-60"
                         >
                           {planSimulators[`${sub.subscription}-${idx}`]?.loading ? (
-                            <Loader2 size={15} className="animate-spin" />
+                            <>
+                              <Loader2 size={15} className="animate-spin" />
+                              Comparing plans...
+                            </>
                           ) : (
-                            <Sparkles size={15} />
+                            <>
+                              <Sparkles size={15} />
+                              Compare Plans
+                            </>
                           )}
-                          Compare Plans
                         </button>
 
                         {planSimulators[`${sub.subscription}-${idx}`]?.error && (

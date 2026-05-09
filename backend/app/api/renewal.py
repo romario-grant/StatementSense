@@ -1,5 +1,7 @@
 """RenewalSense API endpoints."""
 
+import logging
+
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from pydantic import BaseModel, Field
 
@@ -10,6 +12,7 @@ from ..engines.renewal_engine import (
 )
 
 router = APIRouter(prefix="/api/renewal", tags=["RenewalSense"])
+logger = logging.getLogger(__name__)
 
 
 class RenewalFromExistingRequest(BaseModel):
@@ -93,18 +96,22 @@ async def plan_simulator(request: PlanSimulatorRequest):
     Look up verified plan alternatives and simulate each plan on the existing
     renewal day. This is for switching plans, not choosing a new renewal day.
     """
-    result = simulate_plan_options(
-        request.subscription,
-        request.salary,
-        request.expenses,
-        request.transactions,
-        request.year,
-        request.month,
-        request.exchange_rate,
-        request.country or "Jamaica",
-        request.local_currency or "JMD",
-        request.exchange_rate_source,
-    )
+    try:
+        result = simulate_plan_options(
+            request.subscription,
+            request.salary,
+            request.expenses,
+            request.transactions,
+            request.year,
+            request.month,
+            request.exchange_rate,
+            request.country or "Jamaica",
+            request.local_currency or "JMD",
+            request.exchange_rate_source,
+        )
+    except Exception as exc:
+        logger.exception("Plan simulator failed")
+        raise HTTPException(status_code=500, detail=f"Plan comparison failed: {exc}") from exc
 
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
