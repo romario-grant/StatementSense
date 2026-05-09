@@ -21,6 +21,12 @@ import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
 import { readSharedSubscriptions } from "@/lib/subscriptionStore";
 import { clearPageSession, readPageSession, savePageSession } from "@/lib/pageSessionStore";
+import {
+  BUDGETING_STYLES,
+  type BudgetingStyle,
+  readUserPreferences,
+  saveUserPreferences,
+} from "@/lib/userPreferenceStore";
 
 /* ─── Types ─── */
 
@@ -80,6 +86,12 @@ const getVelocityIcon = (velocity: number) => {
   return <Minus className="text-muted-foreground" size={14} />;
 };
 
+const budgetingStyleFromMultiplier = (styleMultiplier: number): BudgetingStyle => {
+  const match = (Object.entries(BUDGETING_STYLES) as [BudgetingStyle, { styleMultiplier: number }][])
+    .find(([, style]) => style.styleMultiplier === styleMultiplier);
+  return match?.[0] || "balanced";
+};
+
 /* ═══════════════════════════════════════════════════════════
    ScreentimeSense Page
    ═══════════════════════════════════════════════════════════ */
@@ -124,6 +136,15 @@ export default function ScreentimeSensePage() {
       setBatchResults(saved.batchResults);
       setExpandedResult(saved.expandedResult);
       setShowAddSubscription(saved.showAddSubscription);
+    } else {
+      const preferences = readUserPreferences();
+      if (preferences) {
+        setGlobalSettings((current) => ({
+          ...current,
+          style_multiplier: preferences.styleMultiplier,
+          is_student: preferences.isStudent,
+        }));
+      }
     }
     setHydrated(true);
   }, []);
@@ -162,6 +183,13 @@ export default function ScreentimeSensePage() {
   const saveSettings = (e: React.FormEvent) => {
     e.preventDefault();
     if (!globalSettings.user_wage || parseFloat(globalSettings.user_wage) <= 0) return;
+    const existingPreferences = readUserPreferences();
+    saveUserPreferences({
+      budgetingStyle: budgetingStyleFromMultiplier(globalSettings.style_multiplier),
+      styleMultiplier: globalSettings.style_multiplier,
+      isStudent: globalSettings.is_student,
+      monthlySubscriptionCapJmd: existingPreferences?.monthlySubscriptionCapJmd || null,
+    });
     setGlobalSettings((prev) => ({ ...prev, isSet: true }));
   };
 

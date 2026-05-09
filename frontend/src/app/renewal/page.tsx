@@ -16,6 +16,7 @@ import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
 import { readSubscriptionAnalysis } from "@/lib/subscriptionStore";
 import { readPageSession, savePageSession } from "@/lib/pageSessionStore";
+import { readUserPreferences } from "@/lib/userPreferenceStore";
 
 const FALLBACK_BACKEND_URL =
   "https://statementsense-backend-430268251728.us-central1.run.app";
@@ -66,6 +67,9 @@ export default function RenewalSensePage() {
   const [localCurrency, setLocalCurrency] = useState("JMD");
   const [planSimulators, setPlanSimulators] = useState<Record<string, PlanSimulatorState>>({});
   const [hydrated, setHydrated] = useState(false);
+  const [monthlySubscriptionCapJmd] = useState(
+    () => readUserPreferences()?.monthlySubscriptionCapJmd || null
+  );
 
   useEffect(() => {
     const saved = readPageSession<RenewalSession>("renewal");
@@ -220,6 +224,42 @@ export default function RenewalSensePage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const getDay = (day: any) => day.day as number;
 
+  const projectedCurrentMonthSubscriptions = results
+    ? (results.subscriptions || []).reduce(
+        (total: number, sub: { renewal_day?: number; amount?: number }) => {
+          const renewalDay = Number(sub.renewal_day || 0);
+          const amount = Number(sub.amount || 0);
+          const daysInMonth = Number(results.calendar?.days_in_month || 31);
+          return renewalDay > 0 && renewalDay <= daysInMonth ? total + amount : total;
+        },
+        0
+      )
+    : 0;
+  const budgetRatio =
+    monthlySubscriptionCapJmd && monthlySubscriptionCapJmd > 0
+      ? projectedCurrentMonthSubscriptions / monthlySubscriptionCapJmd
+      : 0;
+  const budgetStatus =
+    !monthlySubscriptionCapJmd
+      ? null
+      : budgetRatio >= 1
+        ? {
+            label: "Over cap",
+            className: "text-red-600 dark:text-red-400",
+            message: "Projected renewals exceed your monthly subscription cap.",
+          }
+        : budgetRatio >= 0.8
+          ? {
+              label: "Approaching cap",
+              className: "text-yellow-600 dark:text-yellow-500",
+              message: "Projected renewals are close to your monthly subscription cap.",
+            }
+          : {
+              label: "Within budget",
+              className: "text-green-600 dark:text-green-400",
+              message: "Projected renewals are within your monthly subscription cap.",
+            };
+
   return (
     <>
       <Navbar />
@@ -338,6 +378,43 @@ export default function RenewalSensePage() {
                     </div>
                   ))}
                 </MotionCard>
+
+                {budgetStatus && monthlySubscriptionCapJmd && (
+                  <MotionCard hover={false} delay={0.05}>
+                    <h3 className="font-medium mb-4 text-[0.95rem]">
+                      Subscription Budget
+                    </h3>
+                    {[
+                      [
+                        "Projected This Month",
+                        `JMD $${projectedCurrentMonthSubscriptions.toLocaleString(
+                          undefined,
+                          { minimumFractionDigits: 2 }
+                        )}`,
+                      ],
+                      [
+                        "Monthly Cap",
+                        `JMD $${monthlySubscriptionCapJmd.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                        })}`,
+                      ],
+                      ["Status", budgetStatus.label, budgetStatus.className],
+                    ].map(([label, value, colorClass], i) => (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between border-b border-border py-2.5 text-[0.88rem] last:border-0"
+                      >
+                        <span className="text-muted-foreground">{label}</span>
+                        <span className={`font-medium ${colorClass || "text-foreground"}`}>
+                          {value}
+                        </span>
+                      </div>
+                    ))}
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      {budgetStatus.message}
+                    </p>
+                  </MotionCard>
+                )}
 
                 <MotionCard hover={false} delay={0.1}>
                   <h3 className="font-medium mb-1 text-[0.95rem] flex items-center gap-2">

@@ -20,6 +20,14 @@ import {
   saveSharedSubscriptions,
   saveSubscriptionAnalysis,
 } from "@/lib/subscriptionStore";
+import {
+  BUDGETING_STYLES,
+  DEFAULT_USER_PREFERENCES,
+  type BudgetingStyle,
+  type UserPreferences,
+  readUserPreferences,
+  saveUserPreferences,
+} from "@/lib/userPreferenceStore";
 
 const FALLBACK_BACKEND_URL =
   "https://statementsense-backend-430268251728.us-central1.run.app";
@@ -109,6 +117,19 @@ export default function SubscriptionSensePage() {
   const [merchantLabels, setMerchantLabels] = useState<Record<string, string>>({});
   const [swapped, setSwapped] = useState(false);
   const [swapComplete, setSwapComplete] = useState(false);
+  const [preferences, setPreferences] = useState<UserPreferences>(
+    () => readUserPreferences() || DEFAULT_USER_PREFERENCES
+  );
+  const [capInput, setCapInput] = useState(() => {
+    const savedPreferences = readUserPreferences();
+    return savedPreferences?.monthlySubscriptionCapJmd
+      ? String(savedPreferences.monthlySubscriptionCapJmd)
+      : "";
+  });
+  const [preferencesSubmitted, setPreferencesSubmitted] = useState(
+    () => Boolean(readUserPreferences())
+  );
+  const [preferenceGateActive, setPreferenceGateActive] = useState(false);
 
   useEffect(() => {
     const savedAnalysis = readSubscriptionAnalysis<SubscriptionAnalysis>();
@@ -144,6 +165,27 @@ export default function SubscriptionSensePage() {
     );
     saveSubscriptionAnalysis({ ...results, subscriptions: subscriptionsWithLabels });
   }, [results, merchantLabels]);
+
+  const updateBudgetingStyle = (budgetingStyle: BudgetingStyle) => {
+    setPreferences((current) => ({
+      ...current,
+      budgetingStyle,
+      styleMultiplier: BUDGETING_STYLES[budgetingStyle].styleMultiplier,
+    }));
+  };
+
+  const handlePreferencesSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const cap = Number(capInput.replace(/[^0-9.]/g, ""));
+    const nextPreferences = {
+      ...preferences,
+      monthlySubscriptionCapJmd: Number.isFinite(cap) && cap > 0 ? cap : null,
+    };
+    saveUserPreferences(nextPreferences);
+    setPreferences(nextPreferences);
+    setPreferencesSubmitted(true);
+    setPreferenceGateActive(false);
+  };
 
   const handleFileSelect = (selected: File) => {
     if (
@@ -192,6 +234,7 @@ export default function SubscriptionSensePage() {
     setLoading(true);
     setError(null);
     setResults(null);
+    setPreferenceGateActive(!preferencesSubmitted);
 
     const formData = new FormData();
     files.forEach((selectedFile) => {
@@ -255,6 +298,9 @@ export default function SubscriptionSensePage() {
     }
   };
 
+  const shouldAskPreferences = preferenceGateActive && !preferencesSubmitted;
+  const canShowResults = results && !shouldAskPreferences;
+
   return (
     <>
       <Navbar />
@@ -275,7 +321,7 @@ export default function SubscriptionSensePage() {
         </motion.div>
 
         <AnimatePresence mode="wait">
-          {!results ? (
+          {!canShowResults ? (
             /* ── Upload Form ── */
             <motion.div
               key="upload"
@@ -358,7 +404,7 @@ export default function SubscriptionSensePage() {
                   )}
 
                   <button
-                    disabled={files.length === 0 || loading}
+                    disabled={files.length === 0 || loading || Boolean(results)}
                     onClick={handleUpload}
                     className="w-full py-3 flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-medium transition-colors shadow-sm"
                   >
@@ -367,11 +413,104 @@ export default function SubscriptionSensePage() {
                         <span className="animate-spin inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />
                         Analyzing subscriptions...
                       </>
+                    ) : results && shouldAskPreferences ? (
+                      "Analysis ready"
                     ) : (
                       files.length > 1 ? "Analyze Statements" : "Detect Subscriptions"
                     )}
                   </button>
                 </MotionCard>
+
+                {shouldAskPreferences && (
+                  <MotionCard className="w-full mt-4" hover={false}>
+                    <form onSubmit={handlePreferencesSubmit}>
+                      <div className="mb-5">
+                        <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
+                          While you wait
+                        </p>
+                        <h2 className="text-lg font-medium">
+                          Answer a few quick questions
+                        </h2>
+                      </div>
+
+                      <div className="mb-5">
+                        <label className="block text-[0.85rem] font-medium mb-2">
+                          Budgeting Style
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {(Object.keys(BUDGETING_STYLES) as BudgetingStyle[]).map((style) => (
+                            <button
+                              key={style}
+                              type="button"
+                              onClick={() => updateBudgetingStyle(style)}
+                              className={`rounded-xl border px-3 py-2 text-xs font-medium transition-colors ${
+                                preferences.budgetingStyle === style
+                                  ? "border-primary bg-primary text-primary-foreground"
+                                  : "border-border bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                              }`}
+                            >
+                              {BUDGETING_STYLES[style].label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="mb-5 flex items-center justify-between gap-4 rounded-xl bg-secondary px-4 py-3">
+                        <div>
+                          <p className="text-[0.85rem] font-medium">Student</p>
+                          <p className="text-xs text-muted-foreground">
+                            Used for student-plan and exam-season suggestions.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPreferences((current) => ({
+                              ...current,
+                              isStudent: !current.isStudent,
+                            }))
+                          }
+                          className={`relative h-7 w-12 rounded-full transition-colors ${
+                            preferences.isStudent ? "bg-primary" : "bg-muted"
+                          }`}
+                          aria-pressed={preferences.isStudent}
+                        >
+                          <span
+                            className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-all ${
+                              preferences.isStudent ? "left-6" : "left-1"
+                            }`}
+                          />
+                        </button>
+                      </div>
+
+                      <div className="mb-5">
+                        <label className="block text-[0.85rem] font-medium mb-1.5">
+                          Monthly subscription budget cap
+                        </label>
+                        <div className="flex items-center gap-2 rounded-xl border border-border bg-background px-3">
+                          <span className="text-sm text-muted-foreground">JMD</span>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            required
+                            value={capInput}
+                            onChange={(event) => setCapInput(event.target.value)}
+                            placeholder="12000"
+                            className="w-full border-0 bg-transparent px-0 focus:ring-0"
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full rounded-xl bg-primary py-3 font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                      >
+                        Submit
+                      </button>
+                    </form>
+                  </MotionCard>
+                )}
               </motion.div>
             </motion.div>
           ) : (
