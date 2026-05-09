@@ -411,24 +411,19 @@ export default function CalendarSensePage() {
                                     <span className="font-medium text-base">{sub.name}</span>
                                     <Badge variant={sub.is_local ? "danger" : "safe"} className="font-medium text-[0.65rem]">{sub.is_local ? "LOCAL" : "GLOBAL"}</Badge>
                                   </div>
-                                  <p className="text-[0.8rem] text-white/60 mb-3">{sub.reason}</p>
-                                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[0.8rem]">
-                                    <div className="flex justify-between pb-1 border-b border-white/10">
-                                      <span className="text-[0.7rem] text-white/50">Type</span>
-                                      <span className="font-medium capitalize">{sub.location_type?.replace("_", " ")}</span>
-                                    </div>
+                                  <div className="grid grid-cols-1 gap-y-1.5 text-[0.8rem]">
                                     <div className="flex justify-between pb-1 border-b border-white/10">
                                       <span className="text-[0.7rem] text-white/50">Cost</span>
                                       <span className="font-medium">${(sub.monthly_cost || 0).toFixed(2)}/mo</span>
                                     </div>
                                     {sub.is_local && (
-                                      <div className="flex justify-between pb-1 border-b border-white/10 col-span-2 mt-1">
+                                      <div className="flex justify-between pb-1 border-b border-white/10 mt-1">
                                         <span className="text-[0.7rem] text-white/50">Can Cancel</span>
                                         <span className="font-medium">{sub.can_cancel_and_rejoin ? "✓ Yes" : "✗ No"}</span>
                                       </div>
                                     )}
                                     {sub.cancellation_penalty > 0 && sub.is_local && (
-                                      <div className="flex justify-between pb-1 border-b border-white/10 col-span-2">
+                                      <div className="flex justify-between pb-1 border-b border-white/10">
                                         <span className="text-[0.7rem] text-white/50">Penalty</span>
                                         <span className="font-medium text-red-400">${sub.cancellation_penalty}</span>
                                       </div>
