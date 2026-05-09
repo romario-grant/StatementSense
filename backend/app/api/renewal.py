@@ -1,10 +1,17 @@
 """RenewalSense API endpoints."""
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
+from pydantic import BaseModel, Field
 
-from ..engines.renewal_engine import analyze_statement
+from ..engines.renewal_engine import analyze_existing_data, analyze_statement
 
 router = APIRouter(prefix="/api/renewal", tags=["RenewalSense"])
+
+
+class RenewalFromExistingRequest(BaseModel):
+    transactions: list[dict] = Field(default_factory=list)
+    subscriptions: list[dict] = Field(default_factory=list)
+    price_changes: list[dict] | None = None
 
 
 @router.post("/upload")
@@ -35,4 +42,25 @@ async def upload_statement(file: UploadFile = File(...)):
     if "error" in result:
         raise HTTPException(status_code=422, detail=result["error"])
     
+    return result
+
+
+@router.post("/analyze-existing")
+async def analyze_existing(request: RenewalFromExistingRequest):
+    """
+    Run RenewalSense from SubscriptionSense's saved parsed transactions and
+    detected subscriptions. No statement upload or bank parsing happens here.
+    """
+    if not request.transactions:
+        raise HTTPException(status_code=400, detail="No parsed transactions were provided.")
+
+    result = analyze_existing_data(
+        request.transactions,
+        request.subscriptions,
+        request.price_changes,
+    )
+
+    if "error" in result:
+        raise HTTPException(status_code=422, detail=result["error"])
+
     return result

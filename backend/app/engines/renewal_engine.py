@@ -9,7 +9,7 @@ import math
 import csv
 import re
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ── Universal extractor (capstone_revised) ─────────────────────────
 # Falls back to the legacy Scotiabank-only parser if this import fails
@@ -777,20 +777,109 @@ class RiskScoreEngine:
 
 
 # ==========================================
-# 5. MAIN ANALYSIS FUNCTION
+# 5. MAIN ANALYSIS FUNCTIONS
 # ==========================================
 
-def analyze_statement(file_bytes):
-    """
-    Main entry point: takes PDF bytes, returns full analysis.
-    This is what the API endpoint calls.
-    """
-    # Parse transactions
-    transactions = StatementParser.parse_pdf_bytes(file_bytes)
+def _coerce_transaction_rows(transactions):
+    """Convert serialized transaction rows back into RenewalSense engine format."""
+    converted = []
+    for tx in transactions or []:
+        date_val = tx.get("date")
+        if isinstance(date_val, str):
+            try:
+                date_val = datetime.strptime(date_val[:10], "%Y-%m-%d")
+            except ValueError:
+                continue
+        elif not isinstance(date_val, datetime):
+            continue
+
+        converted.append({
+            "date": date_val,
+            "description": tx.get("description", ""),
+            "debit": float(tx.get("debit") or 0),
+            "credit": float(tx.get("credit") or 0),
+            "balance": float(tx.get("balance") or 0),
+            "category": tx.get("category", "other"),
+            "vendor_name": tx.get("vendor_name", ""),
+        })
+    return converted
+
+
+def _coerce_subscription_rows(subscriptions):
+    """Convert SubscriptionSense rows into the risk engine's subscription shape."""
+    converted = []
+    for sub in subscriptions or []:
+        name = (sub.get("merchant") or sub.get("name") or sub.get("subscription") or "").strip()
+        amount = float(sub.get("amount") or sub.get("cost") or 0)
+        renewal_day = int(sub.get("renewal_day") or sub.get("renewalDay") or 0)
+        if not name or amount <= 0 or renewal_day <= 0:
+            continue
+
+        total_months = int(sub.get("charge_count") or sub.get("total_months") or sub.get("data_points") or 1)
+        missed_cycles = int(sub.get("missed_cycles") or 0)
+        converted.append({
+            "name": name,
+            "amount": round(amount, 2),
+            "renewal_day": min(max(renewal_day, 1), 30),
+            "past_failures": missed_cycles,
+            "total_months": max(total_months, 1),
+            "fail_rate": missed_cycles / max(total_months, 1),
+            "period": sub.get("period", "monthly"),
+            "period_days": sub.get("period_days") or 30,
+            "confidence": sub.get("confidence", 0.5),
+            "last_charge": sub.get("last_charge"),
+        })
+    return converted
+
+
+def _predict_from_provided_subscriptions(subscriptions, today=None):
+    """Build upcoming charge predictions without re-detecting subscriptions."""
+    if today is None:
+        today = datetime.now()
+
+    predictions = []
+    for sub in subscriptions:
+        interval = int(sub.get("period_days") or 30)
+        renewal_day = int(sub.get("renewal_day") or 1)
+        next_charge = today.replace(day=min(renewal_day, 28))
+
+        if sub.get("last_charge"):
+            try:
+                next_charge = datetime.strptime(str(sub["last_charge"])[:10], "%Y-%m-%d") + timedelta(days=interval)
+            except ValueError:
+                pass
+
+        while next_charge < today:
+            next_charge += timedelta(days=max(interval, 1))
+
+        confidence = float(sub.get("confidence") or 0.5)
+        band = max(2, round((1 - confidence) * 10))
+        confidence_label = "high" if confidence >= 0.8 else "medium" if confidence >= 0.5 else "low"
+
+        predictions.append({
+            "subscription": sub["name"],
+            "next_charge_date": next_charge.strftime("%Y-%m-%d"),
+            "days_until_charge": (next_charge - today).days,
+            "median_interval_days": interval,
+            "confidence_window": {
+                "earliest": (next_charge - timedelta(days=band)).strftime("%Y-%m-%d"),
+                "latest": (next_charge + timedelta(days=band)).strftime("%Y-%m-%d"),
+                "band_days": band,
+            },
+            "confidence_label": confidence_label,
+            "method": "subscriptionsense_handoff",
+            "data_points": sub.get("total_months", 1),
+            "last_charge_date": sub.get("last_charge"),
+        })
+
+    predictions.sort(key=lambda p: p["days_until_charge"])
+    return predictions
+
+def _build_analysis(transactions, provided_subscriptions=None, price_changes=None):
     if not transactions:
-        return {"error": "No transactions found in the PDF. Check the statement format."}
-    
-    # Classify (categories, vendor names, etc.)
+        return {"error": "No transactions found. Run SubscriptionSense first."}
+
+    # Classify (categories, vendor names, etc.) for salary and expense logic.
     classifier = RuleBasedClassifier()
     classified = classifier.classify(transactions)
     
@@ -807,7 +896,10 @@ def analyze_statement(file_bytes):
     # ── Subscription detection ──────────────────────────────────────
     # Use classmate's subscription_detection_alg if available,
     # otherwise fall back to built-in PatternDetector.
-    if _HAS_DETECTION_ALG:
+    if provided_subscriptions is not None:
+        subscriptions = _coerce_subscription_rows(provided_subscriptions)
+        renewal_predictions = _predict_from_provided_subscriptions(subscriptions)
+    elif _HAS_DETECTION_ALG:
         logger.info("Using classmate's subscription detection algorithm")
         subscriptions, renewal_predictions = _run_classmate_detection(classified)
     else:
@@ -880,7 +972,8 @@ def analyze_statement(file_bytes):
     high_risk_count = sum(1 for r in risk_results if r["risk_level"] in ("high", "critical"))
     
     # 6.5 — Price Change & Trial Conversion Detection (CUSUM)
-    price_changes = PriceChangeDetector.detect_price_changes(classified)
+    if price_changes is None:
+        price_changes = PriceChangeDetector.detect_price_changes(classified)
     
     return {
         "transactions_parsed": len(transactions),
@@ -900,6 +993,29 @@ def analyze_statement(file_bytes):
             "income_remaining": round(salary_info["amount"] - total_expenses - total_sub_cost, 2)
         }
     }
+
+
+def analyze_statement(file_bytes):
+    """
+    Legacy entry point: parse PDF bytes, then run renewal risk analysis.
+    The frontend now uses analyze_existing_data() to avoid re-uploading.
+    """
+    transactions = StatementParser.parse_pdf_bytes(file_bytes)
+    if not transactions:
+        return {"error": "No transactions found in the PDF. Check the statement format."}
+    return _build_analysis(transactions)
+
+
+def analyze_existing_data(transactions, subscriptions, price_changes=None):
+    """
+    Run RenewalSense from the already-parsed SubscriptionSense result.
+    This skips bank parsing entirely.
+    """
+    return _build_analysis(
+        _coerce_transaction_rows(transactions),
+        provided_subscriptions=subscriptions,
+        price_changes=price_changes,
+    )
 
 
 def _run_classmate_detection(classified_transactions):
@@ -998,4 +1114,3 @@ def _run_classmate_detection(classified_transactions):
     
     logger.info(f"Classmate's algorithm detected {len(subscriptions)} subscription(s), {len(renewal_predictions)} prediction(s)")
     return subscriptions, renewal_predictions
-

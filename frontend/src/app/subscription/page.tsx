@@ -106,6 +106,8 @@ export default function SubscriptionSensePage() {
   const [results, setResults] = useState<SubscriptionAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [merchantLabels, setMerchantLabels] = useState<Record<string, string>>({});
+  const [swapped, setSwapped] = useState(false);
+  const [swapComplete, setSwapComplete] = useState(false);
 
   useEffect(() => {
     const savedAnalysis = readSubscriptionAnalysis<SubscriptionAnalysis>();
@@ -119,12 +121,19 @@ export default function SubscriptionSensePage() {
   useEffect(() => {
     if (!results) return;
 
+    const subscriptionsWithLabels = (results.subscriptions || []).map((sub, idx) => {
+      const labelKey = `${sub.merchant}-${sub.last_charge}-${idx}`;
+      return {
+        ...sub,
+        merchant: (merchantLabels[labelKey] || sub.merchant).trim(),
+      };
+    });
+
     saveSharedSubscriptions(
-      (results.subscriptions || []).map((sub, idx) => {
-        const labelKey = `${sub.merchant}-${sub.last_charge}-${idx}`;
+      subscriptionsWithLabels.map((sub, idx) => {
         return {
           id: idx + 1,
-          name: (merchantLabels[labelKey] || sub.merchant).trim(),
+          name: sub.merchant,
           cost: sub.amount,
           renewalDay: sub.renewal_day,
           period: sub.period,
@@ -132,7 +141,7 @@ export default function SubscriptionSensePage() {
         };
       })
     );
-    saveSubscriptionAnalysis(results);
+    saveSubscriptionAnalysis({ ...results, subscriptions: subscriptionsWithLabels });
   }, [results, merchantLabels]);
 
   const handleFileSelect = (selected: File) => {
@@ -263,61 +272,96 @@ export default function SubscriptionSensePage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
               transition={{ duration: 0.4 }}
-              className="max-w-lg mx-auto"
+              onAnimationComplete={() => setSwapped(true)}
+              className="flex flex-col md:flex-row gap-10 items-center max-w-4xl mx-auto"
             >
-              <MotionCard className="w-full" hover={false}>
-                <div className="mb-6">
-                  <h2 className="text-xl font-medium mb-1">
-                    Upload Bank Statement
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    Upload any bank statement PDF. We support multiple banks and
-                    currencies.
-                  </p>
-                </div>
+              <motion.div
+                layout
+                className={`flex-1 flex items-center justify-center z-10 ${swapped ? "md:order-2" : "md:order-1"}`}
+                transition={{
+                  layout: {
+                    type: "tween",
+                    duration: swapComplete ? 0.3 : 2.5,
+                    ease: [0.45, 0, 0.15, 1],
+                  },
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/bankcard.png"
+                  alt="Bank card"
+                  className="w-full max-w-[456px] rounded-2xl drop-shadow-[0_20px_40px_rgba(0,0,0,0.4)]"
+                />
+              </motion.div>
 
-                <div className="mb-5">
-                  <FileUpload
-                    file={file}
-                    onFileSelect={handleFileSelect}
-                    files={files}
-                    onFilesSelect={handleFilesSelect}
-                    multiple
-                    maxFiles={3}
-                    onClear={() => {
-                      setFile(null);
-                      setFiles([]);
-                    }}
-                    hint="Upload 1-3 successive statements from any supported bank"
-                  />
-                </div>
+              <motion.div
+                layout
+                className={`flex-1 z-20 ${swapped ? "md:order-1" : "md:order-2"}`}
+                transition={{
+                  layout: {
+                    type: "tween",
+                    duration: swapComplete ? 0.3 : 2.5,
+                    ease: [0.45, 0, 0.15, 1],
+                  },
+                }}
+                onLayoutAnimationComplete={() => {
+                  if (swapped) setSwapComplete(true);
+                }}
+              >
+                <MotionCard className="w-full" hover={false}>
+                  <div className="mb-6">
+                    <h2 className="text-xl font-medium mb-1">
+                      Upload Bank Statement
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      Upload any bank statement PDF. We support multiple banks and
+                      currencies.
+                    </p>
+                  </div>
 
-                {error && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    className="flex gap-2 items-center px-4 py-3 bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl mb-5 text-sm"
-                  >
-                    <AlertTriangle size={16} />
-                    <span>{error}</span>
-                  </motion.div>
-                )}
+                  <div className="mb-5">
+                    <FileUpload
+                      file={file}
+                      onFileSelect={handleFileSelect}
+                      files={files}
+                      onFilesSelect={handleFilesSelect}
+                      multiple
+                      maxFiles={3}
+                      onClear={() => {
+                        setFile(null);
+                        setFiles([]);
+                      }}
+                      hint="Upload 1-3 successive statements from any supported bank"
+                    />
+                  </div>
 
-                <button
-                  disabled={files.length === 0 || loading}
-                  onClick={handleUpload}
-                  className="w-full py-3 flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-medium transition-colors shadow-sm"
-                >
-                  {loading ? (
-                    <>
-                      <span className="animate-spin inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />
-                      Analyzing Subscriptions...
-                    </>
-                  ) : (
-                    files.length > 1 ? "Analyze Statements" : "Detect Subscriptions"
+                  {error && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      className="flex gap-2 items-center px-4 py-3 bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl mb-5 text-sm"
+                    >
+                      <AlertTriangle size={16} />
+                      <span>{error}</span>
+                    </motion.div>
                   )}
-                </button>
-              </MotionCard>
+
+                  <button
+                    disabled={files.length === 0 || loading}
+                    onClick={handleUpload}
+                    className="w-full py-3 flex items-center justify-center gap-2 bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-medium transition-colors shadow-sm"
+                  >
+                    {loading ? (
+                      <>
+                        <span className="animate-spin inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />
+                        Analyzing Subscriptions...
+                      </>
+                    ) : (
+                      files.length > 1 ? "Analyze Statements" : "Detect Subscriptions"
+                    )}
+                  </button>
+                </MotionCard>
+              </motion.div>
             </motion.div>
           ) : (
             /* ── Results ── */
