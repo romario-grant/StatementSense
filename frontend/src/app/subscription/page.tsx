@@ -22,6 +22,7 @@ const FALLBACK_BACKEND_URL =
 
 type SubscriptionResult = {
   merchant: string;
+  raw_merchant?: string;
   amount: number;
   period: string;
   period_days: number | null;
@@ -31,6 +32,8 @@ type SubscriptionResult = {
   renewal_day?: number;
   last_charge: string;
   reason?: string;
+  needs_review?: boolean;
+  missed_cycles?: number;
 };
 
 type RenewalPrediction = {
@@ -96,6 +99,7 @@ export default function SubscriptionSensePage() {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<SubscriptionAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [merchantLabels, setMerchantLabels] = useState<Record<string, string>>({});
 
   const handleFileSelect = (selected: File) => {
     if (
@@ -181,6 +185,7 @@ export default function SubscriptionSensePage() {
           data.detail || data.error || "Failed to process statement"
         );
       setResults(data as SubscriptionAnalysis);
+      setMerchantLabels({});
     } catch (err) {
       if (err instanceof TypeError && err.message === "Failed to fetch") {
         setError(
@@ -432,7 +437,9 @@ export default function SubscriptionSensePage() {
                         return (
                           <div key={cat} className="flex items-center gap-3">
                             <span className="text-xs text-muted-foreground w-24 capitalize">
-                              {cat.replace(/_/g, " ")}
+                              {cat === "subscription"
+                                ? "Subscription-like"
+                                : cat.replace(/_/g, " ")}
                             </span>
                             <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
                               <div
@@ -559,6 +566,8 @@ export default function SubscriptionSensePage() {
                 </motion.div>
 
                 {results.subscriptions.map((sub: SubscriptionResult, idx: number) => {
+                  const labelKey = `${sub.merchant}-${sub.last_charge}-${idx}`;
+                  const displayMerchant = merchantLabels[labelKey] || sub.merchant;
                   const confColor =
                     sub.confidence >= 0.8
                       ? "border-l-green-500"
@@ -581,7 +590,7 @@ export default function SubscriptionSensePage() {
                       <div className="flex justify-between items-start mb-3">
                         <div>
                           <h3 className="text-base font-medium flex items-center gap-2 mb-1">
-                            {sub.merchant}
+                            {displayMerchant}
                             <Badge
                               variant={
                                 confVariant as "safe" | "warn" | "danger"
@@ -589,6 +598,9 @@ export default function SubscriptionSensePage() {
                             >
                               {Math.round(sub.confidence * 100)}% confidence
                             </Badge>
+                            {sub.needs_review && (
+                              <Badge variant="warn">REVIEW NAME</Badge>
+                            )}
                           </h3>
                           <p className="text-sm text-muted-foreground">
                             Billing: {sub.period} (~{sub.period_days} days) •
@@ -607,6 +619,43 @@ export default function SubscriptionSensePage() {
                           </p>
                         </div>
                       </div>
+
+                      {sub.needs_review && (
+                        <div className="mb-3 rounded-lg border border-border bg-secondary/60 p-3">
+                          <p className="text-xs text-muted-foreground mb-2">
+                            Confirm or rename this subscription for your own records.
+                          </p>
+                          <div className="flex flex-col sm:flex-row gap-2">
+                            <input
+                              value={merchantLabels[labelKey] ?? sub.merchant}
+                              onChange={(event) =>
+                                setMerchantLabels((current) => ({
+                                  ...current,
+                                  [labelKey]: event.target.value,
+                                }))
+                              }
+                              className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setMerchantLabels((current) => ({
+                                  ...current,
+                                  [labelKey]: current[labelKey] || sub.merchant,
+                                }))
+                              }
+                              className="rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-background"
+                            >
+                              Confirm
+                            </button>
+                          </div>
+                          {sub.raw_merchant && (
+                            <p className="text-[0.7rem] text-muted-foreground mt-2">
+                              Raw: {sub.raw_merchant}
+                            </p>
+                          )}
+                        </div>
+                      )}
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-2 text-[0.82rem]">
                         {[

@@ -131,6 +131,46 @@ class SubscriptionEngineRegressionTests(unittest.TestCase):
         self.assertEqual(result["subscriptions"][0]["charge_count"], 3)
         self.assertEqual(result["possible_subscriptions"], [])
 
+    def test_price_change_does_not_block_spotify_subscription(self):
+        txns = _classify_transactions([
+            _tx("2025-05-30", "POS PURCHASE SPOTIFY AB STOCKHOLM SE", -481.80),
+            _tx("2025-06-09", "POS PURCHASE SPOTIFY AB STOCKHOLM SE", -483.30),
+            _tx("2025-07-09", "POS PURCHASE SPOTIFY AB STOCKHOLM SE", -483.30),
+            _tx("2025-08-18", "POS PURCHASE Spotify P39A3A260C Stockholm SE", -484.65),
+            _tx("2025-09-10", "POS PURCHASE Spotify P3A6415FD5 Stockholm SE", -1052.98),
+            _tx("2025-10-09", "POS PURCHASE SPOTIFY AB STOCKHOLM SE", -567.92),
+            _tx("2026-01-08", "POS PURCHASE SPOTIFY AB STOCKHOLM SE", -559.85),
+        ])
+
+        subscriptions, _ = _run_subscription_detection(txns)
+
+        self.assertEqual(subscriptions[0]["merchant"], "Spotify")
+        self.assertEqual(subscriptions[0]["period"], "monthly")
+        self.assertEqual(subscriptions[0]["charge_count"], 7)
+
+    def test_youtube_missing_cycle_still_counts_as_monthly(self):
+        txns = _classify_transactions([
+            _tx("2025-09-15", "POS PURCHASE Google YouTubePremium Mountain ViewUS", -803.15),
+            _tx("2025-10-13", "POS PURCHASE Google YouTubePremium Mountain ViewUS", -804.39),
+            _tx("2025-12-29", "POS PURCHASE Google YouTubePremium Mountain ViewUS", -803.20),
+            _tx("2026-01-27", "POS PURCHASE Google YouTubePremium Mountain ViewUS", -802.44),
+        ])
+
+        subscriptions, _ = _run_subscription_detection(txns)
+
+        self.assertEqual(subscriptions[0]["merchant"], "YouTube")
+        self.assertEqual(subscriptions[0]["period"], "monthly")
+
+    def test_unknown_merchant_needs_three_charges_before_review(self):
+        txns = _classify_transactions([
+            _tx("2026-01-01", "POS PURCHASE SOME DIGITAL SERVICE", -1000.00),
+            _tx("2026-02-01", "POS PURCHASE SOME DIGITAL SERVICE", -1000.00),
+        ])
+
+        subscriptions, _ = _run_subscription_detection(txns)
+
+        self.assertEqual(subscriptions, [])
+
 
 if __name__ == "__main__":
     unittest.main()

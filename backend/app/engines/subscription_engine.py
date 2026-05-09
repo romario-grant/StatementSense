@@ -11,12 +11,10 @@ No code is copied from RenewalSense — each module is imported from its source.
 """
 
 import logging
-import math
-from contextlib import redirect_stdout
+import re
 from collections import defaultdict
 from datetime import datetime, timedelta
-from io import StringIO
-from statistics import mean, stdev
+from statistics import mean, median
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +24,6 @@ logger = logging.getLogger(__name__)
 from capstone_revised.extract_transactions import extract_from_bytes
 
 # 2. Classmate's subscription detection algorithm
-from subscription_detection_alg import (
-    Transaction as DetectionTransaction,
-    detect_subscriptions as _detect_subs,
-)
-
 # 3. Free trial classifier (Capstone — sklearn-based)
 from Capstone.Capstone.trial_classifier import (
     build_synthetic_dataset,
@@ -57,7 +50,7 @@ logger.info(f"Trial classifier trained on {len(_y)} synthetic samples "
 # CUSUM Price Change Detection (standalone implementation)
 # =====================================================================
 
-def _detect_price_changes(transactions: list[dict]) -> list[dict]:
+def _detect_price_changes(transactions: list[dict], confirmed_merchants: set[str] | None = None) -> list[dict]:
     """
     Detect structural price changes in recurring merchant charges
     using Cumulative Sum (CUSUM) analysis.
@@ -70,6 +63,8 @@ def _detect_price_changes(transactions: list[dict]) -> list[dict]:
     for tx in transactions:
         if _is_subscription_candidate(tx) and not _is_variable_spend(tx):
             vendor = tx.get("vendor_name") or tx.get("description", "")
+            if confirmed_merchants is not None and vendor not in confirmed_merchants:
+                continue
             vendor_charges[vendor.strip().lower()].append(tx)
 
     changes = []
@@ -189,6 +184,25 @@ _VARIABLE_SPEND_KEYWORDS = {
     "hotel", "restaurant", "grocery", "supermarket",
 }
 
+_MERCHANT_PREFIXES = (
+    "pos purchase", "online purchase", "card purchase", "debit card",
+    "visa purchase", "mastercard purchase",
+)
+
+_LOCATION_WORDS = {
+    "kingston", "jamaica", "stockholm", "mountain", "view", "us", "se",
+    "nl", "dublin", "vorden", "ann", "st", "ltd", "inc", "llc", "ab",
+    "co", "com", "for",
+}
+
+_BILLING_PERIODS = {
+    "weekly": 7,
+    "biweekly": 14,
+    "monthly": 30,
+    "quarterly": 90,
+    "yearly": 365,
+}
+
 
 def _description(tx: dict) -> str:
     return (tx.get("description") or "").strip()
@@ -205,13 +219,51 @@ def _is_variable_spend(tx: dict) -> bool:
     return any(keyword in desc_lower for keyword in _VARIABLE_SPEND_KEYWORDS)
 
 
-def _is_subscription_candidate(tx: dict) -> bool:
-    """Only real merchant debits should feed subscription-style detectors."""
+def _known_subscription_name(description: str) -> str | None:
+    desc_lower = description.lower()
+    for keyword, name in _SUBSCRIPTION_KEYWORDS.items():
+        if keyword in desc_lower:
+            return name
+    return None
+
+
+def _clean_merchant_name(description: str) -> str:
+    """Normalize bank descriptions enough to group recurring merchant rows."""
+    known = _known_subscription_name(description)
+    if known:
+        return known
+
+    cleaned = description.lower()
+    for prefix in _MERCHANT_PREFIXES:
+        cleaned = re.sub(rf"^{re.escape(prefix)}\s+", "", cleaned)
+    cleaned = re.sub(r"\bfor\s+\d{2}[a-z]{3}\d{2}\b", " ", cleaned)
+    cleaned = re.sub(r"\b[a-z]*\d+[a-z0-9]*\b", " ", cleaned)
+    cleaned = re.sub(r"[^a-z&+ ]+", " ", cleaned)
+    words = [
+        word for word in cleaned.split()
+        if len(word) > 1 and word not in _LOCATION_WORDS
+    ]
+    if not words:
+        return description.strip()
+    return " ".join(words[:4]).title()
+
+
+def _is_merchant_like_debit(tx: dict) -> bool:
+    desc_lower = _description(tx).lower()
     return (
         tx.get("debit", 0) > 0
-        and tx.get("category") == "subscription"
         and not tx.get("excluded_from_subscription_analysis", False)
+        and not _is_variable_spend(tx)
+        and (
+            tx.get("category") == "subscription"
+            or any(desc_lower.startswith(prefix) for prefix in _MERCHANT_PREFIXES)
+        )
     )
+
+
+def _is_subscription_candidate(tx: dict) -> bool:
+    """Only real merchant debits should feed subscription-style detectors."""
+    return _is_merchant_like_debit(tx)
 
 
 def _dedupe_raw_transactions(transactions: list[dict]) -> list[dict]:
@@ -247,11 +299,15 @@ def _classify_transactions(transactions: list[dict]) -> list[dict]:
         excluded = _is_excluded_transaction(tx)
 
         if not excluded:
-            for keyword, name in _SUBSCRIPTION_KEYWORDS.items():
-                if keyword in desc_lower:
-                    category = "subscription"
-                    vendor_name = name
-                    break
+            known_name = _known_subscription_name(desc_lower)
+            if known_name:
+                category = "subscription"
+                vendor_name = known_name
+            elif tx.get("debit", 0) > 0 and any(
+                desc_lower.startswith(prefix) for prefix in _MERCHANT_PREFIXES
+            ):
+                category = "merchant"
+                vendor_name = _clean_merchant_name(tx.get("description", ""))
 
         tx["category"] = category
         tx["vendor_name"] = vendor_name
@@ -274,6 +330,8 @@ def _find_possible_subscriptions(classified_txs: list[dict]) -> list[dict]:
             continue
 
         charge = charges[0]
+        if charge.get("category") != "subscription":
+            continue
         date_str = charge["date"]
         if isinstance(date_str, datetime):
             date_str = date_str.strftime("%Y-%m-%d")
@@ -331,6 +389,61 @@ def _convert_to_engine_format(universal_txs: list[dict]) -> list[dict]:
 # =====================================================================
 # Subscription detection (classmate's algorithm)
 # =====================================================================
+
+def _classify_recurring_period(charges: list[dict]) -> dict | None:
+    """Find a recurring interval by date gaps, allowing skipped cycles."""
+    if len(charges) < 2:
+        return None
+
+    dates = [charge["date"] for charge in sorted(charges, key=lambda t: t["date"])]
+    gaps = [(dates[i] - dates[i - 1]).days for i in range(1, len(dates))]
+    if not gaps:
+        return None
+
+    best = None
+    for label, period_days in _BILLING_PERIODS.items():
+        matches = 0
+        missed_cycles = 0
+        normalized_gaps = []
+
+        for gap in gaps:
+            cycles = max(1, round(gap / period_days))
+            expected = cycles * period_days
+            tolerance = max(3, round(period_days * 0.25))
+            if abs(gap - expected) <= tolerance:
+                matches += 1
+                missed_cycles += max(0, cycles - 1)
+                normalized_gaps.append(gap / cycles)
+
+        match_ratio = matches / len(gaps)
+        if matches < 2 and not (len(charges) == 2 and matches == 1):
+            continue
+        if match_ratio < 0.45:
+            continue
+
+        score = match_ratio + (0.08 if len(charges) >= 3 else 0) - (0.03 * missed_cycles)
+        candidate = {
+            "period": label,
+            "period_days": round(median(normalized_gaps or [period_days]), 1),
+            "match_ratio": match_ratio,
+            "missed_cycles": missed_cycles,
+            "score": score,
+        }
+        if best is None or candidate["score"] > best["score"]:
+            best = candidate
+
+    return best
+
+
+def _amount_stability(amounts: list[float]) -> float:
+    if len(amounts) < 2:
+        return 1.0
+    avg = mean(amounts)
+    if avg == 0:
+        return 0.0
+    avg_abs_deviation = mean(abs(amount - avg) for amount in amounts)
+    return max(0.0, 1 - (avg_abs_deviation / avg))
+
 
 def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict], list[dict]]:
     """
@@ -421,6 +534,101 @@ def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict],
 
     renewal_predictions.sort(key=lambda p: p["days_until_charge"])
 
+    return subscriptions, renewal_predictions
+
+
+def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict], list[dict]]:
+    """
+    Detect recurring merchant charges by cadence first.
+
+    Amount changes should create price-change context, not block recurrence.
+    """
+    merchant_groups: dict[str, list[dict]] = defaultdict(list)
+    for tx in classified_txs:
+        if _is_subscription_candidate(tx):
+            merchant = (tx.get("vendor_name") or _clean_merchant_name(tx["description"])).strip()
+            merchant_groups[merchant].append(tx)
+
+    subscriptions = []
+    renewal_predictions = []
+    today = datetime.now()
+
+    for merchant, charges in merchant_groups.items():
+        if len(charges) < 2:
+            continue
+
+        sorted_charges = sorted(charges, key=lambda t: t["date"])
+        is_known_subscription = sorted_charges[0].get("category") == "subscription"
+        if not is_known_subscription and len(sorted_charges) < 3:
+            continue
+
+        period_info = _classify_recurring_period(sorted_charges)
+        if not period_info:
+            continue
+
+        amounts = [charge["debit"] for charge in sorted_charges]
+        stability = _amount_stability(amounts)
+        data_score = min(1.0, len(sorted_charges) / 4)
+        display_confidence = min(
+            0.98,
+            (period_info["match_ratio"] * 0.70) + (stability * 0.15) + (data_score * 0.15),
+        )
+        if len(sorted_charges) == 2:
+            display_confidence = min(display_confidence, 0.8)
+
+        days = [charge["date"].day for charge in sorted_charges]
+        renewal_day = max(set(days), key=days.count) if days else 1
+        last_charge = sorted_charges[-1]["date"]
+        avg_amount = median(amounts)
+
+        subscriptions.append({
+            "merchant": merchant,
+            "amount": round(avg_amount, 2),
+            "period": period_info["period"],
+            "period_days": period_info["period_days"],
+            "confidence": display_confidence,
+            "charge_count": len(sorted_charges),
+            "renewal_day": renewal_day,
+            "last_charge": last_charge.strftime("%Y-%m-%d"),
+            "amount_stability": round(stability, 3),
+            "missed_cycles": period_info["missed_cycles"],
+            "needs_review": not is_known_subscription,
+            "raw_merchant": sorted_charges[0].get("description", ""),
+        })
+
+        next_date = last_charge + timedelta(days=int(round(period_info["period_days"] or 30)))
+        stale_grace = timedelta(days=max(7, round((period_info["period_days"] or 30) * 0.5)))
+        if next_date < today - stale_grace:
+            continue
+
+        days_until = (next_date - today).days
+        if display_confidence >= 0.8:
+            conf_label = "high"
+        elif display_confidence >= 0.5:
+            conf_label = "medium"
+        else:
+            conf_label = "low"
+
+        band = max(2, round((1 - display_confidence) * 10))
+        renewal_predictions.append({
+            "subscription": merchant,
+            "next_charge_date": next_date.strftime("%Y-%m-%d"),
+            "days_until_charge": days_until,
+            "period": period_info["period"],
+            "period_days": period_info["period_days"],
+            "confidence": display_confidence,
+            "confidence_label": conf_label,
+            "confidence_window": {
+                "earliest": (next_date - timedelta(days=band)).strftime("%Y-%m-%d"),
+                "latest": (next_date + timedelta(days=band)).strftime("%Y-%m-%d"),
+                "band_days": band,
+            },
+            "data_points": len(sorted_charges),
+            "last_charge_date": last_charge.strftime("%Y-%m-%d"),
+        })
+
+    renewal_predictions.sort(key=lambda p: p["days_until_charge"])
+    subscriptions.sort(key=lambda s: (s.get("needs_review", False), s["merchant"].lower()))
     return subscriptions, renewal_predictions
 
 
@@ -591,7 +799,8 @@ def _build_subscription_analysis(raw_transactions: list[dict], dedupe: bool = Fa
 
     # 5. Detect price changes
     logger.info("Step 5: Detecting price changes...")
-    price_changes = _detect_price_changes(classified)
+    confirmed_merchants = {sub["merchant"] for sub in subscriptions}
+    price_changes = _detect_price_changes(classified, confirmed_merchants)
     logger.info(f"Step 5 complete: {len(price_changes)} price change(s)")
 
     # 6. Currency normalization
