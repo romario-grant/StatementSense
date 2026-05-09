@@ -14,7 +14,12 @@ import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
 import FileUpload from "@/components/FileUpload";
-import { saveSharedSubscriptions } from "@/lib/subscriptionStore";
+import {
+  clearSubscriptionAnalysis,
+  readSubscriptionAnalysis,
+  saveSharedSubscriptions,
+  saveSubscriptionAnalysis,
+} from "@/lib/subscriptionStore";
 
 const FALLBACK_BACKEND_URL =
   "https://statementsense-backend-430268251728.us-central1.run.app";
@@ -103,6 +108,15 @@ export default function SubscriptionSensePage() {
   const [merchantLabels, setMerchantLabels] = useState<Record<string, string>>({});
 
   useEffect(() => {
+    const savedAnalysis = readSubscriptionAnalysis<SubscriptionAnalysis>();
+    if (savedAnalysis) {
+      // Restore the last completed analysis when the user returns to the page.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setResults(savedAnalysis);
+    }
+  }, []);
+
+  useEffect(() => {
     if (!results) return;
 
     saveSharedSubscriptions(
@@ -118,6 +132,7 @@ export default function SubscriptionSensePage() {
         };
       })
     );
+    saveSubscriptionAnalysis(results);
   }, [results, merchantLabels]);
 
   const handleFileSelect = (selected: File) => {
@@ -203,7 +218,9 @@ export default function SubscriptionSensePage() {
         throw new Error(
           data.detail || data.error || "Failed to process statement"
         );
-      setResults(data as SubscriptionAnalysis);
+      const analysis = data as SubscriptionAnalysis;
+      saveSubscriptionAnalysis(analysis);
+      setResults(analysis);
       setMerchantLabels({});
     } catch (err) {
       if (err instanceof TypeError && err.message === "Failed to fetch") {
@@ -469,6 +486,7 @@ export default function SubscriptionSensePage() {
 
                 <button
                   onClick={() => {
+                    clearSubscriptionAnalysis();
                     setResults(null);
                     setFile(null);
                     setFiles([]);

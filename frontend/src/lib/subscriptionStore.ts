@@ -8,6 +8,7 @@ export type SharedSubscription = {
 };
 
 const STORAGE_KEY = "statementsense.subscriptions";
+const ANALYSIS_STORAGE_KEY = "statementsense.subscriptionAnalysis";
 
 const parseNumber = (value: unknown): number => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -63,4 +64,24 @@ export const saveSharedSubscriptions = (subscriptions: SharedSubscription[]) => 
   });
 
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify([...unique.values()]));
+};
+
+export const readSubscriptionAnalysis = <T>(): T | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(ANALYSIS_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+};
+
+export const saveSubscriptionAnalysis = (analysis: unknown) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(ANALYSIS_STORAGE_KEY, JSON.stringify(analysis));
+};
+
+export const clearSubscriptionAnalysis = () => {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(ANALYSIS_STORAGE_KEY);
 };
