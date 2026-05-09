@@ -85,3 +85,9 @@ export const clearSubscriptionAnalysis = () => {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(ANALYSIS_STORAGE_KEY);
 };
+
+export const clearSubscriptionSession = () => {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(STORAGE_KEY);
+  window.localStorage.removeItem(ANALYSIS_STORAGE_KEY);
+};

@@ -19,6 +19,7 @@ import {
   onAuthStateChanged,
   type User,
 } from "@/lib/firebase";
+import { clearSubscriptionSession } from "@/lib/subscriptionStore";
 
 /* ── Types ── */
 
@@ -105,6 +106,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     await firebaseSignOut(auth);
     localStorage.removeItem("google_access_token");
+    clearSubscriptionSession();
     router.replace("/login");
   }, [router]);
 
@@ -113,9 +115,13 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await user.delete();
       localStorage.removeItem("google_access_token");
+      clearSubscriptionSession();
       router.replace("/login");
-    } catch (err: any) {
-      if (err.code === "auth/requires-recent-login") {
+    } catch (err: unknown) {
+      const code = typeof err === "object" && err !== null && "code" in err
+        ? String((err as { code?: unknown }).code)
+        : "";
+      if (code === "auth/requires-recent-login") {
         throw new Error("For security, please log out and log back in before deleting your account.");
       }
       throw err;
