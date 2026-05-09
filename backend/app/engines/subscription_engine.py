@@ -724,6 +724,7 @@ def _normalize_currency(classified_txs: list[dict], subscription_total_local: fl
         return {
             "original_currency": "USD",
             "exchange_rate": 1.0,
+            "exchange_rate_source": "statement_currency",
             "total_debits_local": round(total_debits_jmd, 2),
             "total_credits_local": round(total_credits_jmd, 2),
             "total_debits_usd": round(total_debits_jmd, 2),
@@ -735,6 +736,7 @@ def _normalize_currency(classified_txs: list[dict], subscription_total_local: fl
     return {
         "original_currency": currency.upper(),
         "exchange_rate": round(rate, 2),
+        "exchange_rate_source": "fallback_rate" if rate == FALLBACK_RATE else "live_exchange_rate",
         "total_debits_local": round(total_debits_jmd, 2),
         "total_credits_local": round(total_credits_jmd, 2),
         "total_debits_usd": round(normalise_amount(total_debits_jmd, rate), 2),

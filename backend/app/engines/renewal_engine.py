@@ -1129,7 +1129,7 @@ def _extract_json(text):
     return json.loads(text)
 
 
-def _lookup_plan_prices(subscription_name):
+def _lookup_plan_prices(subscription_name, country="Jamaica", local_currency="JMD"):
     """
     Ask Gemini for verified public plan prices. Returns an empty unverified
     result if Gemini/search is unavailable or cannot verify official pricing.
@@ -1150,23 +1150,30 @@ def _lookup_plan_prices(subscription_name):
     if not api_key:
         return {"pricing_verified": False, "plans": [], "message": "GEMINI_API_KEY is missing."}
 
+    country = country or "Jamaica"
+    local_currency = (local_currency or "JMD").upper()
     prompt = f"""
-Look up official subscription plans for {subscription_name}. Use Google Search.
+Look up official subscription plans for {subscription_name} for a customer located in {country}.
+Use Google Search and prioritize official {subscription_name} pages, official help/pricing pages, app store listings, or checkout/pricing pages that are specific to {country}.
 Return strict JSON only:
 {{
   "pricing_verified": true,
-  "currency": "USD",
-  "source_summary": "official pricing page or app store listing",
+  "country": "{country}",
+  "currency": "{local_currency}",
+  "source_summary": "official {country} pricing page or country-specific app store listing",
   "plans": [
-    {{"name": "Individual", "price": 10.99, "billing_period": "monthly"}},
-    {{"name": "Family", "price": 16.99, "billing_period": "monthly"}}
+    {{"name": "Individual", "price": 3.99, "currency": "USD", "billing_period": "monthly"}},
+    {{"name": "Family", "price": 9.99, "currency": "USD", "billing_period": "monthly"}}
   ]
 }}
 Rules:
-- Use official provider pricing pages, app store listings, or other reliable public pricing pages.
+- Prices must be for {country}, not generic United States pricing.
+- If official pricing is shown in USD for {country}, return currency "USD" and those {country}-specific USD prices.
+- If official pricing is shown in {local_currency}, return currency "{local_currency}" and those local prices.
+- Use official provider pricing pages, country-specific app store listings, or other reliable public pricing pages.
 - If pricing is not verified, return pricing_verified false and plans [].
 - Include monthly, yearly, student, duo, family, or lifetime plans when official pricing exists.
-- Do not invent prices.
+- Do not invent prices and do not substitute United States pricing unless the source clearly says it applies to {country}.
 """
     try:
         client = genai.Client(api_key=api_key)
@@ -1211,7 +1218,17 @@ def _convert_plan_to_jmd(plan, default_currency, exchange_rate):
     }
 
 
-def simulate_plan_options(subscription, salary, expenses, year=None, month=None, exchange_rate=None):
+def simulate_plan_options(
+    subscription,
+    salary,
+    expenses,
+    year=None,
+    month=None,
+    exchange_rate=None,
+    country="Jamaica",
+    local_currency="JMD",
+    exchange_rate_source=None,
+):
     """
     Compare verified alternative plans on the subscription's existing renewal day.
     This does not recommend a new renewal date because plan switches normally keep
@@ -1225,6 +1242,9 @@ def simulate_plan_options(subscription, salary, expenses, year=None, month=None,
 
     if not exchange_rate:
         exchange_rate = get_rate_with_fallback(datetime.now().strftime("%Y-%m-%d"), {})
+        exchange_rate_source = exchange_rate_source or "fallback_rate"
+    else:
+        exchange_rate_source = exchange_rate_source or "saved_statement_rate"
 
     salary_tracker = SalaryCycleTracker(
         float(salary.get("amount") or 0),
@@ -1239,7 +1259,7 @@ def simulate_plan_options(subscription, salary, expenses, year=None, month=None,
             int(expense.get("day") or 1),
         )
 
-    pricing = _lookup_plan_prices(name)
+    pricing = _lookup_plan_prices(name, country, local_currency)
     converted_plans = []
     for plan in pricing.get("plans", []):
         converted = _convert_plan_to_jmd(plan, pricing.get("currency", "USD"), float(exchange_rate))
@@ -1253,6 +1273,9 @@ def simulate_plan_options(subscription, salary, expenses, year=None, month=None,
             "plans": [],
             "message": pricing.get("message") or "No verified plans found.",
             "exchange_rate": round(float(exchange_rate), 2),
+            "exchange_rate_source": exchange_rate_source,
+            "country": country,
+            "local_currency": local_currency,
         }
 
     current_match = min(
@@ -1285,7 +1308,10 @@ def simulate_plan_options(subscription, salary, expenses, year=None, month=None,
         "subscription": name,
         "pricing_verified": bool(pricing.get("pricing_verified")),
         "source_summary": pricing.get("source_summary", ""),
+        "country": pricing.get("country", country),
+        "local_currency": local_currency,
         "exchange_rate": round(float(exchange_rate), 2),
+        "exchange_rate_source": exchange_rate_source,
         "current_amount_jmd": round(current_amount, 2),
         "renewal_day": renewal_day,
         "likely_current_plan": current_match,

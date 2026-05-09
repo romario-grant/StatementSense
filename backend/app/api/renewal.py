@@ -27,6 +27,9 @@ class PlanSimulatorRequest(BaseModel):
     year: int | None = None
     month: int | None = None
     exchange_rate: float | None = None
+    exchange_rate_source: str | None = None
+    country: str | None = "Jamaica"
+    local_currency: str | None = "JMD"
 
 
 @router.post("/upload")
@@ -96,6 +99,9 @@ async def plan_simulator(request: PlanSimulatorRequest):
         request.year,
         request.month,
         request.exchange_rate,
+        request.country or "Jamaica",
+        request.local_currency or "JMD",
+        request.exchange_rate_source,
     )
 
     if "error" in result:

@@ -4,22 +4,12 @@ Reverse-converts JMD transaction amounts to USD so that international
 subscription charges (Netflix, Spotify, Adobe …) are stable across months
 even as the JMD/USD exchange rate drifts.
 
-BOJ API status (verified 2026-04-03)
-─────────────────────────────────────
-The endpoint https://boj.org.jm/api/public/key-rates returns HTTP 404.
-The Bank of Jamaica publishes daily FX rates on their website via WordPress
-DataTables loaded by AJAX — there is no public JSON REST API as of early 2026.
-
-Raw probe result:
-    GET https://boj.org.jm/api/public/key-rates  →  HTTP 404 Not Found
-
-`fetch_boj_rate` is written to handle this gracefully: any HTTP or parse
-error returns None, and `get_rate_with_fallback` then applies a 7-day
-look-back before settling on the hardcoded FALLBACK_RATE of 157.50 JMD/USD
-(approximate weighted-average sell rate, early 2026).
-
-This means fetch_boj_rate will always return None with the current BOJ
-infrastructure.  When/if BOJ publishes a real API the parser is ready.
+Current-rate lookup
+-------------------
+The old BOJ JSON endpoint used by early prototypes is not reliable, so this
+module no longer calls it. For live USD/JMD conversion, it queries a no-key
+public exchange-rate endpoint and falls back to FALLBACK_RATE when the network
+or provider is unavailable.
 """
 
 from __future__ import annotations
@@ -27,7 +17,6 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from datetime import date, timedelta
 
 # ─────────────────────────────────────────────
 # Constants
@@ -36,31 +25,25 @@ from datetime import date, timedelta
 #: Approximate JMD-per-USD weighted-average sell rate, early 2026
 FALLBACK_RATE: float = 157.50
 
-#: How many days to walk backwards when the target date has no BOJ data
-#: (covers weekends, public holidays, and API gaps)
-LOOKBACK_DAYS: int = 7
-
-#: Timeout for BOJ HTTP requests (seconds)
+#: Timeout for exchange-rate HTTP requests (seconds)
 _HTTP_TIMEOUT: int = 8
 
-#: BOJ public API endpoint (currently returns HTTP 404 — see module docstring)
-_BOJ_API_URL: str = 'https://boj.org.jm/api/public/key-rates'
+#: No-key exchange-rate endpoint. Returns latest rates relative to USD.
+_LIVE_RATE_URL: str = 'https://open.er-api.com/v6/latest/USD'
 
-#: Module-level cache shared by fetch_boj_rate across the process lifetime
-_BOJ_RATE_CACHE: dict[str, float | None] = {}
+#: Module-level cache shared by live-rate lookups across the process lifetime
+_LIVE_RATE_CACHE: dict[str, float | None] = {}
 
 
 # ─────────────────────────────────────────────
-# BOJ API fetch
+# Live exchange-rate fetch
 # ─────────────────────────────────────────────
 
-def fetch_boj_rate(date_str: str) -> float | None:
+def fetch_live_usd_jmd_rate() -> float | None:
     """
-    Attempt to fetch the USD/JMD weighted-average sell rate from the BOJ API
-    for the given date (``YYYY-MM-DD``).
+    Fetch the latest USD/JMD rate from the public exchange-rate provider.
 
-    Results are stored in the module-level ``_BOJ_RATE_CACHE`` dict keyed by
-    ``date_str`` so repeated calls for the same date never hit the network.
+    Results are stored in the module-level live-rate cache so repeated calls in the same process do not hit the network.
 
     Returns
     -------
@@ -80,14 +63,14 @@ def fetch_boj_rate(date_str: str) -> float | None:
     │  {"currency":"USD","date":"…","rate":157.20}                         │
     └──────────────────────────────────────────────────────────────────────┘
     """
-    if date_str in _BOJ_RATE_CACHE:
-        return _BOJ_RATE_CACHE[date_str]
+    cache_key = 'USD_JMD_LATEST'
+    if cache_key in _LIVE_RATE_CACHE:
+        return _LIVE_RATE_CACHE[cache_key]
 
     rate: float | None = None
     try:
-        url = f'{_BOJ_API_URL}?date={date_str}'
         req = urllib.request.Request(
-            url,
+            _LIVE_RATE_URL,
             headers={'User-Agent': 'StatementSense/1.0', 'Accept': 'application/json'},
         )
         with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
@@ -95,14 +78,16 @@ def fetch_boj_rate(date_str: str) -> float | None:
 
         data = json.loads(body)
 
-        rate = _extract_usd_rate(data)
+        rates = data.get('rates', {}) if isinstance(data, dict) else {}
+        if isinstance(rates, dict) and rates.get('JMD'):
+            rate = float(rates['JMD'])
 
     except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError,
             TypeError, KeyError, ValueError):
         # API unavailable (404, timeout, malformed JSON …) — degrade silently
         rate = None
 
-    _BOJ_RATE_CACHE[date_str] = rate
+    _LIVE_RATE_CACHE[cache_key] = rate
     return rate
 
 
@@ -155,9 +140,8 @@ def get_rate_with_fallback(date_str: str,
     Resolution order
     ----------------
     1. ``cache`` hit  — return immediately (avoids redundant API calls).
-    2. ``fetch_boj_rate(date_str)``  — live BOJ data.
-    3. Walk backwards up to ``LOOKBACK_DAYS`` days — covers weekends/holidays.
-    4. ``FALLBACK_RATE`` (157.50)  — when all else fails.
+    2. ``fetch_live_usd_jmd_rate()``  - live public exchange-rate data.
+    3. ``FALLBACK_RATE`` (157.50)  - when all else fails.
 
     The resolved rate is stored in ``cache[date_str]`` regardless of which
     path produced it.
@@ -170,20 +154,12 @@ def get_rate_with_fallback(date_str: str,
     if date_str in cache:
         return cache[date_str]
 
-    # Try today's date first
-    rate = fetch_boj_rate(date_str)
+    # The live provider is latest-only; date_str is kept for cache/API
+    # compatibility with older callers.
+    rate = fetch_live_usd_jmd_rate()
     if rate is not None:
         cache[date_str] = rate
         return rate
-
-    # Walk back up to LOOKBACK_DAYS
-    target = date.fromisoformat(date_str)
-    for delta in range(1, LOOKBACK_DAYS + 1):
-        candidate = (target - timedelta(days=delta)).isoformat()
-        rate = fetch_boj_rate(candidate)
-        if rate is not None:
-            cache[date_str] = rate
-            return rate
 
     # Hard fallback
     cache[date_str] = FALLBACK_RATE
@@ -296,6 +272,6 @@ if __name__ == '__main__':
 
     print(f'\nRate cache ({len(rate_cache)} dates):')
     for d, r in sorted(rate_cache.items()):
-        src = 'BOJ' if d in _BOJ_RATE_CACHE and _BOJ_RATE_CACHE[d] is not None \
-              else 'FALLBACK'
+        src = 'LIVE' if r != FALLBACK_RATE else 'FALLBACK'
         print(f'  {d}  {r:.2f}  [{src}]')
+

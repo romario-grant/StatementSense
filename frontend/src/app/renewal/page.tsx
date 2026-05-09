@@ -26,6 +26,8 @@ type SavedSubscriptionAnalysis = {
   transactions_parsed?: number;
   currency_summary?: {
     exchange_rate?: number;
+    exchange_rate_source?: string;
+    original_currency?: string;
   };
 };
 
@@ -48,6 +50,8 @@ export default function RenewalSensePage() {
     return { year: now.getFullYear(), month: now.getMonth() + 1 };
   });
   const [exchangeRate, setExchangeRate] = useState<number | null>(null);
+  const [exchangeRateSource, setExchangeRateSource] = useState<string | null>(null);
+  const [localCurrency, setLocalCurrency] = useState("JMD");
   const [planSimulators, setPlanSimulators] = useState<Record<string, PlanSimulatorState>>({});
 
   useEffect(() => {
@@ -92,6 +96,8 @@ export default function RenewalSensePage() {
       })
       .finally(() => setLoading(false));
     setExchangeRate(source.currency_summary?.exchange_rate || null);
+    setExchangeRateSource(source.currency_summary?.exchange_rate_source || null);
+    setLocalCurrency(source.currency_summary?.original_currency || "JMD");
   }, [currentMonth.month, currentMonth.year]);
 
   const apiBase =
@@ -119,6 +125,9 @@ export default function RenewalSensePage() {
           year: currentMonth.year,
           month: currentMonth.month,
           exchange_rate: exchangeRate,
+          exchange_rate_source: exchangeRateSource,
+          country: localCurrency === "JMD" ? "Jamaica" : "United States",
+          local_currency: localCurrency,
         }),
       });
       const data = await response.json();
@@ -583,7 +592,15 @@ export default function RenewalSensePage() {
                                     {selected.advice}
                                   </p>
                                   <p className="mt-2 text-[0.7rem] text-muted-foreground">
-                                    Likely current plan: {data.likely_current_plan.name}. Exchange rate: 1 USD = {data.exchange_rate} JMD.
+                                    Likely current plan: {data.likely_current_plan.name}. Pricing searched for {data.country || "your country"}.
+                                    {data.source_summary ? ` Source: ${data.source_summary}.` : ""}
+                                  </p>
+                                  <p className="mt-1 text-[0.7rem] text-muted-foreground">
+                                    Exchange rate: 1 USD = {data.exchange_rate} JMD
+                                    {data.exchange_rate_source === "fallback_rate"
+                                      ? " (fallback estimate)"
+                                      : " (from saved statement analysis)"}
+                                    .
                                   </p>
                                 </>
                               );
