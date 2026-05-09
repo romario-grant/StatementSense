@@ -89,6 +89,7 @@ class PlacesService:
         location_type: str,
         destination: str,
         max_results: int = 5,
+        search_query: str | None = None,
     ) -> dict:
         """
         Search for real alternatives to a local subscription at the travel
@@ -118,7 +119,9 @@ class PlacesService:
                 "search_query": str,
             }
         """
-        query = self._build_search_query(subscription_name, location_type, destination)
+        query = (search_query or "").strip() or self._build_search_query(
+            subscription_name, location_type, destination
+        )
         print(f"[PlacesService] Searching: \"{query}\"")
 
         try:

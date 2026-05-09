@@ -293,6 +293,41 @@ Rules:
         except Exception:
             return None
 
+    def build_places_search_query(self, sub_name, location_type, destination, sub_reason=""):
+        prompt = f"""Create one Google Places Text Search query for finding real-world alternatives.
+
+Subscription: "{sub_name}"
+Subscription type: {location_type}
+Context: {sub_reason}
+Travel destination: {destination}
+
+The query will be sent directly to the Google Places API, so it must search for businesses or services with physical locations or local availability in the destination.
+
+Examples:
+- gym membership -> "gyms with day passes in Miami"
+- yoga studio -> "yoga studios with drop-in classes in Toronto"
+- coworking membership -> "coworking spaces with day passes in London"
+- mobile data plan -> "mobile carrier stores with prepaid SIM cards in New York"
+
+Return JSON only:
+{{
+    "search_query": "one concise Google Places text search query",
+    "reason": "short reason this query matches the subscription"
+}}
+"""
+        try:
+            result = self._call_gemini(prompt, use_search=False)
+            query = str(result.get("search_query", "")).strip() if isinstance(result, dict) else ""
+            if not query:
+                return None
+            return {
+                "search_query": query,
+                "reason": str(result.get("reason", "")).strip() if isinstance(result, dict) else "",
+            }
+        except Exception as e:
+            print(f"Gemini Error (places query): {e}")
+            return None
+
 
 class SmartTimingEngine:
     """
@@ -768,6 +803,12 @@ def compute_savings(away_periods: list, processed_subscriptions: list):
     except ValueError as e:
         print(f"[CalendarSense:Phase3] Places API not available: {e}")
 
+    analyzer = None
+    try:
+        analyzer = GeminiCalendarAnalyzer()
+    except Exception as e:
+        print(f"[CalendarSense:Phase3] Gemini query planner not available: {e}")
+
     # Parallel alternatives search via Google Places API
     def _search_one(rec):
         dest = rec.get("destination", "")
@@ -775,8 +816,28 @@ def compute_savings(away_periods: list, processed_subscriptions: list):
         sub_name = rec.get("subscription", "")
         if dest and dest != "Unknown" and loc_type != "portable" and places:
             try:
-                print(f"[CalendarSense:Phase3] Places API search for '{sub_name}' in {dest}...")
-                alternatives = places.search_alternatives(sub_name, loc_type, dest)
+                sub_context = next(
+                    (s.get("reason", "") for s in processed_subscriptions if s.get("name") == sub_name),
+                    "",
+                )
+                query_plan = (
+                    analyzer.build_places_search_query(sub_name, loc_type, dest, sub_context)
+                    if analyzer
+                    else None
+                )
+                search_query = query_plan.get("search_query") if query_plan else None
+                print(
+                    f"[CalendarSense:Phase3] Places API search for '{sub_name}' in {dest}"
+                    f"{f' using Gemini query: {search_query}' if search_query else ' using template query'}..."
+                )
+                alternatives = places.search_alternatives(
+                    sub_name,
+                    loc_type,
+                    dest,
+                    search_query=search_query,
+                )
+                if query_plan:
+                    alternatives["query_reason"] = query_plan.get("reason", "")
                 rec["alternatives"] = alternatives
             except Exception as e:
                 print(f"[CalendarSense:Phase3] Places search failed for '{sub_name}': {e}")
@@ -929,4 +990,3 @@ def create_reminders(access_token: str, recommendations: list) -> dict:
         "total_created": len([e for e in created_events if "error" not in e]),
         "total_failed": len([e for e in created_events if "error" in e]),
     }
-
