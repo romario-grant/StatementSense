@@ -759,16 +759,16 @@ class RiskScoreEngine:
         
         if risk_score <= 0.30:
             label, level = "LOW", "low"
-            advice = "Your renewal should go through fine."
+            advice = "This renewal is well placed in your pay cycle."
         elif risk_score <= 0.55:
             label, level = "MODERATE", "moderate"
-            advice = "Check your balance a day before renewal."
+            advice = "This renewal has some timing pressure based on nearby spending."
         elif risk_score <= 0.75:
             label, level = "HIGH", "high"
-            advice = "High risk of insufficient funds. Transfer money to your card."
+            advice = "This renewal falls in a heavier spending window."
         else:
             label, level = "CRITICAL", "critical"
-            advice = "This renewal will likely fail. Add funds immediately."
+            advice = "This renewal falls in one of your tightest spending windows. Consider moving the billing date."
         
         zone_label, zone_level = salary_tracker.get_zone(day)
         
