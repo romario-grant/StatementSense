@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
-import { Calendar as CalendarIcon, MapPin, Plus, Trash2, Plane, Activity, CheckCircle, AlertTriangle, Search, Loader2, CalendarPlus, Clock } from "lucide-react";
+import { Calendar as CalendarIcon, MapPin, Plus, Trash2, Plane, Activity, CheckCircle, AlertTriangle, Search, Loader2, CalendarPlus, Clock, Info } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
@@ -130,9 +130,17 @@ export default function CalendarSensePage() {
           processed_subscriptions: classifyResult.processed_subscriptions,
         }),
       })
-        .then(res => res.json())
-        .then(data => { if (!data.error) setSavingsResult(data); })
-        .catch(() => {})
+        .then(async (res) => {
+          const data = await res.json();
+          if (!res.ok || data.error) {
+            throw new Error(data.detail || data.error || "Could not calculate travel alternatives.");
+          }
+          return data;
+        })
+        .then(setSavingsResult)
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : "Could not calculate travel alternatives.");
+        })
         .finally(() => setSavingsLoading(false));
     }
   }, [classifyResult]);
@@ -587,6 +595,17 @@ export default function CalendarSensePage() {
                             <CheckCircle size={48} className="text-green-400 mb-4" />
                             <h3 className="text-xl font-medium mb-2">All Subscriptions Global</h3>
                             <p className="text-white/60 text-center">None of your subscriptions are location-dependent. No action needed!</p>
+                          </div>
+                        </div>
+                      )}
+                      {result.recommendations.length === 0 && !savingsLoading && result.away_periods.length > 0 && (result.local_count || 0) > 0 && (
+                        <div>
+                          <div className="rounded-2xl bg-black/40 backdrop-blur-xl border border-white/10 flex flex-col p-6 justify-center items-center text-white min-h-[300px]">
+                            <Info size={48} className="text-yellow-400 mb-4" />
+                            <h3 className="text-xl font-medium mb-2">No Travel Action Needed</h3>
+                            <p className="text-white/60 text-center">
+                              Your local subscription was detected, but CalendarSense did not find a useful pause or cancel action for this trip.
+                            </p>
                           </div>
                         </div>
                       )}

@@ -617,9 +617,62 @@ class CalendarSenseEngine:
                 continue
             for away in away_periods:
                 rec = engine.analyze(sub, away)
+                if rec is None:
+                    rec = CalendarSenseEngine._build_keep_advisory(sub, away)
                 if rec is not None:
                     recommendations.append(rec)
         return recommendations
+
+    @staticmethod
+    def _build_keep_advisory(subscription: dict, away_period: dict) -> dict | None:
+        """Return a non-actionable local-alternatives card when cancellation is not worth it."""
+        monthly_cost = float(subscription.get("monthly_cost", 0))
+        if monthly_cost <= 0:
+            return None
+
+        try:
+            depart = datetime.strptime(away_period["departure_date"], "%Y-%m-%d")
+            return_dt = datetime.strptime(away_period["return_date"], "%Y-%m-%d")
+        except (KeyError, ValueError):
+            return None
+
+        today = datetime.now()
+        effective_depart = max(depart, today)
+        if return_dt <= effective_depart:
+            return None
+
+        days_away = (return_dt - effective_depart).days
+        renewal_day = subscription.get("renewal_day")
+        timing_context = (
+            f"Trip lasts {days_away} day(s). "
+            f"Renewal day is {renewal_day}."
+            if renewal_day
+            else f"Trip lasts {days_away} day(s). Renewal day is unknown."
+        )
+
+        return {
+            "subscription": subscription["name"],
+            "away_reason": away_period["reason"],
+            "away_dates": f"{away_period['departure_date']} to {away_period['return_date']}",
+            "destination": away_period.get("destination", "Unknown"),
+            "days_away": days_away,
+            "months_away": math.ceil(days_away / 30.0),
+            "monthly_cost": monthly_cost,
+            "renewal_day": renewal_day,
+            "next_renewal_date": None,
+            "renewals_during_travel": 0,
+            "potential_savings": 0.0,
+            "penalty": float(subscription.get("cancellation_penalty", 0)),
+            "net_savings": 0.0,
+            "action": "KEEP",
+            "action_detail": "No pause or cancellation is recommended, but these local alternatives may help while traveling.",
+            "action_date": None,
+            "restart_date": return_dt.strftime("%Y-%m-%d"),
+            "timing_context": timing_context,
+            "rationale": "The expected savings do not justify changing the subscription, so this is shown as travel context instead.",
+            "location_type": subscription.get("location_type", "unknown"),
+            "confidence": away_period.get("confidence", "medium"),
+        }
 
 
 import traceback
