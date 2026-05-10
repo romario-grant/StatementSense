@@ -398,35 +398,6 @@ export default function ScreentimeSensePage() {
                     })()}
                   </div>
 
-                  {/* Student Toggle */}
-                  <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-secondary">
-                    <label className="relative w-11 h-6 inline-block shrink-0">
-                      <input
-                        type="checkbox"
-                        checked={globalSettings.is_student}
-                        onChange={(e) => setGlobalSettings({ ...globalSettings, is_student: e.target.checked })}
-                        className="opacity-0 w-0 h-0 absolute"
-                      />
-                      <span
-                        className={`absolute cursor-pointer top-0 left-0 right-0 bottom-0 rounded-full transition-colors duration-300 ${
-                          globalSettings.is_student ? "bg-primary" : "bg-muted"
-                        }`}
-                      >
-                        <span
-                          className={`absolute h-4 w-4 bg-white rounded-full transition-all duration-300 bottom-1 ${
-                            globalSettings.is_student ? "left-[1.45rem]" : "left-[0.2rem]"
-                          }`}
-                        />
-                      </span>
-                    </label>
-                    <div>
-                      <span className="text-[0.85rem] font-medium">I&apos;m a Student</span>
-                      <p className="text-[0.75rem] text-muted-foreground mt-0.5">
-                        Scans Google Calendar for exams &amp; suggests pausing entertainment subscriptions.
-                      </p>
-                    </div>
-                  </div>
-
                   <button type="submit" className="w-full py-3 mt-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl font-medium transition-colors shadow-sm">
                     Save Settings &amp; Continue
                   </button>
