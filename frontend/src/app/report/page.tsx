@@ -1,6 +1,5 @@
 "use client";
 
-import { jsPDF } from "jspdf";
 import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -27,7 +26,6 @@ import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
 import {
   readSubscriptionAnalysis,
-  readSharedSubscriptions,
 } from "@/lib/subscriptionStore";
 import { readPageSession } from "@/lib/pageSessionStore";
 import { readUserPreferences } from "@/lib/userPreferenceStore";
@@ -320,7 +318,7 @@ const insightIcons: Record<string, React.ReactNode> = {
   switch_plan: <RefreshCw size={16} className="text-blue-500 shrink-0" />,
 };
 
-// ─── PDF Generation ──────────────────────────────────────────────────────────
+// ─── PDF Generation (loads jsPDF from CDN at runtime — no npm package needed) ─
 
 async function generatePDF(
   analysis: SubscriptionAnalysis,
@@ -329,8 +327,38 @@ async function generatePDF(
   exchangeRate: number,
   localCurrency: string
 ) {
+  type JsPDFWindow = Window & {
+    jspdf?: { jsPDF: new (options: { unit: string; format: string }) => JsPDFInstance };
+  };
+  type JsPDFInstance = {
+    setFontSize: (s: number) => void;
+    setFont: (f: string, style: string) => void;
+    setTextColor: (...args: number[]) => void;
+    setFillColor: (...args: number[]) => void;
+    setDrawColor: (...args: number[]) => void;
+    text: (text: string | string[], x: number, y: number) => void;
+    rect: (x: number, y: number, w: number, h: number, style: string) => void;
+    line: (x1: number, y1: number, x2: number, y2: number) => void;
+    addPage: () => void;
+    setPage: (p: number) => void;
+    getNumberOfPages: () => number;
+    splitTextToSize: (text: string, maxWidth: number) => string[];
+    save: (filename: string) => void;
+  };
 
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const win = window as JsPDFWindow;
+
+  if (!win.jspdf) {
+    await new Promise<void>((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error("Failed to load jsPDF"));
+      document.head.appendChild(script);
+    });
+  }
+
+  const doc = new win.jspdf!.jsPDF({ unit: "mm", format: "a4" });
   const pageW = 210;
   const margin = 18;
   const contentW = pageW - margin * 2;
@@ -447,7 +475,7 @@ async function generatePDF(
 
     doc.setFont("helvetica", "bold");
     doc.setTextColor(...priorityColor);
-    const actionLines = doc.splitTextToSize(`→ ${insight.action}`, contentW - 6);
+    const actionLines = doc.splitTextToSize(`-> ${insight.action}`, contentW - 6);
     actionLines.forEach((line: string) => {
       checkPage(6);
       doc.text(line, margin + 6, y);
@@ -489,10 +517,10 @@ async function generatePDF(
     doc.setFont("helvetica", "normal");
     doc.setTextColor(30, 30, 30);
     const row = [
-      sub.merchant.length > 20 ? sub.merchant.slice(0, 18) + "…" : sub.merchant,
+      sub.merchant.length > 20 ? sub.merchant.slice(0, 18) + "..." : sub.merchant,
       `$${sub.amount.toFixed(2)}`,
       sub.period,
-      sub.renewal_day ? `Day ${sub.renewal_day}` : "—",
+      sub.renewal_day ? `Day ${sub.renewal_day}` : "-",
       `${Math.round(sub.confidence * 100)}%`,
     ];
     row.forEach((val, i) => doc.text(val, colX[i], y));
@@ -520,7 +548,7 @@ async function generatePDF(
       doc.text(`${pred.days_until_charge}d`, margin, y);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(30, 30, 30);
-      doc.text(`${pred.subscription}  —  ${pred.next_charge_date}  (${pred.confidence_label} confidence)`, margin + 12, y);
+      doc.text(`${pred.subscription}  -  ${pred.next_charge_date}  (${pred.confidence_label} confidence)`, margin + 12, y);
       y += 6;
     });
 
@@ -535,7 +563,7 @@ async function generatePDF(
     doc.setFont("helvetica", "normal");
     doc.setTextColor(160, 160, 160);
     doc.text(
-      `StatementSense Report · ${dateStr} · Page ${p} of ${totalPages} · Privacy-first: no financial data was transmitted`,
+      `StatementSense Report - ${dateStr} - Page ${p} of ${totalPages} - Privacy-first: no financial data was transmitted`,
       margin,
       290
     );
@@ -551,7 +579,7 @@ export default function ReportPage() {
   const [renewalSubs, setRenewalSubs] = useState<RenewalSub[]>([]);
   const [calendarRecs, setCalendarRecs] = useState<CalendarRec[]>([]);
   const [isStudent, setIsStudent] = useState(false);
-  const [exchangeRate, setExchangeRate] = useState(157); // fallback JMD rate
+  const [exchangeRate, setExchangeRate] = useState(157);
   const [localCurrency, setLocalCurrency] = useState("JMD");
   const [insights, setInsights] = useState<Insight[]>([]);
   const [generating, setGenerating] = useState(false);
@@ -559,7 +587,6 @@ export default function ReportPage() {
   const pdfStarted = useRef(false);
 
   useEffect(() => {
-    // Load SubscriptionSense data
     const savedAnalysis = readSubscriptionAnalysis<SubscriptionAnalysis>();
     if (savedAnalysis) {
       setAnalysis(savedAnalysis);
@@ -571,19 +598,16 @@ export default function ReportPage() {
       }
     }
 
-    // Load RenewalSense data
     const renewalSession = readPageSession<{ results: { subscriptions?: RenewalSub[] } }>("renewal");
     if (renewalSession?.results?.subscriptions) {
       setRenewalSubs(renewalSession.results.subscriptions);
     }
 
-    // Load CalendarSense recommendations
     const calSession = readPageSession<{ savingsResult?: { recommendations?: CalendarRec[] } }>("calendar");
     if (calSession?.savingsResult?.recommendations) {
       setCalendarRecs(calSession.savingsResult.recommendations);
     }
 
-    // Load user preferences
     const prefs = readUserPreferences();
     if (prefs) {
       setIsStudent(prefs.isStudent);
@@ -633,7 +657,6 @@ export default function ReportPage() {
     <>
       <Navbar />
       <main className="max-w-6xl mx-auto px-8 pt-32 pb-12">
-        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -677,7 +700,6 @@ export default function ReportPage() {
 
         <AnimatePresence mode="wait">
           {!hasSomeData ? (
-            /* ── Empty State ── */
             <motion.div
               key="empty"
               initial={{ opacity: 0, y: 16 }}
@@ -723,7 +745,6 @@ export default function ReportPage() {
               transition={{ duration: 0.5 }}
               className="flex flex-col gap-6"
             >
-              {/* ── Summary KPIs ── */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
                   {
@@ -760,7 +781,6 @@ export default function ReportPage() {
                 ))}
               </div>
 
-              {/* ── Alert banner ── */}
               {criticalCount > 0 && (
                 <motion.div
                   initial={{ opacity: 0 }}
@@ -775,7 +795,6 @@ export default function ReportPage() {
                 </motion.div>
               )}
 
-              {/* ── Data source status ── */}
               <MotionCard hover={false} delay={0.1}>
                 <h3 className="font-medium mb-3 text-[0.95rem] flex items-center gap-2">
                   <Info size={15} />
@@ -819,9 +838,7 @@ export default function ReportPage() {
                 </div>
               </MotionCard>
 
-              {/* ── Insights ── */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Left: insight list */}
                 <div className="flex flex-col gap-4 md:col-span-2">
                   <div className="flex items-center justify-between">
                     <h2 className="text-xl font-medium flex items-center gap-2">
@@ -842,7 +859,6 @@ export default function ReportPage() {
                     </span>
                   </div>
 
-                  {/* Filters */}
                   <div className="flex flex-wrap gap-2">
                     {filterOptions.map((opt) => (
                       <button
@@ -913,9 +929,7 @@ export default function ReportPage() {
                   })}
                 </div>
 
-                {/* Right: subscription list + renewal calendar */}
                 <div className="flex flex-col gap-4">
-                  {/* Subscriptions */}
                   <MotionCard hover={false} delay={0.1}>
                     <h3 className="font-medium mb-3 text-[0.95rem]">All Subscriptions</h3>
                     <div className="flex flex-col gap-2">
@@ -954,7 +968,6 @@ export default function ReportPage() {
                     </div>
                   </MotionCard>
 
-                  {/* Upcoming renewals */}
                   {(analysis.renewal_predictions ?? []).length > 0 && (
                     <MotionCard hover={false} delay={0.15}>
                       <h3 className="font-medium mb-3 text-[0.95rem] flex items-center gap-2">
@@ -997,7 +1010,6 @@ export default function ReportPage() {
                     </MotionCard>
                   )}
 
-                  {/* Price changes */}
                   {(analysis.price_changes ?? []).length > 0 && (
                     <MotionCard hover={false} delay={0.2} className="border-yellow-500/20 bg-yellow-500/5">
                       <h3 className="font-medium mb-3 text-[0.95rem] flex items-center gap-2">
@@ -1025,7 +1037,6 @@ export default function ReportPage() {
                     </MotionCard>
                   )}
 
-                  {/* CalendarSense travel summary */}
                   {calendarRecs.length > 0 && (
                     <MotionCard hover={false} delay={0.25} className="border-blue-400/20 bg-blue-500/5">
                       <h3 className="font-medium mb-3 text-[0.95rem] flex items-center gap-2">
@@ -1045,7 +1056,6 @@ export default function ReportPage() {
                     </MotionCard>
                   )}
 
-                  {/* Download CTA (mobile) */}
                   <button
                     onClick={handleDownload}
                     disabled={generating}
@@ -1056,7 +1066,7 @@ export default function ReportPage() {
                     ) : (
                       <Download size={15} />
                     )}
-                    {generating ? "Generating…" : "Download PDF Report"}
+                    {generating ? "Generating..." : "Download PDF Report"}
                   </button>
                 </div>
               </div>
