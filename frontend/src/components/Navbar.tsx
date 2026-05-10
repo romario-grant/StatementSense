@@ -13,6 +13,7 @@ const navLinks = [
   { path: "/renewal", label: "RenewalSense" },
   { path: "/screentime", label: "ScreentimeSense" },
   { path: "/calendar", label: "CalendarSense" },
+  { path: "/report", label: "Report" },
 ];
 
 export default function Navbar() {
