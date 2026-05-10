@@ -29,7 +29,7 @@ import {
 } from "@/lib/subscriptionStore";
 import { readPageSession } from "@/lib/pageSessionStore";
 import { readUserPreferences } from "@/lib/userPreferenceStore";
-
+trigger rebuild
 // ─── Types (mirrors existing codebase shapes) ────────────────────────────────
 
 type SubscriptionResult = {
