@@ -1,5 +1,6 @@
 "use client";
 
+import { jsPDF } from "jspdf";
 import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -321,14 +322,14 @@ const insightIcons: Record<string, React.ReactNode> = {
 
 // ─── PDF Generation ──────────────────────────────────────────────────────────
 
-aasync function generatePDF(
+async function generatePDF(
   analysis: SubscriptionAnalysis,
   insights: Insight[],
   isStudent: boolean,
   exchangeRate: number,
   localCurrency: string
 ) {
-  const { jsPDF } = await import("jspdf");
+
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pageW = 210;
   const margin = 18;
