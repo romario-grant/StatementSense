@@ -19,7 +19,9 @@ import {
   onAuthStateChanged,
   type User,
 } from "@/lib/firebase";
+import { clearAllPageSessions } from "@/lib/pageSessionStore";
 import { clearSubscriptionSession } from "@/lib/subscriptionStore";
+import { clearUserPreferences } from "@/lib/userPreferenceStore";
 
 /* ── Types ── */
 
@@ -51,6 +53,14 @@ export function useAuth() {
 
 /* ── Public Routes ── */
 const PUBLIC_ROUTES = ["/login"];
+
+const clearLocalUserData = () => {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem("google_access_token");
+  clearSubscriptionSession();
+  clearAllPageSessions();
+  clearUserPreferences();
+};
 
 /* ── Provider ── */
 
@@ -88,14 +98,17 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     await signInWithEmailAndPassword(auth, email, password);
+    clearLocalUserData();
   }, []);
 
   const signup = useCallback(async (email: string, password: string) => {
     await createUserWithEmailAndPassword(auth, email, password);
+    clearLocalUserData();
   }, []);
 
   const loginWithGoogle = useCallback(async () => {
     const result = await signInWithPopup(auth, googleProvider);
+    clearLocalUserData();
     // Extract the OAuth access token to use for Google Calendar API
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (credential?.accessToken) {
@@ -105,8 +118,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     await firebaseSignOut(auth);
-    localStorage.removeItem("google_access_token");
-    clearSubscriptionSession();
+    clearLocalUserData();
     router.replace("/login");
   }, [router]);
 
@@ -114,8 +126,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     try {
       await user.delete();
-      localStorage.removeItem("google_access_token");
-      clearSubscriptionSession();
+      clearLocalUserData();
       router.replace("/login");
     } catch (err: unknown) {
       const code = typeof err === "object" && err !== null && "code" in err

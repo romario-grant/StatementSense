@@ -76,3 +76,8 @@ export const saveUserPreferences = (preferences: UserPreferences) => {
     })
   );
 };
+
+export const clearUserPreferences = () => {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(STORAGE_KEY);
+};

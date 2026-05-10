@@ -19,3 +19,10 @@ export const clearPageSession = (name: string) => {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(keyFor(name));
 };
+
+export const clearAllPageSessions = () => {
+  if (typeof window === "undefined") return;
+  ["renewal", "screentime", "calendar"].forEach((name) => {
+    window.localStorage.removeItem(keyFor(name));
+  });
+};
