@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
@@ -70,6 +70,8 @@ export default function RenewalSensePage() {
   const [monthlySubscriptionCapJmd] = useState(
     () => readUserPreferences()?.monthlySubscriptionCapJmd || null
   );
+  const autoPlanCompareStarted = useRef(false);
+  const activePlanSimulatorKeys = useRef(new Set<string>());
 
   useEffect(() => {
     const saved = readPageSession<RenewalSession>("renewal");
@@ -123,7 +125,10 @@ export default function RenewalSensePage() {
         }
         return data;
       })
-      .then(setResults)
+      .then((data) => {
+        autoPlanCompareStarted.current = false;
+        setResults(data);
+      })
       .catch((err) => {
         setError(err instanceof Error ? err.message : "An error occurred");
       })
@@ -155,11 +160,21 @@ export default function RenewalSensePage() {
       : "";
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const loadPlanSimulator = async (sub: any, key: string) => {
+  const loadPlanSimulator = useCallback(async (sub: any, key: string, force = false) => {
+    if (!force && (activePlanSimulatorKeys.current.has(key) || planSimulators[key]?.loading || planSimulators[key]?.data)) {
+      return;
+    }
+
     let timeoutId: number | null = null;
+    activePlanSimulatorKeys.current.add(key);
     setPlanSimulators((current) => ({
       ...current,
-      [key]: { loading: true, error: null, data: current[key]?.data },
+      [key]: {
+        loading: true,
+        error: null,
+        data: current[key]?.data,
+        selectedIndex: current[key]?.selectedIndex || 0,
+      },
     }));
     try {
       const controller = new AbortController();
@@ -211,8 +226,31 @@ export default function RenewalSensePage() {
       }));
     } finally {
       if (timeoutId) window.clearTimeout(timeoutId);
+      activePlanSimulatorKeys.current.delete(key);
     }
-  };
+  }, [
+    apiBase,
+    currentMonth.month,
+    currentMonth.year,
+    exchangeRate,
+    exchangeRateSource,
+    localCurrency,
+    planSimulators,
+    results,
+  ]);
+
+  useEffect(() => {
+    if (!hydrated || loading || !results?.subscriptions?.length || autoPlanCompareStarted.current) {
+      return;
+    }
+
+    autoPlanCompareStarted.current = true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    results.subscriptions.forEach((sub: any, idx: number) => {
+      const key = `${sub.subscription}-${idx}`;
+      void loadPlanSimulator(sub, key);
+    });
+  }, [hydrated, loadPlanSimulator, loading, results]);
 
   const selectPlan = (key: string, selectedIndex: number) => {
     setPlanSimulators((current) => ({
@@ -662,7 +700,7 @@ export default function RenewalSensePage() {
                       <div className="mt-4 border-t border-border pt-4">
                         <button
                           type="button"
-                          onClick={() => loadPlanSimulator(sub, `${sub.subscription}-${idx}`)}
+                          onClick={() => loadPlanSimulator(sub, `${sub.subscription}-${idx}`, true)}
                           disabled={planSimulators[`${sub.subscription}-${idx}`]?.loading}
                           className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-secondary disabled:opacity-60"
                         >
@@ -674,7 +712,9 @@ export default function RenewalSensePage() {
                           ) : (
                             <>
                               <Sparkles size={15} />
-                              Compare Plans
+                              {planSimulators[`${sub.subscription}-${idx}`]?.data
+                                ? "Refresh Plans"
+                                : "Compare Plans"}
                             </>
                           )}
                         </button>
