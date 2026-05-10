@@ -57,6 +57,11 @@ const PUBLIC_ROUTES = ["/login"];
 const clearLocalUserData = () => {
   if (typeof window === "undefined") return;
   localStorage.removeItem("google_access_token");
+  Object.keys(localStorage).forEach((key) => {
+    if (key.startsWith("statementsense.")) {
+      localStorage.removeItem(key);
+    }
+  });
   clearSubscriptionSession();
   clearAllPageSessions();
   clearUserPreferences();
