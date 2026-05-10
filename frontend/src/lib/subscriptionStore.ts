@@ -4,6 +4,7 @@ export type SharedSubscription = {
   cost: number;
   renewalDay?: number | null;
   period?: string;
+  bank?: string;
   source?: "subscription-sense" | "manual";
 };
 
@@ -36,6 +37,7 @@ export const readSharedSubscriptions = (): SharedSubscription[] => {
             ? null
             : parseNumber(item.renewalDay),
         period: item.period ? String(item.period) : undefined,
+        bank: item.bank ? String(item.bank) : undefined,
         source: (item.source === "manual"
           ? "manual"
           : "subscription-sense") as SharedSubscription["source"],
@@ -59,6 +61,7 @@ export const saveSharedSubscriptions = (subscriptions: SharedSubscription[]) => 
       cost: Number(sub.cost.toFixed(2)),
       renewalDay: sub.renewalDay ?? null,
       period: sub.period,
+      bank: sub.bank,
       source: sub.source ?? "subscription-sense",
     });
   });

@@ -9,6 +9,8 @@ import {
   TrendingDown,
   Calendar,
   RefreshCw,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
@@ -16,6 +18,7 @@ import Badge from "@/components/Badge";
 import FileUpload from "@/components/FileUpload";
 import {
   clearSubscriptionAnalysis,
+  readSharedSubscriptions,
   readSubscriptionAnalysis,
   saveSharedSubscriptions,
   saveSubscriptionAnalysis,
@@ -36,6 +39,7 @@ const UPLOAD_TIMEOUT_MS = 180_000;
 type SubscriptionResult = {
   merchant: string;
   raw_merchant?: string;
+  bank?: string;
   amount: number;
   period: string;
   period_days: number | null;
@@ -47,6 +51,7 @@ type SubscriptionResult = {
   reason?: string;
   needs_review?: boolean;
   missed_cycles?: number;
+  source?: "subscription-sense" | "manual";
 };
 
 type RenewalPrediction = {
@@ -115,6 +120,14 @@ export default function SubscriptionSensePage() {
   const [results, setResults] = useState<SubscriptionAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [merchantLabels, setMerchantLabels] = useState<Record<string, string>>({});
+  const [showManualSubscription, setShowManualSubscription] = useState(false);
+  const [manualSubscription, setManualSubscription] = useState({
+    merchant: "",
+    amount: "",
+    renewalDay: "",
+    bank: "",
+    period: "monthly",
+  });
   const [swapped, setSwapped] = useState(false);
   const [swapComplete, setSwapComplete] = useState(false);
   const [preferences, setPreferences] = useState<UserPreferences>(
@@ -131,13 +144,74 @@ export default function SubscriptionSensePage() {
   );
   const [preferenceGateActive, setPreferenceGateActive] = useState(false);
 
+  const nextChargeDateForDay = (renewalDay: number) => {
+    const today = new Date();
+    const next = new Date(today.getFullYear(), today.getMonth(), Math.min(renewalDay, 28));
+    if (next < today) next.setMonth(next.getMonth() + 1);
+    return next.toISOString().slice(0, 10);
+  };
+
+  const mergeManualSubscriptions = (analysis: SubscriptionAnalysis): SubscriptionAnalysis => {
+    const existingNames = new Set(
+      analysis.subscriptions.map((sub) => sub.merchant.trim().toLowerCase())
+    );
+    const manualRows = readSharedSubscriptions()
+      .filter((sub) => sub.source === "manual" && !existingNames.has(sub.name.trim().toLowerCase()))
+      .map((sub): SubscriptionResult => {
+        const renewalDay = Math.min(Math.max(Math.round(sub.renewalDay || 1), 1), 31);
+        return {
+          merchant: sub.name,
+          raw_merchant: sub.bank,
+          bank: sub.bank,
+          amount: sub.cost,
+          period: sub.period || "monthly",
+          period_days: 30,
+          confidence: 1,
+          confidence_label: "manual",
+          charge_count: 1,
+          renewal_day: renewalDay,
+          last_charge: nextChargeDateForDay(renewalDay),
+          reason: "Added manually by the user.",
+          needs_review: false,
+          missed_cycles: 0,
+          source: "manual",
+        };
+      });
+
+    if (manualRows.length === 0) return analysis;
+    const manualTotal = manualRows.reduce((sum, sub) => sum + sub.amount, 0);
+    const nextLocalSpend =
+      (analysis.currency_summary?.subscription_spend_local ?? analysis.summary.total_sub_cost) +
+      manualTotal;
+
+    return {
+      ...analysis,
+      subscriptions: [...analysis.subscriptions, ...manualRows],
+      summary: {
+        ...analysis.summary,
+        total_subscriptions: analysis.summary.total_subscriptions + manualRows.length,
+        total_sub_cost: Number((analysis.summary.total_sub_cost + manualTotal).toFixed(2)),
+      },
+      currency_summary: analysis.currency_summary
+        ? {
+            ...analysis.currency_summary,
+            subscription_spend_local: Number(nextLocalSpend.toFixed(2)),
+            subscription_spend_usd: analysis.currency_summary.exchange_rate
+              ? Number((nextLocalSpend / analysis.currency_summary.exchange_rate).toFixed(2))
+              : analysis.currency_summary.subscription_spend_usd,
+          }
+        : analysis.currency_summary,
+    };
+  };
+
   useEffect(() => {
     const savedAnalysis = readSubscriptionAnalysis<SubscriptionAnalysis>();
     if (savedAnalysis) {
       // Restore the last completed analysis when the user returns to the page.
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setResults(savedAnalysis);
+      setResults(mergeManualSubscriptions(savedAnalysis));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -159,12 +233,137 @@ export default function SubscriptionSensePage() {
           cost: sub.amount,
           renewalDay: sub.renewal_day,
           period: sub.period,
-          source: "subscription-sense",
+          bank: sub.bank,
+          source: sub.source ?? "subscription-sense",
         };
       })
     );
     saveSubscriptionAnalysis({ ...results, subscriptions: subscriptionsWithLabels });
   }, [results, merchantLabels]);
+
+  const addManualSubscription = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!results) return;
+
+    const merchant = manualSubscription.merchant.trim();
+    const amount = Number(manualSubscription.amount);
+    const renewalDay = Number(manualSubscription.renewalDay);
+    if (
+      !merchant ||
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      !Number.isFinite(renewalDay) ||
+      renewalDay < 1 ||
+      renewalDay > 31
+    ) {
+      setError("Add a name, amount, and renewal day for the manual subscription.");
+      return;
+    }
+
+    const safeRenewalDay = Math.min(Math.max(Math.round(renewalDay), 1), 31);
+    const nextChargeDate = nextChargeDateForDay(safeRenewalDay);
+    const manualRow: SubscriptionResult = {
+      merchant,
+      raw_merchant: manualSubscription.bank.trim() || undefined,
+      bank: manualSubscription.bank.trim() || undefined,
+      amount: Number(amount.toFixed(2)),
+      period: manualSubscription.period || "monthly",
+      period_days: 30,
+      confidence: 1,
+      confidence_label: "manual",
+      charge_count: 1,
+      renewal_day: safeRenewalDay,
+      last_charge: nextChargeDate,
+      reason: "Added manually by the user.",
+      needs_review: false,
+      missed_cycles: 0,
+      source: "manual",
+    };
+
+    setResults((current) => {
+      if (!current) return current;
+      const baseLocalSpend =
+        current.currency_summary?.subscription_spend_local ?? current.summary.total_sub_cost;
+      const nextLocalSpend = Number((baseLocalSpend + manualRow.amount).toFixed(2));
+
+      return {
+        ...current,
+        subscriptions: [...current.subscriptions, manualRow],
+        renewal_predictions: [
+          ...(current.renewal_predictions || []),
+          {
+            subscription: merchant,
+            next_charge_date: nextChargeDate,
+            days_until_charge: Math.max(
+              0,
+              Math.ceil((new Date(nextChargeDate).getTime() - new Date().getTime()) / 86_400_000)
+            ),
+            period: manualRow.period,
+            period_days: manualRow.period_days || 30,
+            confidence_label: "medium",
+            data_points: 1,
+          },
+        ],
+        summary: {
+          ...current.summary,
+          total_subscriptions: current.summary.total_subscriptions + 1,
+          total_sub_cost: Number((current.summary.total_sub_cost + manualRow.amount).toFixed(2)),
+        },
+        currency_summary: current.currency_summary
+          ? {
+              ...current.currency_summary,
+              subscription_spend_local: nextLocalSpend,
+              subscription_spend_usd: current.currency_summary.exchange_rate
+                ? Number((nextLocalSpend / current.currency_summary.exchange_rate).toFixed(2))
+                : current.currency_summary.subscription_spend_usd,
+            }
+          : current.currency_summary,
+      };
+    });
+    setManualSubscription({
+      merchant: "",
+      amount: "",
+      renewalDay: "",
+      bank: "",
+      period: "monthly",
+    });
+    setShowManualSubscription(false);
+    setError(null);
+  };
+
+  const removeManualSubscription = (index: number) => {
+    setResults((current) => {
+      if (!current) return current;
+      const removed = current.subscriptions[index];
+      if (!removed || removed.source !== "manual") return current;
+
+      const baseLocalSpend =
+        current.currency_summary?.subscription_spend_local ?? current.summary.total_sub_cost;
+      const nextLocalSpend = Number(Math.max(baseLocalSpend - removed.amount, 0).toFixed(2));
+
+      return {
+        ...current,
+        subscriptions: current.subscriptions.filter((_, idx) => idx !== index),
+        renewal_predictions: (current.renewal_predictions || []).filter(
+          (prediction) => prediction.subscription !== removed.merchant
+        ),
+        summary: {
+          ...current.summary,
+          total_subscriptions: Math.max(current.summary.total_subscriptions - 1, 0),
+          total_sub_cost: Number(Math.max(current.summary.total_sub_cost - removed.amount, 0).toFixed(2)),
+        },
+        currency_summary: current.currency_summary
+          ? {
+              ...current.currency_summary,
+              subscription_spend_local: nextLocalSpend,
+              subscription_spend_usd: current.currency_summary.exchange_rate
+                ? Number((nextLocalSpend / current.currency_summary.exchange_rate).toFixed(2))
+                : current.currency_summary.subscription_spend_usd,
+            }
+          : current.currency_summary,
+      };
+    });
+  };
 
   const updateBudgetingStyle = (budgetingStyle: BudgetingStyle) => {
     setPreferences((current) => ({
@@ -276,7 +475,7 @@ export default function SubscriptionSensePage() {
         throw new Error(
           data.detail || data.error || "Failed to process statement"
         );
-      const analysis = data as SubscriptionAnalysis;
+      const analysis = mergeManualSubscriptions(data as SubscriptionAnalysis);
       saveSubscriptionAnalysis(analysis);
       setResults(analysis);
       setMerchantLabels({});
@@ -782,11 +981,120 @@ export default function SubscriptionSensePage() {
                   animate={{ opacity: 1 }}
                   transition={{ delay: 0.2 }}
                 >
-                  <h2 className="text-xl font-medium pb-3 border-b border-border mb-4 flex items-center gap-2">
-                    <RefreshCw size={18} />
-                    Detected Subscriptions
-                  </h2>
+                  <div className="flex flex-col gap-3 border-b border-border pb-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
+                    <h2 className="text-xl font-medium flex items-center gap-2">
+                      <RefreshCw size={18} />
+                      Detected Subscriptions
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={() => setShowManualSubscription((current) => !current)}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-secondary"
+                    >
+                      <Plus size={15} />
+                      Add manually
+                    </button>
+                  </div>
                 </motion.div>
+
+                {showManualSubscription && (
+                  <MotionCard hover={false} className="border-dashed">
+                    <form onSubmit={addManualSubscription} className="space-y-4">
+                      <div>
+                        <h3 className="text-base font-medium">Manual Subscription</h3>
+                        <p className="text-sm text-muted-foreground">
+                          Add a subscription from another bank or one that was not detected.
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <label className="text-sm font-medium">
+                          Name
+                          <input
+                            value={manualSubscription.merchant}
+                            onChange={(event) =>
+                              setManualSubscription((current) => ({
+                                ...current,
+                                merchant: event.target.value,
+                              }))
+                            }
+                            placeholder="Netflix"
+                            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                          />
+                        </label>
+                        <label className="text-sm font-medium">
+                          Bank or source
+                          <input
+                            value={manualSubscription.bank}
+                            onChange={(event) =>
+                              setManualSubscription((current) => ({
+                                ...current,
+                                bank: event.target.value,
+                              }))
+                            }
+                            placeholder="Other bank"
+                            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                          />
+                        </label>
+                        <label className="text-sm font-medium">
+                          Amount
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={manualSubscription.amount}
+                            onChange={(event) =>
+                              setManualSubscription((current) => ({
+                                ...current,
+                                amount: event.target.value,
+                              }))
+                            }
+                            placeholder="1200"
+                            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                          />
+                        </label>
+                        <label className="text-sm font-medium">
+                          Renewal day
+                          <input
+                            type="number"
+                            min="1"
+                            max="31"
+                            step="1"
+                            value={manualSubscription.renewalDay}
+                            onChange={(event) =>
+                              setManualSubscription((current) => ({
+                                ...current,
+                                renewalDay: event.target.value,
+                              }))
+                            }
+                            placeholder="15"
+                            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                          />
+                        </label>
+                      </div>
+                      {error && (
+                        <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-400">
+                          {error}
+                        </p>
+                      )}
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <button
+                          type="submit"
+                          className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                        >
+                          <Plus size={15} />
+                          Add Subscription
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowManualSubscription(false)}
+                          className="rounded-lg border border-border px-4 py-2 text-sm font-medium hover:bg-secondary"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  </MotionCard>
+                )}
 
                 {results.subscriptions.map((sub: SubscriptionResult, idx: number) => {
                   const labelKey = `${sub.merchant}-${sub.last_charge}-${idx}`;
@@ -824,13 +1132,21 @@ export default function SubscriptionSensePage() {
                             {sub.needs_review && (
                               <Badge variant="warn">REVIEW NAME</Badge>
                             )}
+                            {sub.source === "manual" && (
+                              <Badge variant="info">MANUAL</Badge>
+                            )}
                           </h3>
                           <p className="text-sm text-muted-foreground">
                             Billing: {sub.period} (~{sub.period_days} days) •
                             Day {sub.renewal_day}
                           </p>
+                          {sub.bank && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Source: {sub.bank}
+                            </p>
+                          )}
                         </div>
-                        <div className="text-right">
+                        <div className="text-right flex flex-col items-end gap-2">
                           <p className="text-xl font-medium text-yellow-600 dark:text-yellow-500">
                             $
                             {sub.amount.toLocaleString(undefined, {
@@ -840,6 +1156,16 @@ export default function SubscriptionSensePage() {
                           <p className="text-xs text-muted-foreground">
                             per {sub.period}
                           </p>
+                          {sub.source === "manual" && (
+                            <button
+                              type="button"
+                              onClick={() => removeManualSubscription(idx)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-red-500/25 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-500/10 dark:text-red-400"
+                            >
+                              <Trash2 size={13} />
+                              Remove
+                            </button>
+                          )}
                         </div>
                       </div>
 
