@@ -6,7 +6,6 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "preinstall": "npm install --package-lock-only --ignore-scripts"
     "lint": "eslint"
   },
   "dependencies": {
@@ -20,7 +19,6 @@
     "next": "16.2.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-
     "recharts": "^3.8.1",
     "shadcn": "^4.6.0",
     "tailwind-merge": "^3.5.0",
