@@ -321,21 +321,14 @@ const insightIcons: Record<string, React.ReactNode> = {
 
 // ─── PDF Generation ──────────────────────────────────────────────────────────
 
-async function generatePDF(
+aasync function generatePDF(
   analysis: SubscriptionAnalysis,
   insights: Insight[],
   isStudent: boolean,
   exchangeRate: number,
   localCurrency: string
 ) {
-  // Lazy-load jsPDF from CDN
-  const jsPDFModule = await import("jspdf" as string).catch(() => null);
-  if (!jsPDFModule) {
-    alert("PDF generation requires jsPDF. Run: npm install jspdf");
-    return;
-  }
-
-  const { jsPDF } = jsPDFModule;
+  const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pageW = 210;
   const margin = 18;
