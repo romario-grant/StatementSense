@@ -22,6 +22,7 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
   const [theme, setTheme] = useState<Theme>("dark");
   const [mounted, setMounted] = useState(false);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- Theme is loaded from localStorage after mount to keep SSR output stable. */
   useEffect(() => {
     const stored = localStorage.getItem("ss-theme") as Theme | null;
     if (stored === "light" || stored === "dark") {
@@ -29,6 +30,7 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
     }
     setMounted(true);
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (!mounted) return;
