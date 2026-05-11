@@ -15,14 +15,27 @@ class ScreentimeRequest(BaseModel):
     weekly_hours: List[float] # Length 4 array
     user_wage: float
     style_multiplier: float = 0.10
+    local_currency: str = "JMD"
+    exchange_rate: float | None = None
 
 class BatchScreentimeRequest(BaseModel):
     subscriptions: List[ScreentimeRequest]
     user_wage: float
     style_multiplier: float = 0.10
     is_student: bool = False
+    local_currency: str = "JMD"
+    exchange_rate: float | None = None
 
-def _run_analysis(app_name, cost, months_subscribed, weekly_hours, user_wage, style_multiplier):
+def _run_analysis(
+    app_name,
+    cost,
+    months_subscribed,
+    weekly_hours,
+    user_wage,
+    style_multiplier,
+    local_currency,
+    exchange_rate,
+):
     """Wrapper to call in thread pool."""
     return analyze_screentime(
         app_name=app_name,
@@ -30,7 +43,9 @@ def _run_analysis(app_name, cost, months_subscribed, weekly_hours, user_wage, st
         months_subscribed=months_subscribed,
         weekly_hours=weekly_hours,
         user_wage=user_wage,
-        style_multiplier=style_multiplier
+        style_multiplier=style_multiplier,
+        local_currency=local_currency,
+        exchange_rate=exchange_rate,
     )
 
 @router.post("/analyze")
@@ -53,7 +68,9 @@ async def analyze_app_usage(request: ScreentimeRequest):
                 request.months_subscribed,
                 request.weekly_hours,
                 request.user_wage,
-                request.style_multiplier
+                request.style_multiplier,
+                request.local_currency,
+                request.exchange_rate,
             )
         return result
     except Exception as e:
@@ -91,7 +108,9 @@ async def analyze_batch(request: BatchScreentimeRequest):
                 analyze_screentime_batch,
                 subs_list,
                 request.user_wage,
-                request.style_multiplier
+                request.style_multiplier,
+                request.local_currency,
+                request.exchange_rate,
             )
             
         if "error" in results:
@@ -118,7 +137,6 @@ async def analyze_batch(request: BatchScreentimeRequest):
     
     return {
         "results": results["results"],
-        "portfolio": results["portfolio"],
         "count": len(results["results"]),
         "exam_alert": exam_alert
     }

@@ -9,6 +9,24 @@ import json
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google import genai
+from Capstone.Capstone.currency_normaliser import get_rate_with_fallback
+
+
+def _convert_cost_to_local(amount, source_currency="USD", local_currency="JMD", exchange_rate=None):
+    source = (source_currency or local_currency or "JMD").upper()
+    target = (local_currency or "JMD").upper()
+    try:
+        value = float(amount or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if source == target:
+        return value
+    exchange_rate = float(exchange_rate or 0) or get_rate_with_fallback(None, {})
+    if source == "USD" and target == "JMD":
+        return value * exchange_rate
+    if source == "JMD" and target == "USD" and exchange_rate:
+        return value / exchange_rate
+    return value
 
 class GeminiClassifier:
     def __init__(self):
@@ -45,6 +63,7 @@ class GeminiClassifier:
             "has_free_tier": true,
             "is_shared_plan": false,
             "student_plan_price": 5.99,
+            "pricing_currency": "USD",
             "pricing_verified": true,
             "pricing_tiers": {
                 "monthly": 4.99,
@@ -62,6 +81,7 @@ class GeminiClassifier:
         - has_free_tier: true if a permanent free version exists
         - is_shared_plan: true if this specific price is a family/duo plan
         - student_plan_price: The monthly cost of a student plan based on your search. Return 0 if no student tier exists.
+        - pricing_currency: The currency used for student_plan_price and pricing_tiers, e.g. USD or JMD.
         - pricing_verified: true ONLY if you found the pricing from a reliable source via Google Search. false if you are guessing or unsure.
         - pricing_tiers: An object with the REAL prices from your search. Set ALL to 0 if pricing_verified is false.
             - monthly: The monthly subscription price
@@ -69,8 +89,9 @@ class GeminiClassifier:
             - lifetime: The one-time lifetime purchase price. 0 if no lifetime option exists.
         """
 
-    def analyze_app(self, app_name, cost):
-        prompt = f"App: {app_name}, Cost: {cost}"
+    def analyze_app(self, app_name, cost, local_currency="JMD", exchange_rate=None):
+        local_currency = (local_currency or "JMD").upper()
+        prompt = f"App: {app_name}, User cost: {local_currency} {cost}"
         
         max_retries = 4
         for attempt in range(max_retries):
@@ -99,6 +120,28 @@ class GeminiClassifier:
                 
                 pricing = result.get("pricing_tiers", {})
                 verified = result.get("pricing_verified", False)
+                pricing_currency = str(result.get("pricing_currency") or "USD").upper()
+                if verified:
+                    converted_pricing = {
+                        key: round(
+                            _convert_cost_to_local(value, pricing_currency, local_currency, exchange_rate),
+                            2,
+                        )
+                        for key, value in pricing.items()
+                    }
+                    result["pricing_tiers"] = converted_pricing
+                    result["student_plan_price"] = round(
+                        _convert_cost_to_local(
+                            result.get("student_plan_price", 0),
+                            pricing_currency,
+                            local_currency,
+                            exchange_rate,
+                        ),
+                        2,
+                    )
+                    result["pricing_currency_original"] = pricing_currency
+                    result["pricing_currency"] = (local_currency or "JMD").upper()
+                    pricing = converted_pricing
                 tier_values = [v for v in pricing.values() if v and v > 0]
                 
                 if verified and tier_values:
@@ -111,6 +154,7 @@ class GeminiClassifier:
                         result["pricing_verified"] = False
                 elif not verified:
                     result["pricing_tiers"] = {"monthly": 0, "yearly": 0, "lifetime": 0}
+                    result["pricing_currency"] = (local_currency or "JMD").upper()
                 
                 return result
                 
@@ -122,6 +166,7 @@ class GeminiClassifier:
                         "frequency": "monthly", "category": "entertainment", "value_mode": "time_based",
                         "engagement_type": "active", "is_multi_device": False, "has_free_tier": False, 
                         "is_shared_plan": False, "student_plan_price": 0,
+                        "pricing_currency": (local_currency or "JMD").upper(),
                         "pricing_verified": False,
                         "pricing_tiers": {"monthly": 0, "yearly": 0, "lifetime": 0}
                     }
@@ -458,14 +503,23 @@ class SubscriptionAnalyzer:
 
 import traceback
 
-def analyze_screentime(app_name: str, cost: float, months_subscribed: int, weekly_hours: list[float], user_wage: float, style_multiplier: float = 0.10):
+def analyze_screentime(
+    app_name: str,
+    cost: float,
+    months_subscribed: int,
+    weekly_hours: list[float],
+    user_wage: float,
+    style_multiplier: float = 0.10,
+    local_currency: str = "JMD",
+    exchange_rate: float | None = None,
+):
     """
     Main entry point for API:
     Analyzes single app screentime stats and returns the full risk/NPV report.
     """
     try:
         classifier = GeminiClassifier()
-        ai_data = classifier.analyze_app(app_name, cost)
+        ai_data = classifier.analyze_app(app_name, cost, local_currency, exchange_rate)
         
         analyzer = SubscriptionAnalyzer(hourly_wage=user_wage, style_multiplier=style_multiplier) 
         result = analyzer.evaluate(app_name, cost, weekly_hours, months_subscribed, ai_data)
@@ -480,7 +534,13 @@ def analyze_screentime(app_name: str, cost: float, months_subscribed: int, weekl
         return {"error": f"Internal Engine Error: {str(e)}"}
 
 
-def analyze_screentime_batch(subscriptions: list, user_wage: float, style_multiplier: float = 0.10):
+def analyze_screentime_batch(
+    subscriptions: list,
+    user_wage: float,
+    style_multiplier: float = 0.10,
+    local_currency: str = "JMD",
+    exchange_rate: float | None = None,
+):
     """
     Batch entry point for API:
     Analyzes MULTIPLE subscriptions in parallel — all Gemini classify calls
@@ -496,7 +556,7 @@ def analyze_screentime_batch(subscriptions: list, user_wage: float, style_multip
         def _classify_one(sub):
             app_name = sub["app_name"]
             cost = sub["cost"]
-            ai_data = classifier.analyze_app(app_name, cost)
+            ai_data = classifier.analyze_app(app_name, cost, local_currency, exchange_rate)
             return sub, ai_data
         
         classified = []
@@ -514,6 +574,7 @@ def analyze_screentime_batch(subscriptions: list, user_wage: float, style_multip
                         "engagement_type": "active", "is_multi_device": False, "has_free_tier": False,
                         "is_shared_plan": False, "student_plan_price": 0,
                         "pricing_verified": False,
+                        "pricing_currency": (local_currency or "JMD").upper(),
                         "pricing_tiers": {"monthly": 0, "yearly": 0, "lifetime": 0}
                     }))
         
@@ -529,10 +590,7 @@ def analyze_screentime_batch(subscriptions: list, user_wage: float, style_multip
             result["app_name"] = sub["app_name"]
             results.append(result)
         
-        # --- Phase 3: Portfolio Analysis (cross-subscription intelligence) ---
-        portfolio = analyze_portfolio(results)
-        
-        return {"results": results, "portfolio": portfolio}
+        return {"results": results}
     except Exception as e:
         print("[ScreentimeSense] CRITICAL ERROR IN ENGINE (Batch):")
         traceback.print_exc()

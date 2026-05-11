@@ -21,6 +21,7 @@ import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
 import {
   readSharedSubscriptions,
+  readSubscriptionAnalysis,
   sharedSubscriptionsSignature,
 } from "@/lib/subscriptionStore";
 import { clearPageSession, readPageSession, savePageSession } from "@/lib/pageSessionStore";
@@ -67,6 +68,13 @@ type ScreentimeSession = {
   batchResults: any;
   expandedResult: number | null;
   showAddSubscription: boolean;
+};
+
+type SavedSubscriptionAnalysis = {
+  currency_summary?: {
+    exchange_rate?: number;
+    original_currency?: string;
+  };
 };
 
 /* ─── Helpers ─── */
@@ -129,6 +137,13 @@ export default function ScreentimeSensePage() {
   const [showAddSubscription, setShowAddSubscription] = useState(false);
   const [sourceSignature, setSourceSignature] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const getSubscriptionCurrencyContext = () => {
+    const saved = readSubscriptionAnalysis<SavedSubscriptionAnalysis>();
+    return {
+      localCurrency: saved?.currency_summary?.original_currency || "JMD",
+      exchangeRate: saved?.currency_summary?.exchange_rate || null,
+    };
+  };
 
   useEffect(() => {
     const detected = readSharedSubscriptions();
@@ -267,7 +282,10 @@ export default function ScreentimeSensePage() {
     setExpandedResult(null);
 
     try {
+      const currencyContext = getSubscriptionCurrencyContext();
       const payload = {
+        local_currency: currencyContext.localCurrency,
+        exchange_rate: currencyContext.exchangeRate,
         subscriptions: subscriptions.map((s) => ({
           app_name: s.app_name,
           cost: s.cost,
@@ -656,156 +674,12 @@ export default function ScreentimeSensePage() {
                     </p>
                   </div>
                   <div className="flex gap-4 items-center">
-                    {batchResults.portfolio?.saturated_categories > 0 && (
-                      <div className="text-right pr-4 border-r border-border">
-                        <p className="text-xs text-muted-foreground mb-0.5">Portfolio Savings</p>
-                        <p className="font-medium text-green-600 dark:text-green-400 text-xl">
-                          ${batchResults.portfolio.total_potential_savings_annual.toFixed(2)}/yr
-                        </p>
-                      </div>
-                    )}
                     <button onClick={resetAll} className="text-foreground dark:text-foreground text-[0.85rem] font-medium bg-transparent border-none cursor-pointer hover:underline">
                       ← New Analysis
                     </button>
                   </div>
                 </div>
               </MotionCard>
-
-              {/* ── Portfolio Analysis (Category Saturation) ── */}
-              {batchResults.portfolio?.category_insights?.length > 0 && (
-                <MotionCard hover={false} delay={0.1} className="border-t-[3px] border-t-yellow-500">
-                  <div className="flex items-center gap-2 mb-4 pb-4 border-b border-border">
-                    <Layers size={20} className="text-yellow-600 dark:text-yellow-500" />
-                    <h3 className="font-medium m-0">Portfolio Analysis — Category Saturation</h3>
-                  </div>
-
-                  <div className="flex flex-col gap-6">
-                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    {batchResults.portfolio.category_insights.map((insight: any, idx: number) => (
-                      <motion.div
-                        key={idx}
-                        initial={{ opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, delay: 0.15 + idx * 0.1 }}
-                        className="p-5 rounded-2xl bg-secondary"
-                      >
-                        {/* Category Header */}
-                        <div className="flex justify-between items-center mb-3">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="warn" className="text-[0.7rem]">
-                              {insight.subscription_count} SUBSCRIPTIONS
-                            </Badge>
-                            <h4 className="font-medium m-0 capitalize text-lg">{insight.category_label}</h4>
-                          </div>
-                          <span className="text-[0.9rem] font-medium">
-                            ${insight.total_monthly_cost.toFixed(2)}/mo
-                          </span>
-                        </div>
-
-                        {/* Ranked Subscriptions Table */}
-                        <div className="rounded-xl overflow-hidden border border-border bg-background">
-                          {/* Table Header */}
-                          <div className="grid grid-cols-4 p-3 bg-secondary text-[0.7rem] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-                            <span>Rank</span>
-                            <span>Subscription</span>
-                            <span className="text-right">CPH</span>
-                            <span className="text-right">Cost</span>
-                          </div>
-
-                          {/* Table Rows — staggered entrance */}
-                          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                          {insight.ranked_subscriptions.map((sub: any, rowIdx: number) => (
-                            <motion.div
-                              key={sub.app_name}
-                              initial={{ opacity: 0, x: -8 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              transition={{ duration: 0.3, delay: 0.25 + idx * 0.1 + rowIdx * 0.08 }}
-                              className={`grid grid-cols-4 p-3 items-center border-t border-border ${
-                                sub.is_best_value
-                                  ? "bg-green-500/10"
-                                  : sub.is_worst_value
-                                  ? "bg-red-500/10"
-                                  : "bg-transparent"
-                              }`}
-                            >
-                              <span
-                                className={`text-[0.85rem] font-medium ${
-                                  sub.is_best_value
-                                    ? "text-green-600 dark:text-green-400"
-                                    : sub.is_worst_value
-                                    ? "text-red-600 dark:text-red-400"
-                                    : "text-inherit"
-                                }`}
-                              >
-                                #{sub.rank} {sub.is_best_value ? "👑" : sub.is_worst_value ? "⚠️" : ""}
-                              </span>
-                              <span className="text-[0.85rem] font-medium">{sub.app_name}</span>
-                              <span
-                                className={`text-[0.85rem] text-right font-medium ${
-                                  sub.is_best_value
-                                    ? "text-green-600 dark:text-green-400"
-                                    : sub.is_worst_value
-                                    ? "text-red-600 dark:text-red-400"
-                                    : "text-inherit"
-                                }`}
-                              >
-                                ${sub.cph.toFixed(2)}/hr
-                              </span>
-                              <span className="text-[0.85rem] text-right text-muted-foreground">
-                                ${sub.monthly_cost.toFixed(2)}/mo
-                              </span>
-                            </motion.div>
-                          ))}
-                        </div>
-
-                        {/* Savings Callout Cards */}
-                        <div className="flex flex-wrap gap-4 mt-3">
-                          <motion.div
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.35, delay: 0.4 + idx * 0.1 }}
-                            className="flex-1 min-w-[200px] py-3 px-4 rounded-xl bg-background border border-border"
-                          >
-                            <p className="text-xs text-muted-foreground mb-1">
-                              Drop {insight.worst_value.name}
-                            </p>
-                            <p className="font-medium text-green-600 dark:text-green-400">
-                              ${insight.savings_drop_worst.toFixed(2)}/mo{" "}
-                              <span className="text-xs font-medium text-muted-foreground">
-                                (${insight.savings_drop_worst_annual.toFixed(2)}/yr)
-                              </span>
-                            </p>
-                          </motion.div>
-
-                          {insight.subscription_count > 2 && (
-                            <motion.div
-                              initial={{ opacity: 0, y: 8 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              transition={{ duration: 0.35, delay: 0.5 + idx * 0.1 }}
-                              className="flex-1 min-w-[200px] py-3 px-4 rounded-xl bg-background border border-border"
-                            >
-                              <p className="text-xs text-muted-foreground mb-1">
-                                Keep only {insight.best_value.name}
-                              </p>
-                              <p className="font-medium text-green-600 dark:text-green-400">
-                                ${insight.savings_keep_best_only.toFixed(2)}/mo{" "}
-                                <span className="text-xs font-medium text-muted-foreground">
-                                  (${insight.savings_keep_best_only_annual.toFixed(2)}/yr)
-                                </span>
-                              </p>
-                            </motion.div>
-                          )}
-                        </div>
-
-                        {/* Recommendation */}
-                        <p className="text-[0.78rem] text-muted-foreground mt-3 italic">
-                          {insight.recommendation}
-                        </p>
-                      </motion.div>
-                    ))}
-                  </div>
-                </MotionCard>
-              )}
 
               {/* ── Exam Season Alert ── */}
               {batchResults.exam_alert && batchResults.exam_alert.exam_detected && (
@@ -901,7 +775,7 @@ export default function ScreentimeSensePage() {
                   Individual Analysis
                 </motion.h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex flex-col gap-4">
                   {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                   {batchResults.results.map((result: any, i: number) => {
                     const actionVariant = getActionColor(result.action);
