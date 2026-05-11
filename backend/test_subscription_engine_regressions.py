@@ -86,6 +86,72 @@ class SubscriptionEngineRegressionTests(unittest.TestCase):
         self.assertEqual(result["possible_subscriptions"][0]["merchant"], "Spotify")
         self.assertEqual(result["summary"]["total_possible_subscriptions"], 1)
 
+    def test_known_keyword_is_a_hint_not_subscription_category(self):
+        classified = _classify_transactions([
+            _tx("2026-01-08", "POS PURCHASE SPOTIFY AB STOCKHOLM SE", -559.85),
+        ])
+
+        self.assertEqual(classified[0]["category"], "merchant")
+        self.assertTrue(classified[0]["known_subscription_hint"])
+        self.assertEqual(classified[0]["vendor_name"], "Spotify")
+
+    def test_subscription_language_without_known_brand_can_confirm_with_cadence(self):
+        txns = _classify_transactions([
+            _tx("2026-01-24", "CLAUDE.AI SUBSCRIPTION, SAN FRANCISCO (20.00 USD)", -3234.36),
+            _tx("2026-02-24", "CLAUDE.AI SUBSCRIPTION, SAN FRANCISCO (20.00 USD)", -3212.61),
+        ])
+
+        subscriptions, _ = _run_subscription_detection(txns)
+
+        self.assertEqual(len(subscriptions), 1)
+        self.assertEqual(subscriptions[0]["merchant"], "Claude Ai Subscription")
+        self.assertEqual(subscriptions[0]["period"], "monthly")
+        self.assertFalse(subscriptions[0]["needs_review"])
+
+    def test_known_keyword_without_cadence_is_not_confirmed(self):
+        txns = _classify_transactions([
+            _tx("2026-01-08", "POS PURCHASE SPOTIFY AB STOCKHOLM SE", -559.85),
+            _tx("2026-01-11", "POS PURCHASE SPOTIFY AB STOCKHOLM SE", -559.85),
+            _tx("2026-01-29", "POS PURCHASE SPOTIFY AB STOCKHOLM SE", -559.85),
+        ])
+
+        subscriptions, renewals = _run_subscription_detection(txns)
+
+        self.assertEqual(subscriptions, [])
+        self.assertEqual(renewals, [])
+
+    def test_standing_order_recurring_payment_stays_possible_not_confirmed(self):
+        result = analyze_extracted_subscriptions([
+            {
+                "bank": "Scotiabank",
+                "date": "2026-01-28",
+                "description": "CARD CHARGE STANDING ORDER -****6700",
+                "amount": -24000.00,
+                "balance": None,
+                "currency": "JMD",
+            },
+            {
+                "bank": "Scotiabank",
+                "date": "2026-02-28",
+                "description": "CARD CHARGE STANDING ORDER -****6700",
+                "amount": -24000.00,
+                "balance": None,
+                "currency": "JMD",
+            },
+            {
+                "bank": "Scotiabank",
+                "date": "2026-03-28",
+                "description": "CARD CHARGE STANDING ORDER -****6700",
+                "amount": -24000.00,
+                "balance": None,
+                "currency": "JMD",
+            },
+        ])
+
+        self.assertEqual(result["subscriptions"], [])
+        self.assertEqual(result["possible_subscriptions"][0]["merchant"], "Card Charge Standing Order")
+        self.assertEqual(result["possible_subscriptions"][0]["period"], "monthly")
+
     def test_dedupes_overlapping_statement_rows(self):
         tx = {
             "bank": "Scotiabank",
