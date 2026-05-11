@@ -8,7 +8,6 @@ import {
   TrendingDown,
   TrendingUp,
   Minus,
-  DollarSign,
   Zap,
   Plus,
   Trash2,
@@ -46,6 +45,7 @@ interface SubscriptionEntry {
   app_name: string;
   cost: number;
   months_subscribed: number;
+  period?: string;
   weekly_hours: number[];
 }
 
@@ -96,6 +96,12 @@ const getVelocityIcon = (velocity: number) => {
   if (velocity > 1.05) return <TrendingUp className="text-green-600 dark:text-green-400" size={14} />;
   if (velocity < 0.95) return <TrendingDown className="text-red-600 dark:text-red-400" size={14} />;
   return <Minus className="text-muted-foreground" size={14} />;
+};
+
+const formatFrequency = (frequency: unknown): string => {
+  const value = String(frequency || "").trim().toLowerCase();
+  if (!value || value === "unknown" || value === "n/a") return "Monthly";
+  return value.charAt(0).toUpperCase() + value.slice(1);
 };
 
 const budgetingStyleFromMultiplier = (styleMultiplier: number): BudgetingStyle => {
@@ -177,6 +183,7 @@ export default function ScreentimeSensePage() {
             app_name: sub.name,
             cost: sub.cost,
             months_subscribed: 1,
+            period: sub.period || "monthly",
             weekly_hours: [0, 0, 0, 0],
           }))
         );
@@ -198,6 +205,7 @@ export default function ScreentimeSensePage() {
         app_name: sub.name,
         cost: sub.cost,
         months_subscribed: 1,
+        period: sub.period || "monthly",
         weekly_hours: [0, 0, 0, 0],
       }))
     );
@@ -238,6 +246,7 @@ export default function ScreentimeSensePage() {
       app_name: formData.app_name,
       cost: parseFloat(formData.cost),
       months_subscribed: parseInt(formData.months_subscribed, 10),
+      period: "monthly",
       weekly_hours: [
         parseFloat(formData.w1),
         parseFloat(formData.w2),
@@ -290,6 +299,7 @@ export default function ScreentimeSensePage() {
           app_name: s.app_name,
           cost: s.cost,
           months_subscribed: s.months_subscribed,
+          billing_period: s.period || "monthly",
           weekly_hours: s.weekly_hours,
           user_wage: parseFloat(globalSettings.user_wage),
           style_multiplier: globalSettings.style_multiplier,
@@ -799,7 +809,7 @@ export default function ScreentimeSensePage() {
                         className={`bg-card text-card-foreground border border-border border-l-[4px] ${borderColor} rounded-2xl p-5 shadow-sm cursor-pointer transition-transform hover:-translate-y-0.5 hover:shadow-md`}
                         onClick={() => setExpandedResult(isExpanded ? null : i)}
                       >
-                        {/* Card Header: Name + Action + VRS + CPH */}
+                        {/* Card Header: Name + Action + Value Risk Score + CPH */}
                         <div className="flex justify-between items-start">
                           <div>
                             <h4 className="font-medium mb-1">{result.app_name}</h4>
@@ -826,7 +836,7 @@ export default function ScreentimeSensePage() {
                                   {result.value_risk_score}
                                 </div>
                                 <p className="text-[0.55rem] text-muted-foreground mt-1 font-medium uppercase">
-                                  VRS
+                                  Value Risk Score
                                 </p>
                               </div>
                             )}
@@ -857,26 +867,12 @@ export default function ScreentimeSensePage() {
                         {!result.is_presence && (
                           <div className="flex items-center gap-4 text-[0.75rem] text-muted-foreground mt-3 pt-3 border-t border-border flex-wrap">
                             <span className="flex items-center gap-1">
-                              {getVelocityIcon(result.math.velocity)} {result.math.velocity.toFixed(2)}{" "}
+                              Usage: {getVelocityIcon(result.math.velocity)} {result.math.velocity.toFixed(2)}{" "}
                               {getVelocityLabel(result.math.velocity)}
                             </span>
                             <span>
-                              {result.math.raw_hours.toFixed(1)} hrs • {result.math.weight}x weight
+                              {result.math.raw_hours.toFixed(1)} hrs
                             </span>
-                            <span>Conf: {result.confidence_label}</span>
-                            {result.value_risk_label && (
-                              <span
-                                className={`font-medium ${
-                                  result.value_risk_score > 70
-                                    ? "text-green-600 dark:text-green-400"
-                                    : result.value_risk_score >= 40
-                                    ? "text-yellow-600 dark:text-yellow-500"
-                                    : "text-red-600 dark:text-red-400"
-                                }`}
-                              >
-                                • {result.value_risk_label}
-                              </span>
-                            )}
                           </div>
                         )}
 
@@ -900,6 +896,7 @@ export default function ScreentimeSensePage() {
                                     ["Normalized Cost", `$${result.math.normalized_cost.toFixed(2)}/mo`],
                                     ["Household Split", `÷ ${result.math.divisor}`],
                                     ["Personal Burden", `$${result.math.personal_burden.toFixed(2)}/mo`],
+                                    ["Usage Weight", `${result.math.weight}x`],
                                     ["Effective Hours", `${result.math.eff_hours.toFixed(1)} hrs`],
                                     ["CPH", `$${result.math.cph.toFixed(2)}/${result.is_presence ? "day" : "hr"}`],
                                   ].map(([label, val]) => (
@@ -920,9 +917,11 @@ export default function ScreentimeSensePage() {
                                   </h5>
                                   {[
                                     ["Category", result.ai_found_data?.category],
-                                    ["Frequency", result.ai_found_data?.frequency],
+                                    ["Frequency", formatFrequency(result.ai_found_data?.frequency)],
                                     ["Value Mode", result.ai_found_data?.value_mode?.replace("_", " ")],
                                     ["Free Tier", result.ai_found_data?.has_free_tier ? "Yes" : "No"],
+                                    ["Confidence", result.confidence_label],
+                                    ["Value Risk", result.value_risk_label],
                                     ["Pricing", result.ai_found_data?.pricing_verified ? "✓ Verified" : "⚠ Unverified"],
                                   ].map(([label, val]) => (
                                     <div
@@ -937,41 +936,6 @@ export default function ScreentimeSensePage() {
                                   ))}
                                 </div>
                               </div>
-
-                              {/* Best Plan Optimization */}
-                              {result.best_plan && result.ai_found_data?.pricing_verified && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: 6 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  transition={{ duration: 0.3, delay: 0.1 }}
-                                  className="mt-3 p-3 rounded-xl bg-secondary"
-                                >
-                                  <p className="text-[0.78rem] font-medium mb-1.5">
-                                    <DollarSign size={12} className="inline align-middle mr-1" />
-                                    Best Plan:{" "}
-                                    <span className="capitalize text-yellow-600 dark:text-yellow-500">
-                                      {result.best_plan}
-                                    </span>
-                                  </p>
-                                  <div className="flex gap-3 text-[0.75rem] flex-wrap">
-                                    {Object.entries(result.breakeven_info?.plan_costs_npv || {}).map(
-                                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                      ([plan, cost]: [string, any]) => (
-                                        <span
-                                          key={plan}
-                                          className={
-                                            plan === result.best_plan
-                                              ? "font-medium text-foreground"
-                                              : "font-normal text-muted-foreground"
-                                          }
-                                        >
-                                          {plan}: ${cost.toFixed(2)}
-                                        </span>
-                                      )
-                                    )}
-                                  </div>
-                                </motion.div>
-                              )}
                             </motion.div>
                           )}
                         </AnimatePresence>

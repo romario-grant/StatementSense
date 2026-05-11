@@ -12,6 +12,7 @@ class ScreentimeRequest(BaseModel):
     app_name: str
     cost: float
     months_subscribed: int
+    billing_period: str | None = "monthly"
     weekly_hours: List[float] # Length 4 array
     user_wage: float
     style_multiplier: float = 0.10
@@ -35,6 +36,7 @@ def _run_analysis(
     style_multiplier,
     local_currency,
     exchange_rate,
+    billing_period,
 ):
     """Wrapper to call in thread pool."""
     return analyze_screentime(
@@ -46,6 +48,7 @@ def _run_analysis(
         style_multiplier=style_multiplier,
         local_currency=local_currency,
         exchange_rate=exchange_rate,
+        billing_period=billing_period or "monthly",
     )
 
 @router.post("/analyze")
@@ -71,6 +74,7 @@ async def analyze_app_usage(request: ScreentimeRequest):
                 request.style_multiplier,
                 request.local_currency,
                 request.exchange_rate,
+                request.billing_period or "monthly",
             )
         return result
     except Exception as e:
@@ -96,6 +100,7 @@ async def analyze_batch(request: BatchScreentimeRequest):
                 "app_name": s.app_name,
                 "cost": s.cost,
                 "months_subscribed": s.months_subscribed,
+                "billing_period": s.billing_period or "monthly",
                 "weekly_hours": s.weekly_hours
             }
             for s in request.subscriptions

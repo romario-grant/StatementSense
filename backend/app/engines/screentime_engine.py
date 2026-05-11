@@ -185,7 +185,7 @@ class SubscriptionAnalyzer:
         self.gamma_map = {"utility": 0.05, "productivity": 0.10, "entertainment": 0.20, "gaming": 0.35}
         self.duration_map = {"weekly": 0.23, "monthly": 1.0, "quarterly": 3.0, "biannual": 6.0, "yearly": 12.0}
         self.engagement_weights = {"passive": 0.33, "active": 1.0, "generative": 1.5}
-        self.priority_weights = {"productivity": 1.2, "utility": 1.1, "entertainment": 0.8, "gaming": 0.7}
+        self.priority_weights = {"productivity": 1.2, "utility": 1.1, "entertainment": 1.0, "gaming": 0.95}
         self.ema_alpha = 0.3
 
     def compute_value_risk_score(self, velocity, cph_value, cancel_threshold, months_subscribed, category):
@@ -348,13 +348,19 @@ class SubscriptionAnalyzer:
         elif "family" in name_lower or "party" in name_lower or "group" in name_lower: return 4
         return 3 if ai_shared_flag else 1
 
-    def evaluate(self, name, raw_cost, weekly_hours, months_subscribed, ai_data):
+    def evaluate(self, name, raw_cost, weekly_hours, months_subscribed, ai_data, billing_period="monthly"):
         total_raw_hours = sum(weekly_hours)
         is_presence_based = (ai_data.get("value_mode") == "presence_based")
         is_outcome_based = (ai_data.get("value_mode") == "outcome_based")
         category = ai_data.get("category", "entertainment")
 
-        freq = ai_data.get("frequency", "monthly").lower()
+        valid_periods = set(self.duration_map.keys()) | {"lifetime"}
+        detected_freq = str(ai_data.get("frequency") or "").lower()
+        fallback_period = str(billing_period or "monthly").lower()
+        freq = detected_freq if detected_freq in valid_periods else fallback_period
+        if freq not in valid_periods:
+            freq = "monthly"
+        ai_data["frequency"] = freq
         time_multiplier = self.duration_map.get(freq, 1.0)
         normalized_monthly_cost = float(raw_cost) / time_multiplier
         
@@ -512,6 +518,7 @@ def analyze_screentime(
     style_multiplier: float = 0.10,
     local_currency: str = "JMD",
     exchange_rate: float | None = None,
+    billing_period: str = "monthly",
 ):
     """
     Main entry point for API:
@@ -522,7 +529,7 @@ def analyze_screentime(
         ai_data = classifier.analyze_app(app_name, cost, local_currency, exchange_rate)
         
         analyzer = SubscriptionAnalyzer(hourly_wage=user_wage, style_multiplier=style_multiplier) 
-        result = analyzer.evaluate(app_name, cost, weekly_hours, months_subscribed, ai_data)
+        result = analyzer.evaluate(app_name, cost, weekly_hours, months_subscribed, ai_data, billing_period)
         
         # Bundle the ai_data into the result so frontend can display what was found
         result["ai_found_data"] = ai_data
@@ -584,7 +591,8 @@ def analyze_screentime_batch(
             result = analyzer.evaluate(
                 sub["app_name"], sub["cost"],
                 sub["weekly_hours"], sub["months_subscribed"],
-                ai_data
+                ai_data,
+                sub.get("billing_period", "monthly"),
             )
             result["ai_found_data"] = ai_data
             result["app_name"] = sub["app_name"]
