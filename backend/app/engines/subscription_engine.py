@@ -184,10 +184,6 @@ _SUBSCRIPTION_LANGUAGE_KEYWORDS = {
     "subscription", "subscr", "membership", "recurring",
 }
 
-_REVIEW_ONLY_RECURRING_KEYWORDS = {
-    "standing order",
-}
-
 _VARIABLE_SPEND_KEYWORDS = {
     "uber", "trip", "taxi", "ride", "rideshare", "knutsford", "airbnb",
     "hotel", "restaurant", "grocery", "supermarket", "minimart",
@@ -242,11 +238,6 @@ def _known_subscription_name(description: str) -> str | None:
 def _has_subscription_language(description: str) -> bool:
     desc_lower = description.lower()
     return any(keyword in desc_lower for keyword in _SUBSCRIPTION_LANGUAGE_KEYWORDS)
-
-
-def _is_review_only_recurring(description: str) -> bool:
-    desc_lower = description.lower()
-    return any(keyword in desc_lower for keyword in _REVIEW_ONLY_RECURRING_KEYWORDS)
 
 
 def _clean_merchant_name(description: str) -> str:
@@ -315,14 +306,12 @@ def _classify_transactions(transactions: list[dict]) -> list[dict]:
         category = "other"
         known_subscription_hint = False
         subscription_language_hint = False
-        review_only_recurring = False
 
         excluded = _is_excluded_transaction(tx)
 
         if not excluded and tx.get("debit", 0) > 0 and not _is_variable_spend(tx):
             known_name = _known_subscription_name(desc_lower)
             subscription_language_hint = _has_subscription_language(desc_lower)
-            review_only_recurring = _is_review_only_recurring(desc_lower)
             category = "merchant"
             if known_name:
                 category = "merchant"
@@ -335,7 +324,6 @@ def _classify_transactions(transactions: list[dict]) -> list[dict]:
         tx["vendor_name"] = vendor_name
         tx["known_subscription_hint"] = known_subscription_hint
         tx["subscription_language_hint"] = subscription_language_hint
-        tx["review_only_recurring"] = review_only_recurring
         tx["excluded_from_subscription_analysis"] = excluded
 
     return transactions
@@ -358,12 +346,11 @@ def _find_possible_subscriptions(
         if vendor.lower() in confirmed_merchants:
             continue
         sorted_charges = sorted(charges, key=lambda t: t["date"])
-        is_review_only = any(charge.get("review_only_recurring", False) for charge in sorted_charges)
         period_info = _classify_recurring_period(sorted_charges) if len(sorted_charges) >= 2 else None
         comparison_amounts = _comparison_amounts(sorted_charges)
         stable_amount_profile = _has_stable_amount_profile(comparison_amounts, threshold=0.90)
 
-        if period_info and (is_review_only or stable_amount_profile):
+        if period_info and stable_amount_profile:
             last_charge = sorted_charges[-1]["date"]
             avg_amount = median([charge["debit"] for charge in sorted_charges])
             possible.append({
@@ -652,8 +639,10 @@ def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict],
             continue
 
         sorted_charges = sorted(charges, key=lambda t: t["date"])
-        is_review_only = any(charge.get("review_only_recurring", False) for charge in sorted_charges)
-        if is_review_only:
+        has_known_subscription_hint = any(
+            charge.get("known_subscription_hint", False) for charge in sorted_charges
+        )
+        if not has_known_subscription_hint:
             continue
         has_subscription_language = any(
             charge.get("subscription_language_hint", False) for charge in sorted_charges
@@ -934,7 +923,6 @@ def _build_subscription_analysis(raw_transactions: list[dict], dedupe: bool = Fa
             "vendor_name": tx.get("vendor_name", ""),
             "known_subscription_hint": tx.get("known_subscription_hint", False),
             "subscription_language_hint": tx.get("subscription_language_hint", False),
-            "review_only_recurring": tx.get("review_only_recurring", False),
         })
 
     return {

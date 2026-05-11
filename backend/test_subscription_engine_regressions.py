@@ -93,18 +93,30 @@ class SubscriptionEngineRegressionTests(unittest.TestCase):
         self.assertTrue(classified[0]["known_subscription_hint"])
         self.assertEqual(classified[0]["vendor_name"], "Spotify")
 
-    def test_subscription_language_without_known_brand_can_confirm_with_cadence(self):
-        txns = _classify_transactions([
-            _tx("2026-01-24", "CLAUDE.AI SUBSCRIPTION, SAN FRANCISCO (20.00 USD)", -3234.36),
-            _tx("2026-02-24", "CLAUDE.AI SUBSCRIPTION, SAN FRANCISCO (20.00 USD)", -3212.61),
+    def test_subscription_language_without_known_brand_stays_possible(self):
+        result = analyze_extracted_subscriptions([
+            {
+                "bank": "Scotiabank",
+                "date": "2026-01-24",
+                "description": "CLAUDE.AI SUBSCRIPTION, SAN FRANCISCO (20.00 USD)",
+                "amount": -3234.36,
+                "balance": None,
+                "currency": "JMD",
+            },
+            {
+                "bank": "Scotiabank",
+                "date": "2026-02-24",
+                "description": "CLAUDE.AI SUBSCRIPTION, SAN FRANCISCO (20.00 USD)",
+                "amount": -3212.61,
+                "balance": None,
+                "currency": "JMD",
+            },
         ])
 
-        subscriptions, _ = _run_subscription_detection(txns)
-
-        self.assertEqual(len(subscriptions), 1)
-        self.assertEqual(subscriptions[0]["merchant"], "Claude Ai Subscription")
-        self.assertEqual(subscriptions[0]["period"], "monthly")
-        self.assertFalse(subscriptions[0]["needs_review"])
+        self.assertEqual(result["subscriptions"], [])
+        self.assertEqual(len(result["possible_subscriptions"]), 1)
+        self.assertEqual(result["possible_subscriptions"][0]["merchant"], "Claude Ai Subscription")
+        self.assertEqual(result["possible_subscriptions"][0]["period"], "monthly")
 
     def test_known_keyword_without_cadence_is_not_confirmed(self):
         txns = _classify_transactions([
