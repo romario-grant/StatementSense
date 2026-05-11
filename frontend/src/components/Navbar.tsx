@@ -16,6 +16,10 @@ const navLinks = [
   { path: "/report", label: "Report" },
 ];
 
+function getAccountErrorMessage(error: unknown) {
+  return error instanceof Error && error.message ? error.message : "Failed to delete account.";
+}
+
 export default function Navbar() {
   const pathname = usePathname();
   const [hovered, setHovered] = useState<string | null>(null);
@@ -29,9 +33,11 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // Close mobile menu on route change
+  /* eslint-disable react-hooks/set-state-in-effect -- Route changes should dismiss the mobile drawer immediately. */
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Prevent body scroll when mobile menu is open
   useEffect(() => {
@@ -157,8 +163,8 @@ export default function Navbar() {
               if (window.confirm("Are you sure you want to delete your account? This action cannot be undone.")) {
                 try {
                   await deleteAccount();
-                } catch (err: any) {
-                  alert(err.message || "Failed to delete account.");
+                } catch (err: unknown) {
+                  alert(getAccountErrorMessage(err));
                 }
               }
             }}
@@ -319,8 +325,8 @@ export default function Navbar() {
                       try {
                         setMobileOpen(false);
                         await deleteAccount();
-                      } catch (err: any) {
-                        alert(err.message || "Failed to delete account.");
+                      } catch (err: unknown) {
+                        alert(getAccountErrorMessage(err));
                       }
                     }
                   }}

@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FileText,
   Download,
   TrendingUp,
-  TrendingDown,
   AlertTriangle,
   CheckCircle,
   Info,
@@ -29,7 +28,7 @@ import {
 } from "@/lib/subscriptionStore";
 import { readPageSession } from "@/lib/pageSessionStore";
 import { readUserPreferences } from "@/lib/userPreferenceStore";
-trigger rebuild
+
 // ─── Types (mirrors existing codebase shapes) ────────────────────────────────
 
 type SubscriptionResult = {
@@ -581,11 +580,11 @@ export default function ReportPage() {
   const [isStudent, setIsStudent] = useState(false);
   const [exchangeRate, setExchangeRate] = useState(157);
   const [localCurrency, setLocalCurrency] = useState("JMD");
-  const [insights, setInsights] = useState<Insight[]>([]);
   const [generating, setGenerating] = useState(false);
   const [activeFilter, setActiveFilter] = useState<string>("all");
   const pdfStarted = useRef(false);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- LocalStorage-backed report data is hydrated after mount to avoid SSR mismatches. */
   useEffect(() => {
     const savedAnalysis = readSubscriptionAnalysis<SubscriptionAnalysis>();
     if (savedAnalysis) {
@@ -613,11 +612,12 @@ export default function ReportPage() {
       setIsStudent(prefs.isStudent);
     }
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
-  useEffect(() => {
-    const derived = deriveInsights(analysis, renewalSubs, calendarRecs, isStudent, exchangeRate);
-    setInsights(derived);
-  }, [analysis, renewalSubs, calendarRecs, isStudent, exchangeRate]);
+  const insights = useMemo(
+    () => deriveInsights(analysis, renewalSubs, calendarRecs, isStudent, exchangeRate),
+    [analysis, renewalSubs, calendarRecs, isStudent, exchangeRate]
+  );
 
   const handleDownload = async () => {
     if (!analysis || pdfStarted.current) return;
