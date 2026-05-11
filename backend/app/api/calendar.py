@@ -121,6 +121,8 @@ async def classify_subscriptions(request: ClassifyRequest):
 class SavingsRequest(BaseModel):
     away_periods: list
     processed_subscriptions: list
+    local_currency: str | None = "JMD"
+    exchange_rate: float | None = None
 
 @router.post("/savings")
 async def get_savings(request: SavingsRequest):
@@ -130,7 +132,10 @@ async def get_savings(request: SavingsRequest):
         with concurrent.futures.ThreadPoolExecutor() as pool:
             result = await loop.run_in_executor(
                 pool, compute_savings,
-                request.away_periods, request.processed_subscriptions
+                request.away_periods,
+                request.processed_subscriptions,
+                request.local_currency or "JMD",
+                request.exchange_rate,
             )
         if "error" in result:
             raise HTTPException(status_code=500, detail=result["error"])

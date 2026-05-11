@@ -11,11 +11,26 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google import genai
+from Capstone.Capstone.currency_normaliser import get_rate_with_fallback
 # NOTE: Google Calendar OAuth imports (google_auth_oauthlib, googleapiclient)
 # are loaded lazily inside CalendarReader._authenticate() to prevent
 # the container from crashing on startup when credentials are missing.
 
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
+
+
+def _convert_cost_to_local(amount: float, source_currency: str, local_currency: str, exchange_rate: float) -> float:
+    """Convert USD/JMD estimates into the subscription statement currency."""
+    source = (source_currency or local_currency or "JMD").upper()
+    target = (local_currency or "JMD").upper()
+    if source == target:
+        return float(amount)
+    if source == "USD" and target == "JMD":
+        return float(amount) * float(exchange_rate)
+    if source == "JMD" and target == "USD" and exchange_rate:
+        return float(amount) / float(exchange_rate)
+    return float(amount)
+
 
 class CalendarReader:
     def __init__(self, access_token: str | None = None):
@@ -328,7 +343,15 @@ Return JSON only:
             print(f"Gemini Error (places query): {e}")
             return None
 
-    def estimate_alternative_cost(self, sub_name, monthly_cost, destination, places_result):
+    def estimate_alternative_cost(
+        self,
+        sub_name,
+        monthly_cost,
+        destination,
+        places_result,
+        local_currency="JMD",
+        exchange_rate=None,
+    ):
         options = places_result.get("options", []) if isinstance(places_result, dict) else []
         place_names = [
             {
@@ -338,40 +361,62 @@ Return JSON only:
             }
             for option in options[:5]
         ]
+        local_currency = (local_currency or "JMD").upper()
         prompt = f"""Estimate the likely cheapest practical alternative cost for a traveler.
 
 Original subscription: "{sub_name}"
-Original monthly cost: ${float(monthly_cost):.2f}
+Original monthly cost: {local_currency} {float(monthly_cost):.2f}
 Destination: {destination}
 Places found:
 {json.dumps(place_names, indent=2)}
 
-Use Google Search when useful to estimate current drop-in/day-pass/short-term pricing for these places or similar services in the destination. If exact pricing is unavailable, return a conservative estimate and mark confidence as low or medium.
+Use Google Search when useful to estimate current drop-in/day-pass/short-term pricing for these places or similar services in the destination. If exact pricing is unavailable, return a conservative estimate and mark confidence as low or medium. Return the alternative's real pricing currency separately, then also compare after converting it to {local_currency}.
 
 Return JSON only:
 {{
     "cheapest_option_name": "name of likely cheapest option or 'Unknown'",
     "estimated_cost": "$20 day pass",
+    "estimated_currency": "USD",
     "estimated_trip_cost": 80.0,
     "estimated_monthly_equivalent": 120.0,
-    "comparison_to_subscription": -40.0,
     "confidence": "low",
     "explanation": "One short user-facing sentence"
 }}
 
-comparison_to_subscription = estimated_monthly_equivalent - original monthly cost.
-Negative means the alternative is cheaper than the user's current subscription. Positive means it is more expensive.
+estimated_trip_cost and estimated_monthly_equivalent must be in estimated_currency. Do not calculate comparison_to_subscription yourself.
 """
         try:
             result = self._call_gemini(prompt, use_search=True)
             if not isinstance(result, dict):
                 return None
+            estimated_currency = str(result.get("estimated_currency") or "").upper().strip() or local_currency
+            estimated_trip_cost = float(result.get("estimated_trip_cost") or 0)
+            estimated_monthly_equivalent = float(result.get("estimated_monthly_equivalent") or 0)
+            exchange_rate = float(exchange_rate or 0) or get_rate_with_fallback(
+                datetime.now().strftime("%Y-%m-%d"),
+                {},
+            )
+            trip_cost_local = _convert_cost_to_local(
+                estimated_trip_cost,
+                estimated_currency,
+                local_currency,
+                exchange_rate,
+            )
+            monthly_equivalent_local = _convert_cost_to_local(
+                estimated_monthly_equivalent,
+                estimated_currency,
+                local_currency,
+                exchange_rate,
+            )
             return {
                 "cheapest_option_name": str(result.get("cheapest_option_name", "Unknown")),
                 "estimated_cost": str(result.get("estimated_cost", "Unknown")),
-                "estimated_trip_cost": float(result.get("estimated_trip_cost") or 0),
-                "estimated_monthly_equivalent": float(result.get("estimated_monthly_equivalent") or 0),
-                "comparison_to_subscription": float(result.get("comparison_to_subscription") or 0),
+                "estimated_currency": estimated_currency,
+                "local_currency": local_currency,
+                "exchange_rate": round(exchange_rate, 2),
+                "estimated_trip_cost": round(trip_cost_local, 2),
+                "estimated_monthly_equivalent": round(monthly_equivalent_local, 2),
+                "comparison_to_subscription": round(monthly_equivalent_local - float(monthly_cost), 2),
                 "confidence": str(result.get("confidence", "low")),
                 "explanation": str(result.get("explanation", "")).strip(),
             }
@@ -885,12 +930,21 @@ def classify_and_detect(events: list, home_location: str, subscriptions_list: li
         return {"error": str(e)}
 
 
-def compute_savings(away_periods: list, processed_subscriptions: list):
+def compute_savings(
+    away_periods: list,
+    processed_subscriptions: list,
+    local_currency: str = "JMD",
+    exchange_rate: float | None = None,
+):
     """
     Phase 3: Calculate savings + search destination alternatives via Places API.
     Only called when local subs AND away periods exist.
     """
     from .places_service import PlacesService
+
+    local_currency = (local_currency or "JMD").upper()
+    if not exchange_rate:
+        exchange_rate = get_rate_with_fallback(datetime.now().strftime("%Y-%m-%d"), {})
 
     local_subs = [s for s in processed_subscriptions if s.get("is_local")]
 
@@ -948,6 +1002,8 @@ def compute_savings(away_periods: list, processed_subscriptions: list):
                         rec.get("monthly_cost", 0),
                         dest,
                         alternatives,
+                        local_currency,
+                        exchange_rate,
                     )
                     if cost_estimate:
                         alternatives["cost_comparison"] = cost_estimate

@@ -9,6 +9,7 @@ import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
 import {
   readSharedSubscriptions,
+  readSubscriptionAnalysis,
   sharedSubscriptionsSignature,
 } from "@/lib/subscriptionStore";
 import { readPageSession, savePageSession } from "@/lib/pageSessionStore";
@@ -17,6 +18,13 @@ import { readPageSession, savePageSession } from "@/lib/pageSessionStore";
 const PlacesMap = dynamic(() => import("./PlacesMap"), { ssr: false });
 
 interface SubInput { id: number; name: string; cost: string; renewalDay: string; }
+
+type SavedSubscriptionAnalysis = {
+  currency_summary?: {
+    exchange_rate?: number;
+    original_currency?: string;
+  };
+};
 
 type CalendarSession = {
   sourceSignature?: string;
@@ -80,6 +88,13 @@ export default function CalendarSensePage() {
   const phase3Fired = useRef(false);
   const [sourceSignature, setSourceSignature] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const getSubscriptionCurrencyContext = () => {
+    const saved = readSubscriptionAnalysis<SavedSubscriptionAnalysis>();
+    return {
+      localCurrency: saved?.currency_summary?.original_currency || "JMD",
+      exchangeRate: saved?.currency_summary?.exchange_rate || null,
+    };
+  };
 
   useEffect(() => {
     const detected = readSharedSubscriptions();
@@ -210,12 +225,15 @@ export default function CalendarSensePage() {
       phase3Fired.current = true;
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setSavingsLoading(true);
+      const currencyContext = getSubscriptionCurrencyContext();
       fetch("/api/calendar/savings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           away_periods: classifyResult.away_periods,
           processed_subscriptions: classifyResult.processed_subscriptions,
+          local_currency: currencyContext.localCurrency,
+          exchange_rate: currencyContext.exchangeRate,
         }),
       })
         .then(async (res) => {
