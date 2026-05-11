@@ -1636,12 +1636,14 @@ export default function SubscriptionSensePage() {
                       className="text-muted-foreground mx-auto mb-4"
                     />
                     <h3 className="text-base font-medium mb-1.5">
-                      No Subscriptions Detected
+                      {(results.possible_subscriptions || []).length > 0
+                        ? "Review Possible Subscriptions"
+                        : "No Subscriptions Detected"}
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      We couldn&apos;t identify any recurring subscription
-                      payments. Try uploading a statement with more months of
-                      data.
+                      {(results.possible_subscriptions || []).length > 0
+                        ? "We found recurring payments that need your confirmation before they count as subscriptions."
+                        : "We couldn't identify any recurring subscription payments. Try uploading a statement with more months of data."}
                     </p>
                   </MotionCard>
                 )}
