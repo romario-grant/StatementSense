@@ -73,7 +73,7 @@ class GeminiClassifier:
         for attempt in range(max_retries):
             try:
                 response = self.client.models.generate_content(
-                    model="gemini-3.1-pro-preview",
+                    model="gemini-2.5-flash",
                     config={
                         "tools": [{"google_search": {}}],
                         "system_instruction": self.system_rules,
@@ -718,4 +718,3 @@ def analyze_portfolio(results):
         "total_potential_savings_annual": round(total_potential_savings * 12, 2),
         "category_insights": portfolio_insights
     }
-

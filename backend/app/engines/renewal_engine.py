@@ -1218,7 +1218,7 @@ Rules:
 """
     client = genai.Client(api_key=api_key)
     last_error = ""
-    models = ("gemini-3.1-pro-preview", "gemini-2.5-flash")
+    models = ("gemini-2.5-flash",)
 
     for model in models:
         for attempt in range(2):

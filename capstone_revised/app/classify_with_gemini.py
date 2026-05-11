@@ -126,7 +126,7 @@ def classify_with_gemini_api(blobs: Dict[str, str]) -> Dict[str, Any]:
     
     logger.info(f"Initializing Vertex AI with project: {project_id}, location: {location}")
     vertexai.init(project=project_id, location=location)
-    model_name = "gemini-2.5-pro"
+    model_name = "gemini-2.5-flash"
     model = GenerativeModel(model_name)
     logger.info(f"Using model: {model_name}")
     prompt = create_extraction_prompt(blobs)
