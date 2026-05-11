@@ -6,6 +6,7 @@ Stripped of CLI code, ready for API integration.
 import os
 import math
 import json
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google import genai
 
@@ -18,6 +19,8 @@ class GeminiClassifier:
             project_root = os.environ.get("STATEMENTSENSE_ROOT", "")
             if project_root:
                 load_dotenv(os.path.join(project_root, ".env"))
+            else:
+                load_dotenv(Path(__file__).resolve().parents[3] / ".env")
             api_key = os.getenv("GEMINI_API_KEY")
         
         if not api_key:

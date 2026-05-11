@@ -287,7 +287,13 @@ export default function ScreentimeSensePage() {
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const raw = await res.text();
+      let data: { detail?: string; error?: string; [key: string]: unknown } = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        throw new Error(raw || `Screentime analysis failed with status ${res.status}.`);
+      }
       if (!res.ok) throw new Error(data.detail || "Batch analysis failed");
       setBatchResults(data);
     } catch (err) {
