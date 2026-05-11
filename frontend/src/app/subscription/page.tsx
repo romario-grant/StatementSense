@@ -8,9 +8,11 @@ import {
   TrendingUp,
   TrendingDown,
   Calendar,
+  Check,
   RefreshCw,
   Plus,
   Trash2,
+  X,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
@@ -113,6 +115,13 @@ type SubscriptionAnalysis = {
   price_changes?: PriceChange[];
 };
 
+type PossibleSubscriptionDraft = {
+  merchant: string;
+  amount: string;
+  renewalDay: string;
+  period: string;
+};
+
 export default function SubscriptionSensePage() {
   const [file, setFile] = useState<File | null>(null);
   const [files, setFiles] = useState<File[]>([]);
@@ -120,6 +129,9 @@ export default function SubscriptionSensePage() {
   const [results, setResults] = useState<SubscriptionAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [merchantLabels, setMerchantLabels] = useState<Record<string, string>>({});
+  const [possibleSubscriptionEdits, setPossibleSubscriptionEdits] = useState<
+    Record<string, PossibleSubscriptionDraft>
+  >({});
   const [showManualSubscription, setShowManualSubscription] = useState(false);
   const [manualSubscription, setManualSubscription] = useState({
     merchant: "",
@@ -149,6 +161,15 @@ export default function SubscriptionSensePage() {
     const next = new Date(today.getFullYear(), today.getMonth(), Math.min(renewalDay, 28));
     if (next < today) next.setMonth(next.getMonth() + 1);
     return next.toISOString().slice(0, 10);
+  };
+
+  const periodDaysForPeriod = (period: string) => {
+    const normalized = period.toLowerCase();
+    if (normalized === "weekly") return 7;
+    if (normalized === "biweekly") return 14;
+    if (normalized === "quarterly") return 90;
+    if (normalized === "yearly") return 365;
+    return 30;
   };
 
   const mergeManualSubscriptions = (analysis: SubscriptionAnalysis): SubscriptionAnalysis => {
@@ -363,6 +384,149 @@ export default function SubscriptionSensePage() {
           : current.currency_summary,
       };
     });
+  };
+
+  const possibleSubscriptionKey = (sub: SubscriptionResult, index: number) =>
+    `${sub.merchant}-${sub.last_charge}-${index}`;
+
+  const getPossibleSubscriptionDraft = (
+    sub: SubscriptionResult,
+    index: number
+  ): PossibleSubscriptionDraft => {
+    const key = possibleSubscriptionKey(sub, index);
+    const fallbackRenewalDay =
+      sub.renewal_day ||
+      (sub.last_charge ? Math.min(Math.max(new Date(sub.last_charge).getDate(), 1), 31) : 1);
+
+    return (
+      possibleSubscriptionEdits[key] || {
+        merchant: sub.merchant,
+        amount: String(sub.amount),
+        renewalDay: String(fallbackRenewalDay || 1),
+        period: sub.period && sub.period !== "unknown" ? sub.period : "monthly",
+      }
+    );
+  };
+
+  const updatePossibleSubscriptionDraft = (
+    sub: SubscriptionResult,
+    index: number,
+    updates: Partial<PossibleSubscriptionDraft>
+  ) => {
+    const key = possibleSubscriptionKey(sub, index);
+    setPossibleSubscriptionEdits((current) => ({
+      ...current,
+      [key]: {
+        ...getPossibleSubscriptionDraft(sub, index),
+        ...updates,
+      },
+    }));
+  };
+
+  const dismissPossibleSubscription = (index: number) => {
+    setResults((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        possible_subscriptions: (current.possible_subscriptions || []).filter(
+          (_, itemIndex) => itemIndex !== index
+        ),
+        summary: {
+          ...current.summary,
+          total_possible_subscriptions: Math.max(
+            (current.summary.total_possible_subscriptions || 0) - 1,
+            0
+          ),
+        },
+      };
+    });
+  };
+
+  const confirmPossibleSubscription = (sub: SubscriptionResult, index: number) => {
+    const draft = getPossibleSubscriptionDraft(sub, index);
+    const merchant = draft.merchant.trim();
+    const amount = Number(draft.amount);
+    const renewalDay = Number(draft.renewalDay);
+
+    if (
+      !merchant ||
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      !Number.isFinite(renewalDay) ||
+      renewalDay < 1 ||
+      renewalDay > 31
+    ) {
+      setError("Add a name, amount, and renewal day before confirming.");
+      return;
+    }
+
+    const safeRenewalDay = Math.min(Math.max(Math.round(renewalDay), 1), 31);
+    const period = draft.period || "monthly";
+    const periodDays = periodDaysForPeriod(period);
+    const nextChargeDate = nextChargeDateForDay(safeRenewalDay);
+    const confirmed: SubscriptionResult = {
+      ...sub,
+      merchant,
+      amount: Number(amount.toFixed(2)),
+      period,
+      period_days: sub.period_days || periodDays,
+      confidence: Math.max(sub.confidence || 0.6, 0.8),
+      confidence_label: "manual",
+      renewal_day: safeRenewalDay,
+      last_charge: sub.last_charge || nextChargeDate,
+      reason: "Confirmed from possible subscriptions by the user.",
+      needs_review: false,
+      source: "manual",
+    };
+
+    setResults((current) => {
+      if (!current) return current;
+      const baseLocalSpend =
+        current.currency_summary?.subscription_spend_local ?? current.summary.total_sub_cost;
+      const nextLocalSpend = Number((baseLocalSpend + confirmed.amount).toFixed(2));
+
+      return {
+        ...current,
+        subscriptions: [...current.subscriptions, confirmed],
+        possible_subscriptions: (current.possible_subscriptions || []).filter(
+          (_, itemIndex) => itemIndex !== index
+        ),
+        renewal_predictions: [
+          ...(current.renewal_predictions || []),
+          {
+            subscription: merchant,
+            next_charge_date: nextChargeDate,
+            days_until_charge: Math.max(
+              0,
+              Math.ceil((new Date(nextChargeDate).getTime() - new Date().getTime()) / 86_400_000)
+            ),
+            period,
+            period_days: periodDays,
+            confidence_label: "medium",
+            data_points: confirmed.charge_count || 1,
+          },
+        ],
+        summary: {
+          ...current.summary,
+          total_subscriptions: current.summary.total_subscriptions + 1,
+          total_possible_subscriptions: Math.max(
+            (current.summary.total_possible_subscriptions || 0) - 1,
+            0
+          ),
+          total_sub_cost: Number((current.summary.total_sub_cost + confirmed.amount).toFixed(2)),
+        },
+        currency_summary: current.currency_summary
+          ? {
+              ...current.currency_summary,
+              subscription_spend_local: nextLocalSpend,
+              subscription_spend_usd: current.currency_summary.exchange_rate
+                ? Number((nextLocalSpend / current.currency_summary.exchange_rate).toFixed(2))
+                : current.currency_summary.subscription_spend_usd,
+            }
+          : current.currency_summary,
+      };
+    });
+    setError(null);
   };
 
   const updateBudgetingStyle = (budgetingStyle: BudgetingStyle) => {
@@ -1255,29 +1419,128 @@ export default function SubscriptionSensePage() {
                         <Badge variant="warn">NEEDS HISTORY</Badge>
                       </div>
                       <div className="flex flex-col gap-3">
-                        {results.possible_subscriptions.map((sub: SubscriptionResult, idx: number) => (
-                          <div
-                            key={idx}
-                            className="p-3.5 rounded-xl bg-background border border-border"
-                          >
-                            <div className="flex justify-between gap-4 mb-1.5">
-                              <span className="font-medium text-sm">
-                                {sub.merchant}
-                              </span>
-                              <span className="font-medium text-yellow-600 dark:text-yellow-500">
-                                $
-                                {sub.amount.toLocaleString(undefined, {
-                                  minimumFractionDigits: 2,
-                                })}
-                              </span>
+                        {results.possible_subscriptions.map((sub: SubscriptionResult, idx: number) => {
+                          const draft = getPossibleSubscriptionDraft(sub, idx);
+                          return (
+                            <div
+                              key={possibleSubscriptionKey(sub, idx)}
+                              className="p-3.5 rounded-xl bg-background border border-border"
+                            >
+                              <div className="flex flex-col gap-3">
+                                <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                                  <div>
+                                    <p className="font-medium text-sm">{sub.merchant}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {sub.charge_count > 1
+                                        ? `${sub.charge_count} recurring charges found`
+                                        : `One eligible charge on ${sub.last_charge}`}
+                                      {sub.period && sub.period !== "unknown"
+                                        ? ` • ${sub.period}`
+                                        : ""}
+                                    </p>
+                                  </div>
+                                  <span className="font-medium text-yellow-600 dark:text-yellow-500">
+                                    $
+                                    {sub.amount.toLocaleString(undefined, {
+                                      minimumFractionDigits: 2,
+                                    })}
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                                  <label className="text-sm font-medium sm:col-span-2">
+                                    Name
+                                    <input
+                                      value={draft.merchant}
+                                      onChange={(event) =>
+                                        updatePossibleSubscriptionDraft(sub, idx, {
+                                          merchant: event.target.value,
+                                        })
+                                      }
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                                    />
+                                  </label>
+                                  <label className="text-sm font-medium">
+                                    Amount
+                                    <input
+                                      type="number"
+                                      min="0.01"
+                                      step="0.01"
+                                      value={draft.amount}
+                                      onChange={(event) =>
+                                        updatePossibleSubscriptionDraft(sub, idx, {
+                                          amount: event.target.value,
+                                        })
+                                      }
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                                    />
+                                  </label>
+                                  <label className="text-sm font-medium">
+                                    Renewal day
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max="31"
+                                      step="1"
+                                      value={draft.renewalDay}
+                                      onChange={(event) =>
+                                        updatePossibleSubscriptionDraft(sub, idx, {
+                                          renewalDay: event.target.value,
+                                        })
+                                      }
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                                    />
+                                  </label>
+                                </div>
+
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                                  <label className="text-sm font-medium sm:w-44">
+                                    Period
+                                    <select
+                                      value={draft.period}
+                                      onChange={(event) =>
+                                        updatePossibleSubscriptionDraft(sub, idx, {
+                                          period: event.target.value,
+                                        })
+                                      }
+                                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                                    >
+                                      <option value="weekly">Weekly</option>
+                                      <option value="biweekly">Biweekly</option>
+                                      <option value="monthly">Monthly</option>
+                                      <option value="quarterly">Quarterly</option>
+                                      <option value="yearly">Yearly</option>
+                                    </select>
+                                  </label>
+                                  <div className="flex flex-col gap-2 sm:flex-row">
+                                    <button
+                                      type="button"
+                                      onClick={() => confirmPossibleSubscription(sub, idx)}
+                                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                                    >
+                                      <Check size={15} />
+                                      Confirm
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => dismissPossibleSubscription(idx)}
+                                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-secondary"
+                                    >
+                                      <X size={15} />
+                                      Dismiss
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {sub.raw_merchant && (
+                                  <p className="text-[0.7rem] text-muted-foreground">
+                                    Raw: {sub.raw_merchant}
+                                  </p>
+                                )}
+                              </div>
                             </div>
-                            <p className="text-sm text-muted-foreground">
-                              One eligible charge on {sub.last_charge}. Upload
-                              more successive statements to confirm the billing
-                              cycle.
-                            </p>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </MotionCard>
                   )}

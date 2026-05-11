@@ -19,7 +19,10 @@ import {
 import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
-import { readSharedSubscriptions } from "@/lib/subscriptionStore";
+import {
+  readSharedSubscriptions,
+  sharedSubscriptionsSignature,
+} from "@/lib/subscriptionStore";
 import { clearPageSession, readPageSession, savePageSession } from "@/lib/pageSessionStore";
 import {
   BUDGETING_STYLES,
@@ -56,6 +59,7 @@ interface FormData {
 }
 
 type ScreentimeSession = {
+  sourceSignature?: string;
   globalSettings: GlobalSettings;
   formData: FormData;
   subscriptions: SubscriptionEntry[];
@@ -123,11 +127,14 @@ export default function ScreentimeSensePage() {
   const [expandedResult, setExpandedResult] = useState<number | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [showAddSubscription, setShowAddSubscription] = useState(false);
+  const [sourceSignature, setSourceSignature] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
+    const detected = readSharedSubscriptions();
+    const nextSourceSignature = sharedSubscriptionsSignature(detected);
     const saved = readPageSession<ScreentimeSession>("screentime");
-    if (saved) {
+    if (saved?.sourceSignature === nextSourceSignature) {
       // Restore the in-progress ScreentimeSense workflow when returning to the page.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setGlobalSettings(saved.globalSettings);
@@ -137,6 +144,9 @@ export default function ScreentimeSensePage() {
       setExpandedResult(saved.expandedResult);
       setShowAddSubscription(saved.showAddSubscription);
     } else {
+      if (saved?.globalSettings) {
+        setGlobalSettings(saved.globalSettings);
+      }
       const preferences = readUserPreferences();
       if (preferences) {
         setGlobalSettings((current) => ({
@@ -145,7 +155,19 @@ export default function ScreentimeSensePage() {
           is_student: preferences.isStudent,
         }));
       }
+      if (detected.length > 0) {
+        setSubscriptions(
+          detected.map((sub, index) => ({
+            id: sub.id || Date.now() + index,
+            app_name: sub.name,
+            cost: sub.cost,
+            months_subscribed: 1,
+            weekly_hours: [0, 0, 0, 0],
+          }))
+        );
+      }
     }
+    setSourceSignature(nextSourceSignature);
     setHydrated(true);
   }, []);
 
@@ -169,6 +191,7 @@ export default function ScreentimeSensePage() {
   useEffect(() => {
     if (!hydrated) return;
     savePageSession("screentime", {
+      sourceSignature,
       globalSettings,
       formData,
       subscriptions,
@@ -176,7 +199,7 @@ export default function ScreentimeSensePage() {
       expandedResult,
       showAddSubscription,
     });
-  }, [batchResults, expandedResult, formData, globalSettings, hydrated, showAddSubscription, subscriptions]);
+  }, [batchResults, expandedResult, formData, globalSettings, hydrated, showAddSubscription, sourceSignature, subscriptions]);
 
   /* ── Event Handlers ── */
 

@@ -7,7 +7,10 @@ import { Calendar as CalendarIcon, MapPin, Plus, Trash2, Plane, Activity, CheckC
 import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
-import { readSharedSubscriptions } from "@/lib/subscriptionStore";
+import {
+  readSharedSubscriptions,
+  sharedSubscriptionsSignature,
+} from "@/lib/subscriptionStore";
 import { readPageSession, savePageSession } from "@/lib/pageSessionStore";
 
 // Lazy-load map component (requires browser APIs)
@@ -16,6 +19,7 @@ const PlacesMap = dynamic(() => import("./PlacesMap"), { ssr: false });
 interface SubInput { id: number; name: string; cost: string; renewalDay: string; }
 
 type CalendarSession = {
+  sourceSignature?: string;
   homeLocation: string;
   subscriptions: SubInput[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -74,11 +78,14 @@ export default function CalendarSensePage() {
   } : null;
 
   const phase3Fired = useRef(false);
+  const [sourceSignature, setSourceSignature] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
+    const detected = readSharedSubscriptions();
+    const nextSourceSignature = sharedSubscriptionsSignature(detected);
     const saved = readPageSession<CalendarSession>("calendar");
-    if (saved) {
+    if (saved?.sourceSignature === nextSourceSignature) {
       // Restore the in-progress CalendarSense workflow when returning to the page.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setHomeLocation(saved.homeLocation);
@@ -90,7 +97,24 @@ export default function CalendarSensePage() {
       setSavingsResult(saved.savingsResult);
       setRemindersResult(saved.remindersResult);
       phase3Fired.current = Boolean(saved.savingsResult);
+    } else {
+      if (saved?.homeLocation) setHomeLocation(saved.homeLocation);
+      if (saved?.events) setEvents(saved.events);
+      if (saved?.eventsPreview) setEventsPreview(saved.eventsPreview);
+      if (saved?.eventsCount) setEventsCount(saved.eventsCount);
+      phase3Fired.current = false;
+      if (detected.length > 0) {
+        setSubscriptions(
+          detected.map((sub, index) => ({
+            id: sub.id || Date.now() + index,
+            name: sub.name,
+            cost: sub.cost.toString(),
+            renewalDay: sub.renewalDay ? String(sub.renewalDay) : "",
+          }))
+        );
+      }
     }
+    setSourceSignature(nextSourceSignature);
     setHydrated(true);
   }, []);
 
@@ -113,6 +137,7 @@ export default function CalendarSensePage() {
   useEffect(() => {
     if (!hydrated) return;
     savePageSession("calendar", {
+      sourceSignature,
       homeLocation,
       subscriptions,
       events,
@@ -131,6 +156,7 @@ export default function CalendarSensePage() {
     hydrated,
     remindersResult,
     savingsResult,
+    sourceSignature,
     subscriptions,
   ]);
 

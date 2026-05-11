@@ -8,6 +8,13 @@ export type SharedSubscription = {
   source?: "subscription-sense" | "manual";
 };
 
+type SubscriptionAnalysisSignatureSource = {
+  transactions?: unknown[];
+  transactions_parsed?: number;
+  subscriptions?: Record<string, unknown>[];
+  price_changes?: Record<string, unknown>[];
+};
+
 const STORAGE_KEY = "statementsense.subscriptions";
 const ANALYSIS_STORAGE_KEY = "statementsense.subscriptionAnalysis";
 
@@ -67,6 +74,41 @@ export const saveSharedSubscriptions = (subscriptions: SharedSubscription[]) => 
   });
 
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify([...unique.values()]));
+};
+
+export const sharedSubscriptionsSignature = (subscriptions: SharedSubscription[]) =>
+  JSON.stringify(
+    subscriptions.map((sub) => ({
+      name: sub.name,
+      cost: sub.cost,
+      renewalDay: sub.renewalDay ?? null,
+      period: sub.period || "",
+      bank: sub.bank || "",
+      source: sub.source || "subscription-sense",
+    }))
+  );
+
+export const subscriptionAnalysisSignature = (
+  source: SubscriptionAnalysisSignatureSource | null
+) => {
+  if (!source) return null;
+  return JSON.stringify({
+    transactionsParsed: source.transactions_parsed || source.transactions?.length || 0,
+    subscriptions: (source.subscriptions || []).map((sub) => ({
+      merchant: sub.merchant || sub.name || sub.subscription,
+      amount: sub.amount,
+      period: sub.period,
+      renewalDay: sub.renewal_day || sub.renewalDay,
+      lastCharge: sub.last_charge,
+      source: sub.source,
+    })),
+    priceChanges: (source.price_changes || []).map((change) => ({
+      subscription: change.subscription,
+      type: change.type,
+      date: change.date,
+      newAmount: change.new_amount,
+    })),
+  });
 };
 
 export const readSubscriptionAnalysis = <T>(): T | null => {

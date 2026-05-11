@@ -24,7 +24,10 @@ import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
 import {
+  readSharedSubscriptions,
   readSubscriptionAnalysis,
+  sharedSubscriptionsSignature,
+  subscriptionAnalysisSignature,
 } from "@/lib/subscriptionStore";
 import { readPageSession } from "@/lib/pageSessionStore";
 import { readUserPreferences } from "@/lib/userPreferenceStore";
@@ -597,13 +600,27 @@ export default function ReportPage() {
       }
     }
 
-    const renewalSession = readPageSession<{ results: { subscriptions?: RenewalSub[] } }>("renewal");
-    if (renewalSession?.results?.subscriptions) {
+    const sourceSignature = subscriptionAnalysisSignature(savedAnalysis);
+    const sharedSourceSignature = sharedSubscriptionsSignature(readSharedSubscriptions());
+    const renewalSession = readPageSession<{
+      sourceSignature?: string;
+      results: { subscriptions?: RenewalSub[] };
+    }>("renewal");
+    if (
+      renewalSession?.results?.subscriptions &&
+      renewalSession.sourceSignature === sourceSignature
+    ) {
       setRenewalSubs(renewalSession.results.subscriptions);
     }
 
-    const calSession = readPageSession<{ savingsResult?: { recommendations?: CalendarRec[] } }>("calendar");
-    if (calSession?.savingsResult?.recommendations) {
+    const calSession = readPageSession<{
+      sourceSignature?: string;
+      savingsResult?: { recommendations?: CalendarRec[] };
+    }>("calendar");
+    if (
+      calSession?.savingsResult?.recommendations &&
+      calSession.sourceSignature === sharedSourceSignature
+    ) {
       setCalendarRecs(calSession.savingsResult.recommendations);
     }
 

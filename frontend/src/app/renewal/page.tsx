@@ -14,7 +14,10 @@ import {
 import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
 import Badge from "@/components/Badge";
-import { readSubscriptionAnalysis } from "@/lib/subscriptionStore";
+import {
+  readSubscriptionAnalysis,
+  subscriptionAnalysisSignature,
+} from "@/lib/subscriptionStore";
 import { readPageSession, savePageSession } from "@/lib/pageSessionStore";
 import { readUserPreferences } from "@/lib/userPreferenceStore";
 
@@ -45,6 +48,7 @@ type PlanSimulatorState = {
 type RenewalSession = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   results: any;
+  sourceSignature?: string;
   hasSourceAnalysis: boolean;
   exchangeRate: number | null;
   exchangeRateSource: string | null;
@@ -66,6 +70,7 @@ export default function RenewalSensePage() {
   const [exchangeRateSource, setExchangeRateSource] = useState<string | null>(null);
   const [localCurrency, setLocalCurrency] = useState("JMD");
   const [planSimulators, setPlanSimulators] = useState<Record<string, PlanSimulatorState>>({});
+  const [sourceSignature, setSourceSignature] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const [monthlySubscriptionCapJmd] = useState(
     () => readUserPreferences()?.monthlySubscriptionCapJmd || null
@@ -74,11 +79,14 @@ export default function RenewalSensePage() {
   const activePlanSimulatorKeys = useRef(new Set<string>());
 
   useEffect(() => {
+    const source = readSubscriptionAnalysis<SavedSubscriptionAnalysis>();
+    const nextSourceSignature = subscriptionAnalysisSignature(source);
     const saved = readPageSession<RenewalSession>("renewal");
-    if (saved?.results) {
+    if (saved?.results && saved.sourceSignature === nextSourceSignature) {
       // Restore the completed RenewalSense workflow when returning to the page.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setResults(saved.results);
+      setSourceSignature(saved.sourceSignature || nextSourceSignature);
       setHasSourceAnalysis(saved.hasSourceAnalysis);
       setExchangeRate(saved.exchangeRate);
       setExchangeRateSource(saved.exchangeRateSource);
@@ -89,7 +97,6 @@ export default function RenewalSensePage() {
       return;
     }
 
-    const source = readSubscriptionAnalysis<SavedSubscriptionAnalysis>();
     if (!source?.transactions?.length) {
       // Load the saved browser handoff once when RenewalSense opens.
       setHasSourceAnalysis(false);
@@ -99,6 +106,7 @@ export default function RenewalSensePage() {
     }
 
     setHasSourceAnalysis(true);
+    setSourceSignature(nextSourceSignature);
     const apiBase =
       process.env.NODE_ENV === "production"
         ? (process.env.NEXT_PUBLIC_BACKEND_URL || FALLBACK_BACKEND_URL).replace(
@@ -127,6 +135,8 @@ export default function RenewalSensePage() {
       })
       .then((data) => {
         autoPlanCompareStarted.current = false;
+        setPlanSimulators({});
+        activePlanSimulatorKeys.current.clear();
         setResults(data);
       })
       .catch((err) => {
@@ -143,13 +153,14 @@ export default function RenewalSensePage() {
     if (!hydrated || !results) return;
     savePageSession("renewal", {
       results,
+      sourceSignature,
       hasSourceAnalysis,
       exchangeRate,
       exchangeRateSource,
       localCurrency,
       planSimulators,
     });
-  }, [exchangeRate, exchangeRateSource, hasSourceAnalysis, hydrated, localCurrency, planSimulators, results]);
+  }, [exchangeRate, exchangeRateSource, hasSourceAnalysis, hydrated, localCurrency, planSimulators, results, sourceSignature]);
 
   const apiBase =
     process.env.NODE_ENV === "production"
