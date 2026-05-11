@@ -176,7 +176,8 @@ _SUBSCRIPTION_KEYWORDS = {
 _NON_SUBSCRIPTION_KEYWORDS = {
     "transfer to", "transfer from", "funds transfer", "third party trf",
     "itb-customer tran", "service charge", "gct", "govt tax",
-    "tax on service charge",
+    "tax on service charge", "abm withdrawal", "atm withdrawal",
+    "cash withdrawal", "withdrawal",
 }
 
 _SUBSCRIPTION_LANGUAGE_KEYWORDS = {
@@ -189,7 +190,10 @@ _REVIEW_ONLY_RECURRING_KEYWORDS = {
 
 _VARIABLE_SPEND_KEYWORDS = {
     "uber", "trip", "taxi", "ride", "rideshare", "knutsford", "airbnb",
-    "hotel", "restaurant", "grocery", "supermarket",
+    "hotel", "restaurant", "grocery", "supermarket", "minimart",
+    "starbucks", "juici", "beef", "rubis", "unipet", "gas", "fuel",
+    "north south hi", "highway", "toll", "shein", "amazon mktpl",
+    "adidas", "fontana",
 }
 
 _MERCHANT_PREFIXES = (
@@ -337,8 +341,12 @@ def _classify_transactions(transactions: list[dict]) -> list[dict]:
     return transactions
 
 
-def _find_possible_subscriptions(classified_txs: list[dict]) -> list[dict]:
+def _find_possible_subscriptions(
+    classified_txs: list[dict],
+    confirmed_merchants: set[str] | None = None,
+) -> list[dict]:
     """Promising but unconfirmed subscription-like merchants."""
+    confirmed_merchants = {merchant.lower() for merchant in (confirmed_merchants or set())}
     vendor_groups: dict[str, list[dict]] = defaultdict(list)
     for tx in classified_txs:
         if _is_subscription_candidate(tx):
@@ -347,37 +355,15 @@ def _find_possible_subscriptions(classified_txs: list[dict]) -> list[dict]:
 
     possible = []
     for vendor, charges in vendor_groups.items():
+        if vendor.lower() in confirmed_merchants:
+            continue
         sorted_charges = sorted(charges, key=lambda t: t["date"])
-        has_name_or_language_hint = any(
-            charge.get("known_subscription_hint", False)
-            or charge.get("subscription_language_hint", False)
-            for charge in sorted_charges
-        )
         is_review_only = any(charge.get("review_only_recurring", False) for charge in sorted_charges)
         period_info = _classify_recurring_period(sorted_charges) if len(sorted_charges) >= 2 else None
+        comparison_amounts = _comparison_amounts(sorted_charges)
+        stable_amount_profile = _has_stable_amount_profile(comparison_amounts, threshold=0.90)
 
-        if len(sorted_charges) == 1 and has_name_or_language_hint:
-            charge = sorted_charges[0]
-            date_str = charge["date"]
-            if isinstance(date_str, datetime):
-                date_str = date_str.strftime("%Y-%m-%d")
-
-            possible.append({
-                "merchant": vendor,
-                "amount": round(charge["debit"], 2),
-                "period": "unknown",
-                "period_days": None,
-                "confidence": 0.4,
-                "confidence_label": "possible",
-                "charge_count": 1,
-                "last_charge": date_str,
-                "reason": "Subscription-like merchant name, but only one eligible charge was found.",
-                "needs_review": True,
-                "raw_merchant": charge.get("description", ""),
-            })
-            continue
-
-        if period_info and (is_review_only or not has_name_or_language_hint):
+        if period_info and (is_review_only or stable_amount_profile):
             last_charge = sorted_charges[-1]["date"]
             avg_amount = median([charge["debit"] for charge in sorted_charges])
             possible.append({
@@ -389,7 +375,7 @@ def _find_possible_subscriptions(classified_txs: list[dict]) -> list[dict]:
                 "confidence_label": "possible",
                 "charge_count": len(sorted_charges),
                 "last_charge": last_charge.strftime("%Y-%m-%d"),
-                "reason": "Recurring merchant pattern found, but this needs review before treating it as a subscription.",
+                "reason": "Recurring stable-price merchant pattern found, but this needs review before treating it as a subscription.",
                 "needs_review": True,
                 "raw_merchant": sorted_charges[0].get("description", ""),
             })
@@ -489,6 +475,43 @@ def _amount_stability(amounts: list[float]) -> float:
         return 0.0
     avg_abs_deviation = mean(abs(amount - avg) for amount in amounts)
     return max(0.0, 1 - (avg_abs_deviation / avg))
+
+
+def _foreign_billing_amount(description: str) -> float | None:
+    """Return embedded foreign charge amount when bank text includes one."""
+    match = re.search(r"\((\d+(?:\.\d{1,2})?)\s+[A-Z]{3}\)", description.upper())
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
+
+
+def _comparison_amounts(charges: list[dict]) -> list[float]:
+    foreign_amounts = [
+        _foreign_billing_amount(charge.get("description", ""))
+        for charge in charges
+    ]
+    if foreign_amounts and all(amount is not None for amount in foreign_amounts):
+        return [float(amount) for amount in foreign_amounts if amount is not None]
+    return [charge["debit"] for charge in charges]
+
+
+def _has_stable_amount_profile(amounts: list[float], threshold: float = 0.90) -> bool:
+    """Allow stable prices, or a stable recent segment after a real price change."""
+    if len(amounts) < 2:
+        return False
+    if _amount_stability(amounts) >= threshold:
+        return True
+    if len(amounts) < 4:
+        return False
+
+    # Price changes should not block subscriptions when the recent bill has stabilized.
+    recent_window = amounts[-3:] if len(amounts) >= 5 else amounts[-2:]
+    if _amount_stability(recent_window) >= threshold:
+        return True
+    return _amount_stability(amounts[-2:]) >= threshold
 
 
 def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -604,15 +627,13 @@ def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict],
             continue
 
         sorted_charges = sorted(charges, key=lambda t: t["date"])
-        has_subscription_hint = any(
-            charge.get("known_subscription_hint", False)
-            or charge.get("subscription_language_hint", False)
-            for charge in sorted_charges
-        )
         is_review_only = any(charge.get("review_only_recurring", False) for charge in sorted_charges)
         if is_review_only:
             continue
-        if not has_subscription_hint:
+        has_subscription_language = any(
+            charge.get("subscription_language_hint", False) for charge in sorted_charges
+        )
+        if len(sorted_charges) < 3 and not has_subscription_language:
             continue
 
         period_info = _classify_recurring_period(sorted_charges)
@@ -620,7 +641,12 @@ def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict],
             continue
 
         amounts = [charge["debit"] for charge in sorted_charges]
-        stability = _amount_stability(amounts)
+        comparison_amounts = _comparison_amounts(sorted_charges)
+        stable_amount_profile = _has_stable_amount_profile(comparison_amounts, threshold=0.90)
+        if not stable_amount_profile:
+            continue
+
+        stability = _amount_stability(comparison_amounts)
         data_score = min(1.0, len(sorted_charges) / 4)
         display_confidence = min(
             0.98,
@@ -645,7 +671,7 @@ def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict],
             "last_charge": last_charge.strftime("%Y-%m-%d"),
             "amount_stability": round(stability, 3),
             "missed_cycles": period_info["missed_cycles"],
-            "needs_review": not has_subscription_hint,
+            "needs_review": False,
             "raw_merchant": sorted_charges[0].get("description", ""),
         })
 
@@ -847,7 +873,8 @@ def _build_subscription_analysis(raw_transactions: list[dict], dedupe: bool = Fa
     # 3. Detect subscriptions
     logger.info("Step 3: Detecting subscriptions...")
     subscriptions, renewal_predictions = _run_subscription_detection(classified)
-    possible_subscriptions = _find_possible_subscriptions(classified)
+    confirmed_merchants = {sub["merchant"] for sub in subscriptions}
+    possible_subscriptions = _find_possible_subscriptions(classified, confirmed_merchants)
     logger.info(f"Step 3 complete: {len(subscriptions)} subscription(s), "
                 f"{len(possible_subscriptions)} possible, "
                 f"{len(renewal_predictions)} prediction(s)")
@@ -859,7 +886,6 @@ def _build_subscription_analysis(raw_transactions: list[dict], dedupe: bool = Fa
 
     # 5. Detect price changes
     logger.info("Step 5: Detecting price changes...")
-    confirmed_merchants = {sub["merchant"] for sub in subscriptions}
     price_changes = _detect_price_changes(classified, confirmed_merchants)
     logger.info(f"Step 5 complete: {len(price_changes)} price change(s)")
 

@@ -48,10 +48,7 @@ class SubscriptionEngineRegressionTests(unittest.TestCase):
     def test_transfers_do_not_become_subscriptions(self):
         subscriptions, renewals = _run_subscription_detection(self.transactions)
 
-        self.assertEqual([sub["merchant"] for sub in subscriptions], ["YouTube"])
-        self.assertEqual(subscriptions[0]["period"], "monthly")
-        self.assertAlmostEqual(subscriptions[0]["amount"], 802.82)
-        self.assertAlmostEqual(subscriptions[0]["confidence"], 0.8)
+        self.assertEqual(subscriptions, [])
         self.assertEqual(renewals, [])
 
     def test_transfer_pattern_does_not_create_trial_alert(self):
@@ -70,7 +67,7 @@ class SubscriptionEngineRegressionTests(unittest.TestCase):
         self.assertTrue(all(tx["category"] == "other" for tx in service_charge_rows))
         self.assertTrue(all(tx["excluded_from_subscription_analysis"] for tx in service_charge_rows))
 
-    def test_single_charge_subscription_merchant_is_possible(self):
+    def test_single_charge_subscription_merchant_is_renamed_but_not_possible(self):
         result = analyze_extracted_subscriptions([
             {
                 "bank": "Scotiabank",
@@ -83,8 +80,8 @@ class SubscriptionEngineRegressionTests(unittest.TestCase):
         ])
 
         self.assertEqual(result["subscriptions"], [])
-        self.assertEqual(result["possible_subscriptions"][0]["merchant"], "Spotify")
-        self.assertEqual(result["summary"]["total_possible_subscriptions"], 1)
+        self.assertEqual(result["possible_subscriptions"], [])
+        self.assertEqual(result["summary"]["total_possible_subscriptions"], 0)
 
     def test_known_keyword_is_a_hint_not_subscription_category(self):
         classified = _classify_transactions([
@@ -227,7 +224,7 @@ class SubscriptionEngineRegressionTests(unittest.TestCase):
         self.assertEqual(subscriptions[0]["merchant"], "YouTube")
         self.assertEqual(subscriptions[0]["period"], "monthly")
 
-    def test_unknown_merchant_needs_three_charges_before_review(self):
+    def test_unknown_merchant_needs_three_charges_before_confirmation(self):
         txns = _classify_transactions([
             _tx("2026-01-01", "POS PURCHASE SOME DIGITAL SERVICE", -1000.00),
             _tx("2026-02-01", "POS PURCHASE SOME DIGITAL SERVICE", -1000.00),
@@ -236,6 +233,68 @@ class SubscriptionEngineRegressionTests(unittest.TestCase):
         subscriptions, _ = _run_subscription_detection(txns)
 
         self.assertEqual(subscriptions, [])
+
+    def test_withdrawals_are_excluded_before_possible_subscriptions(self):
+        result = analyze_extracted_subscriptions([
+            {
+                "bank": "Scotiabank",
+                "date": "2026-01-25",
+                "description": "ABM WITHDRAWAL *BNS UNIV. OF W.I. ST. ANDREW JM",
+                "amount": -3000.00,
+                "balance": None,
+                "currency": "JMD",
+            },
+            {
+                "bank": "Scotiabank",
+                "date": "2026-02-25",
+                "description": "ABM WITHDRAWAL *BNS UNIV. OF W.I. ST. ANDREW JM",
+                "amount": -3000.00,
+                "balance": None,
+                "currency": "JMD",
+            },
+            {
+                "bank": "Scotiabank",
+                "date": "2026-03-25",
+                "description": "ABM WITHDRAWAL *BNS UNIV. OF W.I. ST. ANDREW JM",
+                "amount": -3000.00,
+                "balance": None,
+                "currency": "JMD",
+            },
+        ])
+
+        self.assertEqual(result["subscriptions"], [])
+        self.assertEqual(result["possible_subscriptions"], [])
+
+    def test_variable_price_restaurant_is_not_possible_subscription(self):
+        result = analyze_extracted_subscriptions([
+            {
+                "bank": "Scotiabank",
+                "date": "2026-01-01",
+                "description": "JUICI BEEF LIMITED- UT, KINGSTON 6",
+                "amount": -520.00,
+                "balance": None,
+                "currency": "JMD",
+            },
+            {
+                "bank": "Scotiabank",
+                "date": "2026-01-08",
+                "description": "JUICI BEEF LIMITED- UT, KINGSTON 6",
+                "amount": -1050.00,
+                "balance": None,
+                "currency": "JMD",
+            },
+            {
+                "bank": "Scotiabank",
+                "date": "2026-01-15",
+                "description": "JUICI BEEF LIMITED- UT, KINGSTON 6",
+                "amount": -1270.00,
+                "balance": None,
+                "currency": "JMD",
+            },
+        ])
+
+        self.assertEqual(result["subscriptions"], [])
+        self.assertEqual(result["possible_subscriptions"], [])
 
 
 if __name__ == "__main__":
