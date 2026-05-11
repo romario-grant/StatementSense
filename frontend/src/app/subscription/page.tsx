@@ -9,6 +9,7 @@ import {
   TrendingDown,
   Calendar,
   Check,
+  Pencil,
   RefreshCw,
   Plus,
   Trash2,
@@ -132,6 +133,10 @@ export default function SubscriptionSensePage() {
   const [possibleSubscriptionEdits, setPossibleSubscriptionEdits] = useState<
     Record<string, PossibleSubscriptionDraft>
   >({});
+  const [confirmedSubscriptionEdits, setConfirmedSubscriptionEdits] = useState<
+    Record<string, PossibleSubscriptionDraft>
+  >({});
+  const [editingSubscriptionKeys, setEditingSubscriptionKeys] = useState<Record<string, boolean>>({});
   const [showManualSubscription, setShowManualSubscription] = useState(false);
   const [manualSubscription, setManualSubscription] = useState({
     merchant: "",
@@ -352,11 +357,177 @@ export default function SubscriptionSensePage() {
     setError(null);
   };
 
-  const removeManualSubscription = (index: number) => {
+  const confirmedSubscriptionKey = (sub: SubscriptionResult, index: number) =>
+    `${sub.merchant}-${sub.last_charge}-${index}`;
+
+  const getConfirmedSubscriptionDraft = (
+    sub: SubscriptionResult,
+    index: number
+  ): PossibleSubscriptionDraft => {
+    const key = confirmedSubscriptionKey(sub, index);
+    const fallbackRenewalDay =
+      sub.renewal_day ||
+      (sub.last_charge ? Math.min(Math.max(new Date(sub.last_charge).getDate(), 1), 31) : 1);
+
+    return (
+      confirmedSubscriptionEdits[key] || {
+        merchant: sub.merchant,
+        amount: String(sub.amount),
+        renewalDay: String(fallbackRenewalDay || 1),
+        period: sub.period && sub.period !== "unknown" ? sub.period : "monthly",
+      }
+    );
+  };
+
+  const updateConfirmedSubscriptionDraft = (
+    sub: SubscriptionResult,
+    index: number,
+    updates: Partial<PossibleSubscriptionDraft>
+  ) => {
+    const key = confirmedSubscriptionKey(sub, index);
+    setConfirmedSubscriptionEdits((current) => ({
+      ...current,
+      [key]: {
+        ...getConfirmedSubscriptionDraft(sub, index),
+        ...updates,
+      },
+    }));
+  };
+
+  const openConfirmedSubscriptionEditor = (sub: SubscriptionResult, index: number) => {
+    const key = confirmedSubscriptionKey(sub, index);
+    setConfirmedSubscriptionEdits((current) => ({
+      ...current,
+      [key]: getConfirmedSubscriptionDraft(sub, index),
+    }));
+    setEditingSubscriptionKeys((current) => ({ ...current, [key]: true }));
+  };
+
+  const cancelConfirmedSubscriptionEditor = (sub: SubscriptionResult, index: number) => {
+    const key = confirmedSubscriptionKey(sub, index);
+    setEditingSubscriptionKeys((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const saveConfirmedSubscription = (sub: SubscriptionResult, index: number) => {
+    const key = confirmedSubscriptionKey(sub, index);
+    const draft = getConfirmedSubscriptionDraft(sub, index);
+    const merchant = draft.merchant.trim();
+    const amount = Number(draft.amount);
+    const renewalDay = Number(draft.renewalDay);
+
+    if (
+      !merchant ||
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      !Number.isFinite(renewalDay) ||
+      renewalDay < 1 ||
+      renewalDay > 31
+    ) {
+      setError("Add a name, amount, and renewal day before saving the subscription.");
+      return;
+    }
+
+    const safeRenewalDay = Math.min(Math.max(Math.round(renewalDay), 1), 31);
+    const period = draft.period || "monthly";
+    const periodDays = periodDaysForPeriod(period);
+    const nextChargeDate = nextChargeDateForDay(safeRenewalDay);
+    const daysUntilCharge = Math.max(
+      0,
+      Math.ceil((new Date(nextChargeDate).getTime() - new Date().getTime()) / 86_400_000)
+    );
+
+    setResults((current) => {
+      if (!current) return current;
+      const existing = current.subscriptions[index];
+      if (!existing) return current;
+
+      const updated: SubscriptionResult = {
+        ...existing,
+        merchant,
+        amount: Number(amount.toFixed(2)),
+        period,
+        period_days: periodDays,
+        renewal_day: safeRenewalDay,
+        needs_review: false,
+        source: existing.source ?? "subscription-sense",
+      };
+      const amountDelta = updated.amount - existing.amount;
+      const baseLocalSpend =
+        current.currency_summary?.subscription_spend_local ?? current.summary.total_sub_cost;
+      const nextLocalSpend = Number(Math.max(baseLocalSpend + amountDelta, 0).toFixed(2));
+      let predictionUpdated = false;
+      const nextPredictions = (current.renewal_predictions || []).map((prediction) => {
+        if (prediction.subscription !== existing.merchant) return prediction;
+        predictionUpdated = true;
+        return {
+          ...prediction,
+          subscription: merchant,
+          next_charge_date: nextChargeDate,
+          days_until_charge: daysUntilCharge,
+          period,
+          period_days: periodDays,
+          data_points: updated.charge_count || prediction.data_points,
+        };
+      });
+
+      if (!predictionUpdated) {
+        nextPredictions.push({
+          subscription: merchant,
+          next_charge_date: nextChargeDate,
+          days_until_charge: daysUntilCharge,
+          period,
+          period_days: periodDays,
+          confidence_label: "medium",
+          data_points: updated.charge_count || 1,
+        });
+      }
+
+      return {
+        ...current,
+        subscriptions: current.subscriptions.map((item, itemIndex) =>
+          itemIndex === index ? updated : item
+        ),
+        renewal_predictions: nextPredictions,
+        summary: {
+          ...current.summary,
+          total_sub_cost: Number(
+            Math.max(current.summary.total_sub_cost + amountDelta, 0).toFixed(2)
+          ),
+        },
+        currency_summary: current.currency_summary
+          ? {
+              ...current.currency_summary,
+              subscription_spend_local: nextLocalSpend,
+              subscription_spend_usd: current.currency_summary.exchange_rate
+                ? Number((nextLocalSpend / current.currency_summary.exchange_rate).toFixed(2))
+                : current.currency_summary.subscription_spend_usd,
+            }
+          : current.currency_summary,
+      };
+    });
+
+    setMerchantLabels((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    setEditingSubscriptionKeys((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    setError(null);
+  };
+
+  const deleteSubscription = (index: number) => {
     setResults((current) => {
       if (!current) return current;
       const removed = current.subscriptions[index];
-      if (!removed || removed.source !== "manual") return current;
+      if (!removed) return current;
 
       const baseLocalSpend =
         current.currency_summary?.subscription_spend_local ?? current.summary.total_sub_cost;
@@ -1261,8 +1432,10 @@ export default function SubscriptionSensePage() {
                 )}
 
                 {results.subscriptions.map((sub: SubscriptionResult, idx: number) => {
-                  const labelKey = `${sub.merchant}-${sub.last_charge}-${idx}`;
+                  const labelKey = confirmedSubscriptionKey(sub, idx);
                   const displayMerchant = merchantLabels[labelKey] || sub.merchant;
+                  const draft = getConfirmedSubscriptionDraft(sub, idx);
+                  const isEditing = Boolean(editingSubscriptionKeys[labelKey]);
                   const confColor =
                     sub.confidence >= 0.8
                       ? "border-l-green-500"
@@ -1320,47 +1493,112 @@ export default function SubscriptionSensePage() {
                           <p className="text-xs text-muted-foreground">
                             per {sub.period}
                           </p>
-                          {sub.source === "manual" && (
+                          <div className="flex flex-wrap justify-end gap-2">
                             <button
                               type="button"
-                              onClick={() => removeManualSubscription(idx)}
+                              onClick={() => openConfirmedSubscriptionEditor(sub, idx)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs font-medium hover:bg-secondary"
+                            >
+                              <Pencil size={13} />
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteSubscription(idx)}
                               className="inline-flex items-center gap-1 rounded-lg border border-red-500/25 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-500/10 dark:text-red-400"
                             >
                               <Trash2 size={13} />
-                              Remove
+                              Delete
                             </button>
-                          )}
+                          </div>
                         </div>
                       </div>
 
-                      {sub.needs_review && (
+                      {isEditing && (
                         <div className="mb-3 rounded-lg border border-border bg-secondary/60 p-3">
-                          <p className="text-xs text-muted-foreground mb-2">
-                            Confirm or rename this subscription for your own records.
-                          </p>
-                          <div className="flex flex-col sm:flex-row gap-2">
-                            <input
-                              value={merchantLabels[labelKey] ?? sub.merchant}
-                              onChange={(event) =>
-                                setMerchantLabels((current) => ({
-                                  ...current,
-                                  [labelKey]: event.target.value,
-                                }))
-                              }
-                              className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-                            />
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setMerchantLabels((current) => ({
-                                  ...current,
-                                  [labelKey]: current[labelKey] || sub.merchant,
-                                }))
-                              }
-                              className="rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-background"
-                            >
-                              Confirm
-                            </button>
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                            <label className="text-sm font-medium sm:col-span-2">
+                              Name
+                              <input
+                                value={draft.merchant}
+                                onChange={(event) =>
+                                  updateConfirmedSubscriptionDraft(sub, idx, {
+                                    merchant: event.target.value,
+                                  })
+                                }
+                                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                              />
+                            </label>
+                            <label className="text-sm font-medium">
+                              Amount
+                              <input
+                                type="number"
+                                min="0.01"
+                                step="0.01"
+                                value={draft.amount}
+                                onChange={(event) =>
+                                  updateConfirmedSubscriptionDraft(sub, idx, {
+                                    amount: event.target.value,
+                                  })
+                                }
+                                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                              />
+                            </label>
+                            <label className="text-sm font-medium">
+                              Renewal day
+                              <input
+                                type="number"
+                                min="1"
+                                max="31"
+                                step="1"
+                                value={draft.renewalDay}
+                                onChange={(event) =>
+                                  updateConfirmedSubscriptionDraft(sub, idx, {
+                                    renewalDay: event.target.value,
+                                  })
+                                }
+                                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                              />
+                            </label>
+                          </div>
+
+                          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                            <label className="text-sm font-medium sm:w-44">
+                              Period
+                              <select
+                                value={draft.period}
+                                onChange={(event) =>
+                                  updateConfirmedSubscriptionDraft(sub, idx, {
+                                    period: event.target.value,
+                                  })
+                                }
+                                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                              >
+                                <option value="weekly">Weekly</option>
+                                <option value="biweekly">Biweekly</option>
+                                <option value="monthly">Monthly</option>
+                                <option value="quarterly">Quarterly</option>
+                                <option value="yearly">Yearly</option>
+                              </select>
+                            </label>
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => saveConfirmedSubscription(sub, idx)}
+                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                              >
+                                <Check size={15} />
+                                Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => cancelConfirmedSubscriptionEditor(sub, idx)}
+                                className="inline-flex items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-background"
+                              >
+                                <X size={15} />
+                                Cancel
+                              </button>
+                            </div>
                           </div>
                           {sub.raw_merchant && (
                             <p className="text-[0.7rem] text-muted-foreground mt-2">

@@ -971,7 +971,29 @@ def _recommend_start_days(subscriptions, salary_tracker, expense_profiler, days_
     }
 
 
-def _build_analysis(transactions, provided_subscriptions=None, price_changes=None, year=None, month=None):
+def _coerce_manual_salary(manual_salary):
+    if not manual_salary:
+        return None
+    try:
+        amount = float(manual_salary.get("amount") or 0)
+        pay_day = int(manual_salary.get("pay_day") or manual_salary.get("payDay") or 0)
+    except (TypeError, ValueError):
+        return None
+    if amount <= 0 or pay_day < 1 or pay_day > 30:
+        return None
+    frequency = str(manual_salary.get("frequency") or "monthly").lower()
+    if frequency not in {"monthly", "biweekly"}:
+        frequency = "monthly"
+    return {
+        "amount": round(amount, 2),
+        "pay_day": pay_day,
+        "frequency": frequency,
+        "occurrences": 1,
+        "source": "manual",
+    }
+
+
+def _build_analysis(transactions, provided_subscriptions=None, price_changes=None, manual_salary=None, year=None, month=None):
     if not transactions:
         return {"error": "No transactions found. Run SubscriptionSense first."}
 
@@ -986,7 +1008,7 @@ def _build_analysis(transactions, provided_subscriptions=None, price_changes=Non
         categories[cat] = categories.get(cat, 0) + 1
     
     # Detect patterns
-    salary_info = PatternDetector.detect_salary(classified)
+    salary_info = PatternDetector.detect_salary(classified) or _coerce_manual_salary(manual_salary)
     expenses = PatternDetector.detect_expenses(classified)
     
     # ── Subscription detection ──────────────────────────────────────
@@ -1005,7 +1027,8 @@ def _build_analysis(transactions, provided_subscriptions=None, price_changes=Non
     
     if not salary_info:
         return {
-            "error": "Could not detect salary pattern. Need more statement data.",
+            "error": "Could not detect a pay cycle from this statement. Enter your pay amount and payday to continue.",
+            "code": "salary_required",
             "transactions_parsed": len(transactions),
             "categories": categories
         }
@@ -1116,7 +1139,7 @@ def analyze_statement(file_bytes):
     return _build_analysis(transactions)
 
 
-def analyze_existing_data(transactions, subscriptions, price_changes=None, year=None, month=None):
+def analyze_existing_data(transactions, subscriptions, price_changes=None, manual_salary=None, year=None, month=None):
     """
     Run RenewalSense from the already-parsed SubscriptionSense result.
     This skips bank parsing entirely.
@@ -1125,6 +1148,7 @@ def analyze_existing_data(transactions, subscriptions, price_changes=None, year=
         _coerce_transaction_rows(transactions),
         provided_subscriptions=subscriptions,
         price_changes=price_changes,
+        manual_salary=manual_salary,
         year=year,
         month=month,
     )

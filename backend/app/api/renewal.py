@@ -19,6 +19,7 @@ class RenewalFromExistingRequest(BaseModel):
     transactions: list[dict] = Field(default_factory=list)
     subscriptions: list[dict] = Field(default_factory=list)
     price_changes: list[dict] | None = None
+    manual_salary: dict | None = None
     year: int | None = None
     month: int | None = None
 
@@ -80,11 +81,14 @@ async def analyze_existing(request: RenewalFromExistingRequest):
         request.transactions,
         request.subscriptions,
         request.price_changes,
+        request.manual_salary,
         request.year,
         request.month,
     )
 
     if "error" in result:
+        if result.get("code"):
+            raise HTTPException(status_code=422, detail=result)
         raise HTTPException(status_code=422, detail=result["error"])
 
     return result

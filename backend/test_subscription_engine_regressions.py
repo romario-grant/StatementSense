@@ -3,6 +3,7 @@ import unittest
 
 from backend.app.engines.subscription_engine import (
     analyze_extracted_subscriptions,
+    _classify_recurring_period,
     _classify_transactions,
     _detect_price_changes,
     _detect_trials,
@@ -291,6 +292,31 @@ class SubscriptionEngineRegressionTests(unittest.TestCase):
                 "balance": None,
                 "currency": "JMD",
             },
+        ])
+
+        self.assertEqual(result["subscriptions"], [])
+        self.assertEqual(result["possible_subscriptions"], [])
+
+    def test_irregular_lunch_dates_do_not_create_subscription(self):
+        txns = _classify_transactions([
+            _tx("2026-02-13", "POS PURCHASE Lunch By Peckish KINGSTON JM", -1800.00),
+            _tx("2026-02-16", "POS PURCHASE Lunch By Peckish KINGSTON JM", -1800.00),
+            _tx("2026-03-12", "POS PURCHASE Lunch By Peckish KINGSTON JM", -1950.00),
+            _tx("2026-04-17", "POS PURCHASE Lunch By Peckish KINGSTON JM", -1950.00),
+        ])
+
+        self.assertIsNone(_classify_recurring_period(txns))
+
+        result = analyze_extracted_subscriptions([
+            {
+                "bank": "Scotiabank",
+                "date": tx["date"].strftime("%Y-%m-%d"),
+                "description": tx["description"],
+                "amount": -tx["debit"],
+                "balance": None,
+                "currency": "JMD",
+            }
+            for tx in txns
         ])
 
         self.assertEqual(result["subscriptions"], [])

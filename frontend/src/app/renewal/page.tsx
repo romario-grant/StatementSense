@@ -56,11 +56,23 @@ type RenewalSession = {
   planSimulators: Record<string, PlanSimulatorState>;
 };
 
+type ManualSalary = {
+  amount: string;
+  payDay: string;
+  frequency: "monthly" | "biweekly";
+};
+
 export default function RenewalSensePage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [results, setResults] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [needsManualSalary, setNeedsManualSalary] = useState(false);
+  const [manualSalary, setManualSalary] = useState<ManualSalary>({
+    amount: "",
+    payDay: "",
+    frequency: "monthly",
+  });
   const [hasSourceAnalysis, setHasSourceAnalysis] = useState(false);
   const [currentMonth] = useState(() => {
     const now = new Date();
@@ -77,6 +89,65 @@ export default function RenewalSensePage() {
   );
   const autoPlanCompareStarted = useRef(false);
   const activePlanSimulatorKeys = useRef(new Set<string>());
+
+  const runRenewalAnalysis = useCallback(
+    async (source: SavedSubscriptionAnalysis, salaryOverride?: ManualSalary) => {
+      setLoading(true);
+      setError(null);
+      setNeedsManualSalary(false);
+
+      const apiBase =
+        process.env.NODE_ENV === "production"
+          ? (process.env.NEXT_PUBLIC_BACKEND_URL || FALLBACK_BACKEND_URL).replace(
+              /\/$/,
+              ""
+            )
+          : "";
+
+      const manualSalaryPayload = salaryOverride
+        ? {
+            amount: Number(salaryOverride.amount),
+            pay_day: Number(salaryOverride.payDay),
+            frequency: salaryOverride.frequency,
+          }
+        : undefined;
+
+      try {
+        const response = await fetch(`${apiBase}/api/renewal/analyze-existing`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transactions: source.transactions || [],
+            subscriptions: source.subscriptions || [],
+            price_changes: source.price_changes || [],
+            manual_salary: manualSalaryPayload,
+            year: currentMonth.year,
+            month: currentMonth.month,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          const detail = data.detail && typeof data.detail === "object" ? data.detail : data;
+          if (detail.code === "salary_required") {
+            setNeedsManualSalary(true);
+            throw new Error(
+              detail.error || "Enter your pay amount and payday to continue."
+            );
+          }
+          throw new Error(data.detail || data.error || "Renewal analysis failed.");
+        }
+        autoPlanCompareStarted.current = false;
+        setPlanSimulators({});
+        activePlanSimulatorKeys.current.clear();
+        setResults(data);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "An error occurred");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [currentMonth.month, currentMonth.year]
+  );
 
   useEffect(() => {
     const source = readSubscriptionAnalysis<SavedSubscriptionAnalysis>();
@@ -107,47 +178,12 @@ export default function RenewalSensePage() {
 
     setHasSourceAnalysis(true);
     setSourceSignature(nextSourceSignature);
-    const apiBase =
-      process.env.NODE_ENV === "production"
-        ? (process.env.NEXT_PUBLIC_BACKEND_URL || FALLBACK_BACKEND_URL).replace(
-            /\/$/,
-            ""
-          )
-        : "";
-
-    fetch(`${apiBase}/api/renewal/analyze-existing`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        transactions: source.transactions || [],
-        subscriptions: source.subscriptions || [],
-        price_changes: source.price_changes || [],
-        year: currentMonth.year,
-        month: currentMonth.month,
-      }),
-    })
-      .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data.detail || data.error || "Renewal analysis failed.");
-        }
-        return data;
-      })
-      .then((data) => {
-        autoPlanCompareStarted.current = false;
-        setPlanSimulators({});
-        activePlanSimulatorKeys.current.clear();
-        setResults(data);
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : "An error occurred");
-      })
-      .finally(() => setLoading(false));
+    void runRenewalAnalysis(source);
     setExchangeRate(source.currency_summary?.exchange_rate || null);
     setExchangeRateSource(source.currency_summary?.exchange_rate_source || null);
     setLocalCurrency(source.currency_summary?.original_currency || "JMD");
     setHydrated(true);
-  }, [currentMonth.month, currentMonth.year]);
+  }, [runRenewalAnalysis]);
 
   useEffect(() => {
     if (!hydrated || !results) return;
@@ -161,6 +197,30 @@ export default function RenewalSensePage() {
       planSimulators,
     });
   }, [exchangeRate, exchangeRateSource, hasSourceAnalysis, hydrated, localCurrency, planSimulators, results, sourceSignature]);
+
+  const handleManualSalarySubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const amount = Number(manualSalary.amount);
+    const payDay = Number(manualSalary.payDay);
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      !Number.isFinite(payDay) ||
+      payDay < 1 ||
+      payDay > 30
+    ) {
+      setError("Enter a pay amount and a payday from 1 to 30.");
+      setNeedsManualSalary(true);
+      return;
+    }
+
+    const source = readSubscriptionAnalysis<SavedSubscriptionAnalysis>();
+    if (!source?.transactions?.length) {
+      setError("Run SubscriptionSense first so RenewalSense can reuse the parsed transactions.");
+      return;
+    }
+    void runRenewalAnalysis(source, manualSalary);
+  };
 
   const apiBase =
     process.env.NODE_ENV === "production"
@@ -376,14 +436,78 @@ export default function RenewalSensePage() {
             >
               <MotionCard hover={false} className="text-center py-12">
                 <AlertTriangle size={40} className="text-red-600 dark:text-red-400 mx-auto mb-4" />
-                <h2 className="text-lg font-medium mb-2">Could Not Build Renewal Insights</h2>
+                <h2 className="text-lg font-medium mb-2">
+                  {needsManualSalary ? "Add Pay Cycle" : "Could Not Build Renewal Insights"}
+                </h2>
                 <p className="text-sm text-muted-foreground mb-6">{error}</p>
-                <a
-                  href="/subscription"
-                  className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                >
-                  Refresh in SubscriptionSense
-                </a>
+                {needsManualSalary ? (
+                  <form onSubmit={handleManualSalarySubmit} className="space-y-4 text-left">
+                    <label className="block text-sm font-medium">
+                      Pay amount
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={manualSalary.amount}
+                        onChange={(event) =>
+                          setManualSalary((current) => ({
+                            ...current,
+                            amount: event.target.value,
+                          }))
+                        }
+                        placeholder="150000"
+                        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </label>
+                    <label className="block text-sm font-medium">
+                      Payday
+                      <input
+                        type="number"
+                        min="1"
+                        max="30"
+                        step="1"
+                        value={manualSalary.payDay}
+                        onChange={(event) =>
+                          setManualSalary((current) => ({
+                            ...current,
+                            payDay: event.target.value,
+                          }))
+                        }
+                        placeholder="25"
+                        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </label>
+                    <label className="block text-sm font-medium">
+                      Pay cycle
+                      <select
+                        value={manualSalary.frequency}
+                        onChange={(event) =>
+                          setManualSalary((current) => ({
+                            ...current,
+                            frequency: event.target.value as ManualSalary["frequency"],
+                          }))
+                        }
+                        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                      >
+                        <option value="monthly">Monthly</option>
+                        <option value="biweekly">Biweekly</option>
+                      </select>
+                    </label>
+                    <button
+                      type="submit"
+                      className="inline-flex w-full items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                    >
+                      Recalculate RenewalSense
+                    </button>
+                  </form>
+                ) : (
+                  <a
+                    href="/subscription"
+                    className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                  >
+                    Refresh in SubscriptionSense
+                  </a>
+                )}
               </MotionCard>
             </motion.div>
           ) : (

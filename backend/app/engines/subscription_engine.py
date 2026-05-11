@@ -193,7 +193,7 @@ _VARIABLE_SPEND_KEYWORDS = {
     "hotel", "restaurant", "grocery", "supermarket", "minimart",
     "starbucks", "juici", "beef", "rubis", "unipet", "gas", "fuel",
     "north south hi", "highway", "toll", "shein", "amazon mktpl",
-    "adidas", "fontana",
+    "adidas", "fontana", "lunch", "peckish",
 }
 
 _MERCHANT_PREFIXES = (
@@ -423,7 +423,7 @@ def _convert_to_engine_format(universal_txs: list[dict]) -> list[dict]:
 # =====================================================================
 
 def _classify_recurring_period(charges: list[dict]) -> dict | None:
-    """Find a recurring interval by date gaps, allowing skipped cycles."""
+    """Find a recurring interval by date gaps, allowing genuine skipped cycles."""
     if len(charges) < 2:
         return None
 
@@ -432,25 +432,50 @@ def _classify_recurring_period(charges: list[dict]) -> dict | None:
     if not gaps:
         return None
 
+    cadence_windows = {
+        "weekly": (6, 8),
+        "biweekly": (12, 16),
+        "monthly": (25, 35),
+        "quarterly": (80, 100),
+        "yearly": (340, 390),
+    }
+
     best = None
     for label, period_days in _BILLING_PERIODS.items():
+        lower_bound, upper_bound = cadence_windows[label]
         matches = 0
+        direct_matches = 0
         missed_cycles = 0
         normalized_gaps = []
 
         for gap in gaps:
+            if gap < lower_bound:
+                continue
+
             cycles = max(1, round(gap / period_days))
             expected = cycles * period_days
-            tolerance = max(3, round(period_days * 0.25))
-            if abs(gap - expected) <= tolerance:
+            normalized_gap = gap / cycles
+            tolerance = max(2, round(period_days * 0.15)) * cycles
+            if lower_bound <= normalized_gap <= upper_bound and abs(gap - expected) <= tolerance:
                 matches += 1
+                if cycles == 1:
+                    direct_matches += 1
                 missed_cycles += max(0, cycles - 1)
-                normalized_gaps.append(gap / cycles)
+                normalized_gaps.append(normalized_gap)
 
         match_ratio = matches / len(gaps)
-        if matches < 2 and not (len(charges) == 2 and matches == 1):
+        if len(gaps) == 1:
+            required_matches = 1
+        elif len(gaps) == 2:
+            required_matches = 2
+        elif len(gaps) <= 5:
+            required_matches = max(2, len(gaps) - 1)
+        else:
+            required_matches = max(3, len(gaps) // 2)
+
+        if matches < required_matches:
             continue
-        if match_ratio < 0.45:
+        if label in {"weekly", "biweekly"} and direct_matches == 0:
             continue
 
         score = match_ratio + (0.08 if len(charges) >= 3 else 0) - (0.03 * missed_cycles)
