@@ -10,6 +10,7 @@ import re
 import logging
 import json
 import calendar
+import time
 from datetime import datetime, timedelta
 
 from Capstone.Capstone.currency_normaliser import FALLBACK_RATE, get_rate_with_fallback
@@ -1215,23 +1216,48 @@ Rules:
 - Include monthly, yearly, student, duo, family, or lifetime plans when official pricing exists.
 - Do not invent prices and do not substitute United States pricing unless the source clearly says it applies to {country}.
 """
-    try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model="gemini-3.1-pro-preview",
-            config={
-                "tools": [{"google_search": {}}],
-                "temperature": 0.0,
-            },
-            contents=prompt,
-        )
-        data = _extract_json(response.text or "")
-        if not data.get("pricing_verified") or not isinstance(data.get("plans"), list):
-            return {"pricing_verified": False, "plans": [], "message": "Pricing could not be verified."}
-        return data
-    except Exception as exc:
-        logger.warning("Plan pricing lookup failed: %s", exc)
-        return {"pricing_verified": False, "plans": [], "message": "Pricing lookup failed."}
+    client = genai.Client(api_key=api_key)
+    last_error = ""
+    models = ("gemini-3.1-pro-preview", "gemini-2.5-flash")
+
+    for model in models:
+        for attempt in range(2):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    config={
+                        "tools": [{"google_search": {}}],
+                        "temperature": 0.0,
+                    },
+                    contents=prompt,
+                )
+                data = _extract_json(response.text or "")
+                if not data.get("pricing_verified") or not isinstance(data.get("plans"), list):
+                    return {
+                        "pricing_verified": False,
+                        "plans": [],
+                        "message": "Pricing could not be verified from official sources.",
+                    }
+                return data
+            except Exception as exc:
+                last_error = str(exc)
+                logger.warning(
+                    "Plan pricing lookup failed with %s (attempt %s/2): %s",
+                    model,
+                    attempt + 1,
+                    exc,
+                )
+                if attempt == 0 and any(
+                    token in last_error
+                    for token in ("429", "503", "RESOURCE_EXHAUSTED", "UNAVAILABLE")
+                ):
+                    time.sleep(2)
+
+    if any(token in last_error for token in ("429", "503", "RESOURCE_EXHAUSTED", "UNAVAILABLE")):
+        message = "Plan pricing is temporarily unavailable. Try Refresh Plans again."
+    else:
+        message = "Plan pricing lookup failed."
+    return {"pricing_verified": False, "plans": [], "message": message}
 
 
 def _convert_plan_to_jmd(plan, default_currency, exchange_rate):

@@ -43,6 +43,7 @@ type PlanSimulatorState = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data?: any;
   selectedIndex?: number;
+  expanded?: boolean;
 };
 
 type RenewalSession = {
@@ -231,7 +232,7 @@ export default function RenewalSensePage() {
       : "";
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const loadPlanSimulator = useCallback(async (sub: any, key: string, force = false) => {
+  const loadPlanSimulator = useCallback(async (sub: any, key: string, force = false, reveal = false) => {
     if (!force && (activePlanSimulatorKeys.current.has(key) || planSimulators[key]?.loading || planSimulators[key]?.data)) {
       return;
     }
@@ -245,6 +246,7 @@ export default function RenewalSensePage() {
         error: null,
         data: current[key]?.data,
         selectedIndex: current[key]?.selectedIndex || 0,
+        expanded: reveal || current[key]?.expanded || false,
       },
     }));
     try {
@@ -279,7 +281,13 @@ export default function RenewalSensePage() {
       }
       setPlanSimulators((current) => ({
         ...current,
-        [key]: { loading: false, error: null, data, selectedIndex: 0 },
+        [key]: {
+          loading: false,
+          error: null,
+          data,
+          selectedIndex: 0,
+          expanded: reveal || current[key]?.expanded || false,
+        },
       }));
     } catch (err) {
       const message =
@@ -293,6 +301,9 @@ export default function RenewalSensePage() {
         [key]: {
           loading: false,
           error: message,
+          data: current[key]?.data,
+          selectedIndex: current[key]?.selectedIndex || 0,
+          expanded: current[key]?.expanded || false,
         },
       }));
     } finally {
@@ -328,6 +339,19 @@ export default function RenewalSensePage() {
       ...current,
       [key]: { ...current[key], selectedIndex },
     }));
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handlePlanSimulatorClick = (sub: any, key: string) => {
+    const simulator = planSimulators[key];
+    if (simulator?.data && !simulator.expanded) {
+      setPlanSimulators((current) => ({
+        ...current,
+        [key]: { ...current[key], expanded: true },
+      }));
+      return;
+    }
+    void loadPlanSimulator(sub, key, true, true);
   };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -835,19 +859,19 @@ export default function RenewalSensePage() {
                       <div className="mt-4 border-t border-border pt-4">
                         <button
                           type="button"
-                          onClick={() => loadPlanSimulator(sub, `${sub.subscription}-${idx}`, true)}
+                          onClick={() => handlePlanSimulatorClick(sub, `${sub.subscription}-${idx}`)}
                           disabled={planSimulators[`${sub.subscription}-${idx}`]?.loading}
                           className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-secondary disabled:opacity-60"
                         >
                           {planSimulators[`${sub.subscription}-${idx}`]?.loading ? (
                             <>
                               <Loader2 size={15} className="animate-spin" />
-                              Comparing plans...
+                              Finding alternative plans...
                             </>
                           ) : (
                             <>
                               <Sparkles size={15} />
-                              {planSimulators[`${sub.subscription}-${idx}`]?.data
+                              {planSimulators[`${sub.subscription}-${idx}`]?.expanded
                                 ? "Refresh Plans"
                                 : "Compare Plans"}
                             </>
@@ -860,7 +884,8 @@ export default function RenewalSensePage() {
                           </p>
                         )}
 
-                        {planSimulators[`${sub.subscription}-${idx}`]?.data && (
+                        {planSimulators[`${sub.subscription}-${idx}`]?.data &&
+                          planSimulators[`${sub.subscription}-${idx}`]?.expanded && (
                           <div className="mt-4 rounded-xl bg-secondary p-4">
                             {(() => {
                               const key = `${sub.subscription}-${idx}`;
