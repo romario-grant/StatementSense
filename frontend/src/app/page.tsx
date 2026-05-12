@@ -117,7 +117,7 @@ export default function Home() {
             variants={containerVariants}
             initial="hidden"
             animate="show"
-            className="grid grid-cols-1 md:grid-cols-2 gap-5 max-w-4xl mx-auto"
+            className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 max-w-7xl mx-auto"
           >
             {features.map(({ href, icon: Icon, title, desc }) => {
               return (
@@ -125,7 +125,7 @@ export default function Home() {
                 <Link href={href} className="no-underline text-inherit block h-full">
                   <MotionCard
                     hover
-                    className="h-full bg-white/5 dark:bg-black/55 backdrop-blur-xl border border-white/10 cursor-pointer py-5 px-6"
+                    className="h-full min-h-[13rem] bg-white/5 dark:bg-black/55 backdrop-blur-xl border border-white/10 cursor-pointer py-5 px-5"
                   >
                     <div className="flex flex-col h-full">
                       <h2 className="text-lg font-medium mb-2 tracking-tight flex text-white">
