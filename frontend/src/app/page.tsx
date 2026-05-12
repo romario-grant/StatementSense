@@ -20,17 +20,17 @@ const bgImages = [
 
 const features = [
   {
+    href: "/subscription",
+    icon: CreditCard,
+    title: "SubscriptionSense",
+    desc: "Detect, classify, and predict all recurring subscriptions. Includes trial detection and price change alerts.",
+  },
+  {
     href: "/renewal",
     icon: Wallet,
     imgSrc: "/bankcard.png",
     title: "RenewalSense",
     desc: "Predict subscription renewal failures. Analyze bank statements to map paycycles against recurring charges.",
-  },
-  {
-    href: "/subscription",
-    icon: CreditCard,
-    title: "SubscriptionSense",
-    desc: "Detect, classify, and predict all recurring subscriptions. Includes trial detection and price change alerts.",
   },
   {
     href: "/screentime",
