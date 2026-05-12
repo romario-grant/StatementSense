@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FileText,
@@ -31,6 +31,11 @@ import {
 } from "@/lib/subscriptionStore";
 import { readPageSession } from "@/lib/pageSessionStore";
 import { readUserPreferences } from "@/lib/userPreferenceStore";
+import {
+  readSenseSyncStatus,
+  SENSE_SYNC_UPDATED_EVENT,
+  type SenseSyncStatus,
+} from "@/lib/senseSyncStore";
 
 // ─── Types (mirrors existing codebase shapes) ────────────────────────────────
 
@@ -127,6 +132,28 @@ type CalendarRec = {
   away_reason: string;
 };
 
+type PlanSimulatorData = {
+  subscription?: string;
+  pricing_verified?: boolean;
+  current_amount_jmd?: number;
+  likely_current_plan?: {
+    name?: string;
+    monthly_equivalent_jmd?: number;
+  };
+  simulations?: {
+    plan?: {
+      name?: string;
+      monthly_equivalent_jmd?: number;
+    };
+  }[];
+};
+
+type PlanSimulatorState = {
+  data?: PlanSimulatorData;
+};
+
+type PlanSimulatorMap = Record<string, PlanSimulatorState>;
+
 // ─── Intelligence helpers ────────────────────────────────────────────────────
 
 const STREAMING_NAMES = new Set([
@@ -134,16 +161,6 @@ const STREAMING_NAMES = new Set([
   "apple tv", "peacock", "paramount+", "crunchyroll", "espn+",
   "discovery+", "showtime", "starz", "mubi", "shudder", "tidal",
 ]);
-
-const STUDENT_ELIGIBLE: Record<string, { discount: number; planName: string }> = {
-  spotify: { discount: 50, planName: "Spotify Premium Student (~$2.99/mo)" },
-  apple: { discount: 50, planName: "Apple One Student" },
-  youtube: { discount: 45, planName: "YouTube Premium Student" },
-  hulu: { discount: 80, planName: "Hulu Student (special pricing)" },
-  microsoft: { discount: 0, planName: "Microsoft 365 Education (free)" },
-  office: { discount: 0, planName: "Microsoft 365 Education (free)" },
-  adobe: { discount: 60, planName: "Adobe Creative Cloud Student" },
-};
 
 const ANNUAL_SAVINGS: Record<string, number> = {
   netflix: 20,
@@ -174,7 +191,8 @@ function deriveInsights(
   renewalSubs: RenewalSub[],
   calendarRecs: CalendarRec[],
   isStudent: boolean,
-  exchangeRate: number
+  exchangeRate: number,
+  planSimulators: PlanSimulatorMap
 ): Insight[] {
   const insights: Insight[] = [];
   if (!analysis) return insights;
@@ -224,22 +242,44 @@ function deriveInsights(
     });
   }
 
-  // ── Student plan suggestions ──
+  // Student plan suggestions from verified RenewalSense plan comparisons.
   if (isStudent) {
-    subs.forEach((s) => {
-      const key = Object.keys(STUDENT_ELIGIBLE).find((k) =>
-        s.merchant.toLowerCase().includes(k)
+    Object.values(planSimulators).forEach((simulator) => {
+      const data = simulator.data;
+      if (!data?.pricing_verified || !data.simulations?.length) return;
+
+      const currentPlanName = data.likely_current_plan?.name || "";
+      if (/student|education|academic/i.test(currentPlanName)) return;
+
+      const currentMonthly = Number(
+        data.current_amount_jmd ||
+          data.likely_current_plan?.monthly_equivalent_jmd ||
+          0
       );
-      if (!key) return;
-      const info = STUDENT_ELIGIBLE[key];
-      const savingsPerMonth = s.amount * (info.discount / 100);
+      const studentPlan = data.simulations
+        .map((item) => item.plan)
+        .filter(
+          (plan): plan is NonNullable<typeof plan> =>
+            Boolean(plan?.name && /student|education|academic/i.test(plan.name))
+        )
+        .sort(
+          (a, b) =>
+            Number(a.monthly_equivalent_jmd || 0) -
+            Number(b.monthly_equivalent_jmd || 0)
+        )[0];
+      const studentMonthly = Number(studentPlan?.monthly_equivalent_jmd || 0);
+      if (!studentPlan || currentMonthly <= 0 || studentMonthly <= 0) return;
+      if (studentMonthly >= currentMonthly) return;
+
+      const savingsPerMonth = currentMonthly - studentMonthly;
+      const subscriptionName = data.subscription || "this subscription";
       insights.push({
         type: "student",
         priority: "high",
-        title: `Switch ${s.merchant} to the student plan`,
-        body: `You're marked as a student but appear to be on a standard plan. ${info.planName} could save you ~${info.discount}% — approximately $${savingsPerMonth.toFixed(2)}/mo.`,
-        action: `Apply for the ${info.planName} student discount`,
-        savingsJmd: Math.round(savingsPerMonth * 12 * exchangeRate),
+        title: `Switch ${subscriptionName} to ${studentPlan.name}`,
+        body: `RenewalSense found a verified student or education plan. Current cost is about $${currentMonthly.toFixed(2)}/mo, while ${studentPlan.name} is about $${studentMonthly.toFixed(2)}/mo.`,
+        action: `Apply for ${studentPlan.name}`,
+        savingsJmd: Math.round(savingsPerMonth * 12),
       });
     });
   }
@@ -338,12 +378,18 @@ async function generatePDF(
     setTextColor: (...args: number[]) => void;
     setFillColor: (...args: number[]) => void;
     setDrawColor: (...args: number[]) => void;
-    text: (text: string | string[], x: number, y: number) => void;
+    text: (
+      text: string | string[],
+      x: number,
+      y: number,
+      options?: { align?: "left" | "right" | "center" }
+    ) => void;
     rect: (x: number, y: number, w: number, h: number, style: string) => void;
     line: (x1: number, y1: number, x2: number, y2: number) => void;
     addPage: () => void;
     setPage: (p: number) => void;
     getNumberOfPages: () => number;
+    getTextWidth: (text: string) => number;
     splitTextToSize: (text: string, maxWidth: number) => string[];
     save: (filename: string) => void;
   };
@@ -499,36 +545,66 @@ async function generatePDF(
   addText("Active Subscriptions", 14, true);
   addLine();
 
-  const cols = [48, 28, 28, 22, 22];
-  const headers = ["Subscription", "Amount/mo", "Period", "Renews Day", "Confidence"];
-  const colX = cols.reduce<number[]>((acc, w, i) => {
-    acc.push(i === 0 ? margin : acc[i - 1] + cols[i - 1]);
-    return acc;
-  }, []);
+  const tableX = margin;
+  const tableW = contentW;
+  const rowH = 8;
+  const headerH = 9;
+  const tableCols = [
+    { label: "Subscription", x: tableX + 4, w: 64, align: "left" as const },
+    { label: "Amount/mo", x: tableX + 91, w: 30, align: "right" as const },
+    { label: "Period", x: tableX + 105, w: 28, align: "left" as const },
+    { label: "Renews", x: tableX + 138, w: 22, align: "left" as const },
+    { label: "Confidence", x: tableX + 163, w: 22, align: "left" as const },
+  ];
 
-  doc.setFillColor(245, 245, 245);
-  doc.rect(margin, y - 4, contentW, 8, "F");
+  const drawCellText = (
+    text: string,
+    x: number,
+    baseline: number,
+    options?: { maxWidth?: number; align?: "left" | "right" }
+  ) => {
+    const safeText =
+      options?.maxWidth && doc.getTextWidth(text) > options.maxWidth
+        ? `${text.slice(0, Math.max(3, Math.floor(options.maxWidth / 2.2)))}...`
+        : text;
+    doc.text(safeText, x, baseline, { align: options?.align || "left" });
+  };
+
+  doc.setFillColor(246, 246, 246);
+  doc.setDrawColor(220, 220, 220);
+  doc.rect(tableX, y, tableW, headerH, "FD");
   doc.setFontSize(8);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(60, 60, 60);
-  headers.forEach((h, i) => doc.text(h, colX[i], y));
-  y += 6;
+  doc.setTextColor(55, 55, 55);
+  tableCols.forEach((col) =>
+    drawCellText(col.label, col.x, y + 6, { maxWidth: col.w, align: col.align })
+  );
+  y += headerH;
 
-  analysis.subscriptions.forEach((sub) => {
-    checkPage(8);
+  analysis.subscriptions.forEach((sub, index) => {
+    checkPage(rowH + 2);
+    doc.setFillColor(index % 2 === 0 ? 255 : 250, index % 2 === 0 ? 255 : 250, index % 2 === 0 ? 255 : 250);
+    doc.rect(tableX, y, tableW, rowH, "F");
+    doc.setDrawColor(232, 232, 232);
+    doc.line(tableX, y + rowH, tableX + tableW, y + rowH);
     doc.setFont("helvetica", "normal");
-    doc.setTextColor(30, 30, 30);
+    doc.setFontSize(8.5);
+    doc.setTextColor(35, 35, 35);
+
     const row = [
-      sub.merchant.length > 20 ? sub.merchant.slice(0, 18) + "..." : sub.merchant,
-      `$${sub.amount.toFixed(2)}`,
+      sub.merchant,
+      `${localCurrency} ${sub.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
       sub.period,
       sub.renewal_day ? `Day ${sub.renewal_day}` : "-",
       `${Math.round(sub.confidence * 100)}%`,
     ];
-    row.forEach((val, i) => doc.text(val, colX[i], y));
-    y += 5.5;
-    doc.setDrawColor(235, 235, 235);
-    doc.line(margin, y - 1, pageW - margin, y - 1);
+    row.forEach((val, i) =>
+      drawCellText(val, tableCols[i].x, y + 5.5, {
+        maxWidth: tableCols[i].w,
+        align: tableCols[i].align,
+      })
+    );
+    y += rowH;
   });
 
   y += 6;
@@ -580,15 +656,17 @@ export default function ReportPage() {
   const [analysis, setAnalysis] = useState<SubscriptionAnalysis | null>(null);
   const [renewalSubs, setRenewalSubs] = useState<RenewalSub[]>([]);
   const [calendarRecs, setCalendarRecs] = useState<CalendarRec[]>([]);
+  const [planSimulators, setPlanSimulators] = useState<PlanSimulatorMap>({});
   const [isStudent, setIsStudent] = useState(false);
   const [exchangeRate, setExchangeRate] = useState(157);
   const [localCurrency, setLocalCurrency] = useState("JMD");
   const [generating, setGenerating] = useState(false);
   const [activeFilter, setActiveFilter] = useState<string>("all");
+  const [syncStatus, setSyncStatus] = useState<SenseSyncStatus | null>(null);
   const pdfStarted = useRef(false);
 
   /* eslint-disable react-hooks/set-state-in-effect -- LocalStorage-backed report data is hydrated after mount to avoid SSR mismatches. */
-  useEffect(() => {
+  const loadReportCache = useCallback(() => {
     const savedAnalysis = readSubscriptionAnalysis<SubscriptionAnalysis>();
     if (savedAnalysis) {
       setAnalysis(savedAnalysis);
@@ -605,12 +683,14 @@ export default function ReportPage() {
     const renewalSession = readPageSession<{
       sourceSignature?: string;
       results: { subscriptions?: RenewalSub[] };
+      planSimulators?: PlanSimulatorMap;
     }>("renewal");
     if (
       renewalSession?.results?.subscriptions &&
       renewalSession.sourceSignature === sourceSignature
     ) {
       setRenewalSubs(renewalSession.results.subscriptions);
+      setPlanSimulators(renewalSession.planSimulators || {});
     }
 
     const calSession = readPageSession<{
@@ -628,12 +708,34 @@ export default function ReportPage() {
     if (prefs) {
       setIsStudent(prefs.isStudent);
     }
+    setSyncStatus(readSenseSyncStatus());
   }, []);
+
+  useEffect(() => {
+    loadReportCache();
+    const handleSyncUpdate = () => {
+      const nextStatus = readSenseSyncStatus();
+      setSyncStatus(nextStatus);
+      if (nextStatus?.status && nextStatus.status !== "running") {
+        loadReportCache();
+      }
+    };
+    window.addEventListener(SENSE_SYNC_UPDATED_EVENT, handleSyncUpdate);
+    return () => window.removeEventListener(SENSE_SYNC_UPDATED_EVENT, handleSyncUpdate);
+  }, [loadReportCache]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const insights = useMemo(
-    () => deriveInsights(analysis, renewalSubs, calendarRecs, isStudent, exchangeRate),
-    [analysis, renewalSubs, calendarRecs, isStudent, exchangeRate]
+    () =>
+      deriveInsights(
+        analysis,
+        renewalSubs,
+        calendarRecs,
+        isStudent,
+        exchangeRate,
+        planSimulators
+      ),
+    [analysis, renewalSubs, calendarRecs, isStudent, exchangeRate, planSimulators]
   );
 
   const handleDownload = async () => {
@@ -686,11 +788,6 @@ export default function ReportPage() {
             </h1>
             <p className="text-muted-foreground">
               Consolidated subscription intelligence across all senses.
-              {isStudent && (
-                <span className="ml-2 inline-flex items-center gap-1 text-purple-600 dark:text-purple-400 text-sm font-medium">
-                  <GraduationCap size={14} /> Student mode on
-                </span>
-              )}
             </p>
           </div>
 
@@ -853,6 +950,11 @@ export default function ReportPage() {
                     </div>
                   ))}
                 </div>
+                {syncStatus?.status === "running" && (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    Updating RenewalSense and CalendarSense in the background. This report refreshes when the new results are ready.
+                  </p>
+                )}
               </MotionCard>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

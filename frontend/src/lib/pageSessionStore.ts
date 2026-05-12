@@ -22,7 +22,8 @@ export const clearPageSession = (name: string) => {
 
 export const clearAllPageSessions = () => {
   if (typeof window === "undefined") return;
-  ["renewal", "screentime", "calendar"].forEach((name) => {
+  ["renewal", "screentime", "calendar", "reportSync"].forEach((name) => {
     window.localStorage.removeItem(keyFor(name));
   });
+  window.localStorage.removeItem("statementsense.reportSync.session");
 };

@@ -9,7 +9,6 @@ import {
   Info,
   Loader2,
   RefreshCw,
-  Sparkles,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import MotionCard from "@/components/MotionCard";
@@ -74,6 +73,7 @@ export default function RenewalSensePage() {
     payDay: "",
     frequency: "monthly",
   });
+  const [editingPayCycle, setEditingPayCycle] = useState(false);
   const [hasSourceAnalysis, setHasSourceAnalysis] = useState(false);
   const [currentMonth] = useState(() => {
     const now = new Date();
@@ -141,6 +141,10 @@ export default function RenewalSensePage() {
         setPlanSimulators({});
         activePlanSimulatorKeys.current.clear();
         setResults(data);
+        if (salaryOverride) {
+          setManualSalary(salaryOverride);
+          setEditingPayCycle(false);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "An error occurred");
       } finally {
@@ -212,6 +216,39 @@ export default function RenewalSensePage() {
     ) {
       setError("Enter a pay amount and a payday from 1 to 30.");
       setNeedsManualSalary(true);
+      return;
+    }
+
+    const source = readSubscriptionAnalysis<SavedSubscriptionAnalysis>();
+    if (!source?.transactions?.length) {
+      setError("Run SubscriptionSense first so RenewalSense can reuse the parsed transactions.");
+      return;
+    }
+    void runRenewalAnalysis(source, manualSalary);
+  };
+
+  const startEditingPayCycle = () => {
+    if (!results?.salary) return;
+    setManualSalary({
+      amount: String(results.salary.amount || ""),
+      payDay: String(results.salary.pay_day || ""),
+      frequency: results.salary.frequency === "biweekly" ? "biweekly" : "monthly",
+    });
+    setEditingPayCycle(true);
+  };
+
+  const handleEditPayCycleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const amount = Number(manualSalary.amount);
+    const payDay = Number(manualSalary.payDay);
+    if (
+      !Number.isFinite(amount) ||
+      amount <= 0 ||
+      !Number.isFinite(payDay) ||
+      payDay < 1 ||
+      payDay > 30
+    ) {
+      setError("Enter a pay amount and a payday from 1 to 30.");
       return;
     }
 
@@ -544,7 +581,16 @@ export default function RenewalSensePage() {
             >
               <div className="flex flex-col gap-6">
                 <MotionCard hover={false} delay={0}>
-                  <h3 className="font-medium mb-4 text-[0.95rem]">Analysis Summary</h3>
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <h3 className="font-medium text-[0.95rem]">Analysis Summary</h3>
+                    <button
+                      type="button"
+                      onClick={startEditingPayCycle}
+                      className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium hover:bg-secondary"
+                    >
+                      Edit Pay
+                    </button>
+                  </div>
                   {[
                     ["Transactions Reused", results.transactions_parsed],
                     [
@@ -574,6 +620,77 @@ export default function RenewalSensePage() {
                       </span>
                     </div>
                   ))}
+                  {editingPayCycle && (
+                    <form
+                      onSubmit={handleEditPayCycleSubmit}
+                      className="mt-4 space-y-3 rounded-xl border border-border bg-secondary/60 p-3"
+                    >
+                      <label className="block text-xs font-medium">
+                        Pay amount
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={manualSalary.amount}
+                          onChange={(event) =>
+                            setManualSalary((current) => ({
+                              ...current,
+                              amount: event.target.value,
+                            }))
+                          }
+                          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                      </label>
+                      <label className="block text-xs font-medium">
+                        Payday
+                        <input
+                          type="number"
+                          min="1"
+                          max="30"
+                          step="1"
+                          value={manualSalary.payDay}
+                          onChange={(event) =>
+                            setManualSalary((current) => ({
+                              ...current,
+                              payDay: event.target.value,
+                            }))
+                          }
+                          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                      </label>
+                      <label className="block text-xs font-medium">
+                        Pay cycle
+                        <select
+                          value={manualSalary.frequency}
+                          onChange={(event) =>
+                            setManualSalary((current) => ({
+                              ...current,
+                              frequency: event.target.value as ManualSalary["frequency"],
+                            }))
+                          }
+                          className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+                        >
+                          <option value="monthly">Monthly</option>
+                          <option value="biweekly">Biweekly</option>
+                        </select>
+                      </label>
+                      <div className="flex gap-2">
+                        <button
+                          type="submit"
+                          className="flex-1 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                        >
+                          Recalculate
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingPayCycle(false)}
+                          className="flex-1 rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-background"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  )}
                 </MotionCard>
 
                 {budgetStatus && monthlySubscriptionCapJmd && (
@@ -628,7 +745,7 @@ export default function RenewalSensePage() {
                   </div>
                   <div className="grid grid-cols-7 gap-1.5">
                     {Array.from({ length: results.calendar.first_weekday }).map((_, idx) => (
-                      <div key={`blank-${idx}`} className="aspect-square" />
+                      <div key={`blank-${idx}`} className="min-h-[3.4rem]" />
                     ))}
                     {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                     {results.paycycle_map.map((day: any) => {
@@ -645,7 +762,7 @@ export default function RenewalSensePage() {
                         <div
                           key={day.day}
                           title={`${day.date}: ${day.zone.toUpperCase()} renewal timing risk${day.renewals?.length ? `, ${day.renewals.join(", ")}` : ""}`}
-                          className={`relative aspect-square rounded-lg border bg-secondary/60 text-foreground flex items-center justify-center text-[0.75rem] font-medium ${day.is_today ? "border-foreground/40" : "border-border"} ${isBest ? "ring-2 ring-green-500/40" : ""}`}
+                          className={`relative min-h-[3.4rem] rounded-lg border bg-secondary/60 text-foreground flex items-center justify-center text-[0.75rem] font-medium ${day.is_today ? "border-foreground/40" : "border-border"} ${isBest ? "ring-2 ring-green-500/40" : ""}`}
                         >
                           <span className={`absolute inset-x-1 top-1 h-1 rounded-full ${zoneAccent}`} />
                           <span className="absolute left-1.5 top-2 text-[0.58rem] text-muted-foreground">
@@ -657,7 +774,7 @@ export default function RenewalSensePage() {
                             </span>
                           )}
                           {day.renewals?.length > 0 && (
-                            <span className="text-sm font-semibold">{day.renewals[0].substring(0, 1)}</span>
+                            <span className="absolute bottom-2 left-1/2 -translate-x-1/2 text-sm font-semibold leading-none">{day.renewals[0].substring(0, 1)}</span>
                           )}
                           {isBest && (
                             <span className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-green-500" />
@@ -867,10 +984,9 @@ export default function RenewalSensePage() {
                             <>
                               <Loader2 size={15} className="animate-spin" />
                               Finding alternative plans...
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles size={15} />
+                          </>
+                        ) : (
+                          <>
                               {planSimulators[`${sub.subscription}-${idx}`]?.expanded
                                 ? "Refresh Plans"
                                 : "Compare Plans"}

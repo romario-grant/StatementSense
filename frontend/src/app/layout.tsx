@@ -3,6 +3,7 @@ import { Inter, Geist } from "next/font/google";
 import "./globals.css";
 import ThemeProvider from "@/components/ThemeProvider";
 import AuthProvider from "@/components/AuthProvider";
+import SenseSyncProvider from "@/components/SenseSyncProvider";
 import { cn } from "@/lib/utils";
 
 const geist = Geist({
@@ -26,7 +27,9 @@ export default function RootLayout({
     <html lang="en" className={cn("dark", geist.variable, "font-sans")}>
       <body className="min-h-dvh antialiased">
         <ThemeProvider>
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            <SenseSyncProvider>{children}</SenseSyncProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

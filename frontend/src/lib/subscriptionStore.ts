@@ -1,3 +1,5 @@
+import { notifySubscriptionSourceChanged } from "./senseSyncStore";
+
 export type SharedSubscription = {
   id: number;
   name: string;
@@ -74,6 +76,7 @@ export const saveSharedSubscriptions = (subscriptions: SharedSubscription[]) => 
   });
 
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify([...unique.values()]));
+  notifySubscriptionSourceChanged();
 };
 
 export const sharedSubscriptionsSignature = (subscriptions: SharedSubscription[]) =>
@@ -124,6 +127,7 @@ export const readSubscriptionAnalysis = <T>(): T | null => {
 export const saveSubscriptionAnalysis = (analysis: unknown) => {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(ANALYSIS_STORAGE_KEY, JSON.stringify(analysis));
+  notifySubscriptionSourceChanged();
 };
 
 export const clearSubscriptionAnalysis = () => {

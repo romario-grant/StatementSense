@@ -8,7 +8,6 @@ import {
   TrendingDown,
   TrendingUp,
   Minus,
-  Zap,
   Plus,
   Trash2,
   BarChart3,
@@ -645,17 +644,14 @@ export default function ScreentimeSensePage() {
                       >
                         {loading ? (
                           <>
-                            <Loader2 size={18} className="animate-spin" /> Querying Gemini AI for {subscriptions.length} subscriptions...
+                            <Loader2 size={18} className="animate-spin" /> Analyzing {subscriptions.length} subscription{subscriptions.length !== 1 ? "s" : ""}...
                           </>
                         ) : (
                           <>
-                            <Zap size={16} /> Analyze All {subscriptions.length} Subscription{subscriptions.length !== 1 ? "s" : ""}
+                            Analyze All {subscriptions.length} Subscription{subscriptions.length !== 1 ? "s" : ""}
                           </>
                         )}
                       </button>
-                      <p className="text-xs text-muted-foreground text-center mt-1">
-                        All {subscriptions.length} Gemini calls fire in parallel — takes ~3 seconds regardless of count.
-                      </p>
                     </div>
                   )}
                 </MotionCard>
