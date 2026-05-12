@@ -12,12 +12,8 @@ import {
   Plane,
   RefreshCw,
   Sparkles,
-  XCircle,
   ArrowRight,
-  GraduationCap,
-  Tv,
   Calendar,
-  DollarSign,
   ShieldAlert,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
@@ -143,6 +139,8 @@ type PlanSimulatorData = {
   simulations?: {
     plan?: {
       name?: string;
+      billing_period?: string;
+      amount_jmd?: number;
       monthly_equivalent_jmd?: number;
     };
   }[];
@@ -162,22 +160,8 @@ const STREAMING_NAMES = new Set([
   "discovery+", "showtime", "starz", "mubi", "shudder", "tidal",
 ]);
 
-const ANNUAL_SAVINGS: Record<string, number> = {
-  netflix: 20,
-  spotify: 14,
-  "disney+": 28,
-  hulu: 16,
-  "apple tv+": 20,
-  youtube: 24,
-  adobe: 40,
-  canva: 44,
-  dropbox: 20,
-  evernote: 20,
-  notion: 16,
-};
-
 type Insight = {
-  type: "cancel" | "keep" | "switch_plan" | "student" | "streaming" | "annual" | "trial" | "travel" | "price" | "risk";
+  type: "cancel" | "keep" | "switch_plan" | "student" | "streaming" | "trial" | "travel" | "price" | "risk";
   priority: "critical" | "high" | "medium" | "low";
   title: string;
   body: string;
@@ -284,23 +268,48 @@ function deriveInsights(
     });
   }
 
-  // ── Annual plan savings (3+ consecutive months) ──
-  subs.forEach((s) => {
-    if ((s.charge_count ?? 0) < 3) return;
-    if (s.period?.toLowerCase() !== "monthly") return;
-    const key = Object.keys(ANNUAL_SAVINGS).find((k) =>
-      s.merchant.toLowerCase().includes(k)
+  Object.values(planSimulators).forEach((simulator) => {
+    const data = simulator.data;
+    if (!data?.pricing_verified || !data.simulations?.length) return;
+
+    const currentPlanName = data.likely_current_plan?.name || "";
+    if (/year|annual/i.test(currentPlanName)) return;
+
+    const currentMonthly = Number(
+      data.current_amount_jmd ||
+        data.likely_current_plan?.monthly_equivalent_jmd ||
+        0
     );
-    if (!key) return;
-    const annualDiscount = ANNUAL_SAVINGS[key];
-    const monthlySavings = s.amount * (annualDiscount / 100);
+    const annualPlan = data.simulations
+      .map((item) => item.plan)
+      .filter(
+        (plan): plan is NonNullable<typeof plan> =>
+          Boolean(
+            plan?.name &&
+              (/year|annual/i.test(plan.name) || plan.billing_period === "yearly")
+          )
+      )
+      .sort(
+        (a, b) =>
+          Number(a.monthly_equivalent_jmd || 0) -
+          Number(b.monthly_equivalent_jmd || 0)
+      )[0];
+    const annualMonthly = Number(annualPlan?.monthly_equivalent_jmd || 0);
+    if (!annualPlan || currentMonthly <= 0 || annualMonthly <= 0) return;
+    if (annualMonthly >= currentMonthly) return;
+
+    const savingsPerMonth = currentMonthly - annualMonthly;
+    const savingsPercent = Math.round((savingsPerMonth / currentMonthly) * 100);
+    if (savingsPercent <= 0) return;
+
+    const subscriptionName = data.subscription || "this subscription";
     insights.push({
-      type: "annual",
+      type: "switch_plan",
       priority: "medium",
-      title: `Switch ${s.merchant} to annual billing — save ${annualDiscount}%`,
-      body: `You've had ${s.merchant} for ${s.charge_count}+ months. Switching to annual saves approximately $${(monthlySavings * 12).toFixed(2)}/year based on typical pricing.`,
-      action: `Switch ${s.merchant} to an annual plan`,
-      savingsJmd: Math.round(monthlySavings * 12 * exchangeRate),
+      title: `Switch ${subscriptionName} to ${annualPlan.name}`,
+      body: `RenewalSense found verified annual pricing. Current cost is about $${currentMonthly.toFixed(2)}/mo; ${annualPlan.name} works out to about $${annualMonthly.toFixed(2)}/mo, saving about ${savingsPercent}%.`,
+      action: `Switch ${subscriptionName} to ${annualPlan.name}`,
+      savingsJmd: Math.round(savingsPerMonth * 12),
     });
   });
 
@@ -347,18 +356,6 @@ const priorityColors: Record<string, { border: string; bg: string; badge: "dange
   low: { border: "border-l-green-400", bg: "bg-green-500/5", badge: "safe" },
 };
 
-const insightIcons: Record<string, React.ReactNode> = {
-  trial: <AlertTriangle size={16} className="text-red-500 shrink-0" />,
-  price: <TrendingUp size={16} className="text-orange-500 shrink-0" />,
-  streaming: <Tv size={16} className="text-blue-500 shrink-0" />,
-  student: <GraduationCap size={16} className="text-purple-500 shrink-0" />,
-  annual: <DollarSign size={16} className="text-green-500 shrink-0" />,
-  risk: <ShieldAlert size={16} className="text-orange-500 shrink-0" />,
-  travel: <Plane size={16} className="text-blue-400 shrink-0" />,
-  cancel: <XCircle size={16} className="text-red-500 shrink-0" />,
-  keep: <CheckCircle size={16} className="text-green-500 shrink-0" />,
-  switch_plan: <RefreshCw size={16} className="text-blue-500 shrink-0" />,
-};
 
 // ─── PDF Generation (loads jsPDF from CDN at runtime — no npm package needed) ─
 
@@ -754,7 +751,6 @@ export default function ReportPage() {
     ? insights
     : insights.filter((i) => i.type === activeFilter || i.priority === activeFilter);
 
-  const totalPotentialSavingsJmd = insights.reduce((sum, i) => sum + (i.savingsJmd ?? 0), 0);
   const criticalCount = insights.filter((i) => i.priority === "critical").length;
   const highCount = insights.filter((i) => i.priority === "high").length;
 
@@ -765,7 +761,6 @@ export default function ReportPage() {
     { value: "trial", label: "Trials" },
     { value: "streaming", label: "Streaming" },
     { value: "student", label: "Student" },
-    { value: "annual", label: "Annual" },
     { value: "travel", label: "Travel" },
     { value: "risk", label: "Risk" },
   ];
@@ -859,7 +854,7 @@ export default function ReportPage() {
               transition={{ duration: 0.5 }}
               className="flex flex-col gap-6"
             >
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {[
                   {
                     label: "Subscriptions",
@@ -875,11 +870,6 @@ export default function ReportPage() {
                     label: "Recommendations",
                     value: insights.length,
                     color: criticalCount > 0 ? "text-red-600 dark:text-red-400" : "text-foreground",
-                  },
-                  {
-                    label: `Potential Annual Saving (${localCurrency})`,
-                    value: `$${totalPotentialSavingsJmd.toLocaleString()}`,
-                    color: "text-green-600 dark:text-green-400",
                   },
                 ].map(({ label, value, color }, i) => (
                   <motion.div
@@ -1014,8 +1004,7 @@ export default function ReportPage() {
                         className={`border-l-[3px] ${colors.border} ${colors.bg}`}
                       >
                         <div className="flex items-start justify-between gap-3 mb-2">
-                          <div className="flex items-start gap-2 flex-1">
-                            {insightIcons[insight.type]}
+                          <div className="flex-1">
                             <h3 className="text-sm font-medium leading-snug">{insight.title}</h3>
                           </div>
                           <Badge variant={colors.badge} className="shrink-0 capitalize text-[0.65rem]">
@@ -1023,20 +1012,15 @@ export default function ReportPage() {
                           </Badge>
                         </div>
 
-                        <p className="text-[0.82rem] text-muted-foreground mb-3 pl-6 leading-relaxed">
+                        <p className="text-[0.82rem] text-muted-foreground mb-3 leading-relaxed">
                           {insight.body}
                         </p>
 
-                        <div className="flex flex-wrap items-center justify-between gap-2 pl-6">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                           <p className="text-[0.82rem] font-medium text-foreground flex items-center gap-1.5">
                             <ArrowRight size={13} className="shrink-0" />
                             {insight.action}
                           </p>
-                          {insight.savingsJmd && (
-                            <span className="text-[0.75rem] font-medium text-green-700 dark:text-green-400 bg-green-500/10 px-2 py-1 rounded-full">
-                              ~{localCurrency} ${insight.savingsJmd.toLocaleString()}/yr saved
-                            </span>
-                          )}
                           {insight.confidence && (
                             <span className="text-[0.72rem] text-muted-foreground">
                               {Math.round(insight.confidence * 100)}% confidence
