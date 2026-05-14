@@ -11,7 +11,7 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google import genai
-from Capstone.Capstone.currency_normaliser import get_rate_with_fallback
+from backend.app.shared.currency_normaliser import get_rate_with_fallback
 # NOTE: Google Calendar OAuth imports (google_auth_oauthlib, googleapiclient)
 # are loaded lazily inside CalendarReader._authenticate() to prevent
 # the container from crashing on startup when credentials are missing.

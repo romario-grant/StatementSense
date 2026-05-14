@@ -23,19 +23,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend source code
 COPY backend/ ./backend/
 
-# Copy engine source files (referenced by backend)
-COPY RenewalSense.py .
-COPY ScreentimeSense.py .
-COPY CalendarSense.py .
-COPY Screentime.py .
-
-# Copy extraction and detection modules
-COPY capstone_revised/ ./capstone_revised/
+# Copy detection module used by backend engines
 COPY subscription_detection_alg.py .
-COPY Capstone/ ./Capstone/
-
-# Copy ML models
-COPY models/ ./models/
 
 # The GEMINI_API_KEY is injected at runtime via Secret Manager
 # (configured in Cloud Run service settings)

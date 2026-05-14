@@ -90,11 +90,10 @@ def subscription_debug():
         "error": _subscription_import_error,
         "python_path": sys.path,
         "cwd": os.getcwd(),
-        "capstone_exists": os.path.isdir("Capstone"),
-        "capstone_inner_exists": os.path.isdir("Capstone/Capstone"),
-        "capstone_init": os.path.isfile("Capstone/__init__.py"),
-        "capstone_inner_init": os.path.isfile("Capstone/Capstone/__init__.py"),
-        "capstone_revised_exists": os.path.isdir("capstone_revised"),
+        "extraction_module_exists": os.path.isdir("backend/app/extraction"),
+        "shared_helpers_exist": os.path.isdir("backend/app/shared"),
+        "currency_normaliser_exists": os.path.isfile("backend/app/shared/currency_normaliser.py"),
+        "trial_classifier_exists": os.path.isfile("backend/app/shared/trial_classifier.py"),
         "detection_alg_exists": os.path.isfile("subscription_detection_alg.py"),
     }
 

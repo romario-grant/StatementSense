@@ -6,7 +6,11 @@ import re
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
-load_dotenv()
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+
+load_dotenv(os.path.join(SCRIPT_DIR, ".env"))
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
 # ==========================================
 # 1. BANK STATEMENT PARSER (PDF + CSV)
@@ -28,7 +32,8 @@ class StatementParser:
     def parse_pdf(file_path):
         """
         Extracts transactions from a PDF bank statement.
-        Optimized for Jamaican bank formats (Scotia, NCB, JMMB).
+        Uses the project extractor when available, then falls back to the
+        standalone Scotia-oriented parser below.
         
         Scotia format: "DDMON DESCRIPTION J$ AMOUNT +/- [J$ BALANCE]"
         """
@@ -38,6 +43,19 @@ class StatementParser:
             print(f"  ✗ File not found: {file_path}")
             return []
         
+        try:
+            import sys
+            if PROJECT_ROOT not in sys.path:
+                sys.path.insert(0, PROJECT_ROOT)
+            from backend.app.extraction.extract_transactions import extract_from_pdf
+
+            universal_rows = extract_from_pdf(file_path)
+            converted = StatementParser._convert_universal_rows(universal_rows)
+            if converted:
+                return converted
+        except Exception as e:
+            print(f"  Universal extractor unavailable; using standalone parser. ({e})")
+
         transactions = []
         
         # Determine statement year from the file
@@ -142,6 +160,28 @@ class StatementParser:
             print(f"  ✗ PDF parsing error: {e}")
         
         return transactions
+
+    @staticmethod
+    def _convert_universal_rows(rows):
+        converted = []
+        for tx in rows or []:
+            date_val = tx.get("date")
+            if isinstance(date_val, str):
+                try:
+                    date_val = datetime.strptime(date_val, "%Y-%m-%d")
+                except ValueError:
+                    continue
+            elif not isinstance(date_val, datetime):
+                continue
+            amount = float(tx.get("amount") or 0)
+            converted.append({
+                "date": date_val,
+                "description": tx.get("description", ""),
+                "debit": abs(amount) if amount < 0 else 0.0,
+                "credit": amount if amount > 0 else 0.0,
+                "balance": float(tx.get("balance") or 0),
+            })
+        return converted
     
     @staticmethod
     def parse_csv(file_path):

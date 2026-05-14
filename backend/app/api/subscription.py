@@ -5,7 +5,7 @@ import logging
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
 
-from capstone_revised.extract_transactions import extract_from_bytes
+from backend.app.extraction.extract_transactions import extract_from_bytes
 
 from ..engines.subscription_engine import (
     analyze_extracted_subscriptions,

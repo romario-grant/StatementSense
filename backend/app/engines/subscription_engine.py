@@ -2,10 +2,10 @@
 SubscriptionSense Engine — Detects, classifies, and predicts subscriptions.
 
 Integrates three team members' work:
-  1. capstone_revised   — Universal PDF extraction (pdfplumber + camelot + Gemini)
+  1. extraction module   — Universal PDF extraction (pdfplumber + camelot + Gemini)
   2. subscription_detection_alg — Subscription detection (statistical period analysis)
-  3. Capstone.trial_classifier  — Free trial detection (sklearn LogisticRegression)
-  4. Capstone.currency_normaliser — JMD → USD conversion (BOJ rates)
+  3. shared.trial_classifier  — Free trial detection (sklearn LogisticRegression)
+  4. shared.currency_normaliser — JMD → USD conversion (live rate + fallback)
 
 No code is copied from RenewalSense — each module is imported from its source.
 """
@@ -21,11 +21,11 @@ logger = logging.getLogger(__name__)
 # ── External module imports ──────────────────────────────────────────
 
 # 1. Universal PDF extraction
-from capstone_revised.extract_transactions import extract_from_bytes
+from backend.app.extraction.extract_transactions import extract_from_bytes
 
 # 2. Classmate's subscription detection algorithm
 # 3. Free trial classifier (Capstone — sklearn-based)
-from Capstone.Capstone.trial_classifier import (
+from backend.app.shared.trial_classifier import (
     build_synthetic_dataset,
     train_classifier,
     extract_trial_features,
@@ -33,7 +33,7 @@ from Capstone.Capstone.trial_classifier import (
 )
 
 # 4. Currency normaliser (Capstone — JMD → USD)
-from Capstone.Capstone.currency_normaliser import (
+from backend.app.shared.currency_normaliser import (
     normalise_amount,
     get_rate_with_fallback,
     FALLBACK_RATE,
@@ -372,11 +372,11 @@ def _find_possible_subscriptions(
 
 
 # =====================================================================
-# Format converter (capstone_revised → engine format)
+# Format converter (extraction output → engine format)
 # =====================================================================
 
 def _convert_to_engine_format(universal_txs: list[dict]) -> list[dict]:
-    """Convert capstone_revised output to engine dict format."""
+    """Convert extraction output to engine dict format."""
     converted = []
     for tx in universal_txs:
         date_val = tx.get("date")
@@ -726,7 +726,7 @@ def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict],
 
 
 # =====================================================================
-# Free trial detection (Capstone trial_classifier)
+# Free trial detection (shared trial_classifier)
 # =====================================================================
 
 def _detect_trials(classified_txs: list[dict]) -> list[dict]:
@@ -848,7 +848,7 @@ def _build_subscription_analysis(raw_transactions: list[dict], dedupe: bool = Fa
     Main entry point: takes PDF bytes, returns full subscription analysis.
 
     Pipeline:
-      1. Extract transactions (capstone_revised — any bank)
+      1. Extract transactions (backend extraction module — any bank)
       2. Classify transactions (keyword matching)
       3. Detect subscriptions (classmate's statistical algorithm)
       4. Detect free trials (Capstone sklearn classifier)

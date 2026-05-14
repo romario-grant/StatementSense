@@ -4,8 +4,31 @@ import json
 from dotenv import load_dotenv
 from google import genai
 
-# Load environment variables (Security Patch)
-load_dotenv()
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+
+# Load environment variables from either this standalone folder or the project root.
+load_dotenv(os.path.join(SCRIPT_DIR, ".env"))
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+
+FALLBACK_RATE = 157.50
+
+
+def _convert_cost_to_local(amount, source_currency="USD", local_currency="JMD", exchange_rate=None):
+    source = (source_currency or local_currency or "JMD").upper()
+    target = (local_currency or "JMD").upper()
+    try:
+        value = float(amount or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if source == target:
+        return value
+    exchange_rate = float(exchange_rate or 0) or FALLBACK_RATE
+    if source == "USD" and target == "JMD":
+        return value * exchange_rate
+    if source == "JMD" and target == "USD" and exchange_rate:
+        return value / exchange_rate
+    return value
 
 # ==========================================
 # 1. GEMINI AI CLASSIFIER (SEARCH ENABLED)
@@ -39,6 +62,7 @@ class GeminiClassifier:
             "is_shared_plan": false,
             "student_plan_price": 5.99,
             "pricing_verified": true,
+            "pricing_currency": "USD",
             "pricing_tiers": {
                 "monthly": 4.99,
                 "yearly": 39.99,
@@ -56,14 +80,16 @@ class GeminiClassifier:
         - is_shared_plan: true if this specific price is a family/duo plan
         - student_plan_price: The monthly cost of a student plan based on your search. Return 0 if no student tier exists.
         - pricing_verified: true ONLY if you found the pricing from a reliable source via Google Search. false if you are guessing or unsure.
+        - pricing_currency: Currency code for returned tier prices, e.g. USD or JMD.
         - pricing_tiers: An object with the REAL prices from your search. Set ALL to 0 if pricing_verified is false.
             - monthly: The monthly subscription price
             - yearly: The yearly subscription price (total cost for the full year, NOT per-month)
             - lifetime: The one-time lifetime purchase price. 0 if no lifetime option exists.
         """
 
-    def analyze_app(self, app_name, cost):
-        prompt = f"App: {app_name}, Cost: {cost}"
+    def analyze_app(self, app_name, cost, local_currency="JMD", exchange_rate=None):
+        local_currency = (local_currency or "JMD").upper()
+        prompt = f"App: {app_name}, User cost: {local_currency} {cost}"
         max_retries = 4
         for attempt in range(max_retries):
             try:
@@ -94,6 +120,14 @@ class GeminiClassifier:
                 # the user's reported cost actually matches one of the returned tiers.
                 pricing = result.get("pricing_tiers", {})
                 verified = result.get("pricing_verified", False)
+                pricing_currency = str(result.get("pricing_currency") or "USD").upper()
+                result["pricing_tiers_original"] = dict(pricing)
+                pricing = {
+                    key: round(_convert_cost_to_local(value, pricing_currency, local_currency, exchange_rate), 2)
+                    for key, value in pricing.items()
+                }
+                result["pricing_tiers"] = pricing
+                result["pricing_currency"] = local_currency
                 tier_values = [v for v in pricing.values() if v and v > 0]
                 
                 if verified and tier_values:
@@ -109,6 +143,7 @@ class GeminiClassifier:
                 elif not verified:
                     # Gemini admitted it couldn't find pricing — zero out tiers
                     result["pricing_tiers"] = {"monthly": 0, "yearly": 0, "lifetime": 0}
+                    result["pricing_currency"] = local_currency
                     print(f"  ⚠ Warning: Gemini could not verify pricing for {app_name}. Plan optimization disabled.")
                 
                 return result
@@ -127,6 +162,7 @@ class GeminiClassifier:
                 "engagement_type": "active", "is_multi_device": False, "has_free_tier": False, 
                 "is_shared_plan": False, "student_plan_price": 0,
                 "pricing_verified": False,
+                "pricing_currency": "JMD",
                 "pricing_tiers": {"monthly": 0, "yearly": 0, "lifetime": 0}
             }
  
@@ -668,6 +704,11 @@ def run_app():
 
     analyzer = SubscriptionAnalyzer(hourly_wage=user_wage, style_multiplier=style_multiplier) 
     print(f"\n[Settings Saved: Baseline set to ${user_wage:.2f}/hr. Core Threshold is ${analyzer.base_cancel_threshold_cph:.2f}/hr]")
+    local_currency = input("Local currency for subscription costs (default JMD): ").strip().upper() or "JMD"
+    exchange_rate = None
+    if local_currency != "USD":
+        rate_input = input(f"USD to {local_currency} exchange rate (press Enter for {FALLBACK_RATE}): ").strip()
+        exchange_rate = float(rate_input) if rate_input else FALLBACK_RATE
     
     while True:
         app_name = input("\nEnter the App Name (or 'q' to quit): ")
@@ -695,7 +736,7 @@ def run_app():
         print("\n[StatementSense V3 is analyzing...]")
         
         # Step 1: Gemini fetches real-world data + pricing tiers via Google Search
-        ai_data = classifier.analyze_app(app_name, cost)
+        ai_data = classifier.analyze_app(app_name, cost, local_currency, exchange_rate)
         
         # Step 2: Mathematical Analysis (V3 Engine)
         result = analyzer.evaluate(app_name, cost, weekly_hours, months_sub, ai_data)

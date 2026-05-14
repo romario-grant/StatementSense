@@ -7,8 +7,8 @@ from calendar events. Uses a trained scikit-learn pipeline:
 
     TF-IDF Vectorization → Random Forest Classifier
 
-Training data: datasets/calendar_travel_dataset.csv
-Trained model: models/saved/travel_model.joblib
+Training data: backend/app/ml/datasets/calendar_travel_dataset.csv
+Trained model: backend/app/ml/saved/travel_model.joblib
 
 CRISP-DM Phases Covered:
     - Phase 3 (Data Preparation): Text preprocessing, feature engineering
@@ -647,10 +647,9 @@ class TravelDetectionModel:
 def main():
     """Train the model, evaluate it, save it, and run a demo prediction."""
     
-    # Resolve paths relative to this script
+    # Resolve paths relative to this backend ML package
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_dir = os.path.dirname(script_dir)
-    dataset_path = os.path.join(project_dir, 'datasets', 'calendar_travel_dataset.csv')
+    dataset_path = os.path.join(script_dir, 'datasets', 'calendar_travel_dataset.csv')
     model_save_dir = os.path.join(script_dir, 'saved')
     
     if not os.path.exists(dataset_path):
@@ -751,7 +750,7 @@ def main():
     print("  [OK] Saved model verified - identical predictions\n")
     
     # --- Export evaluation report ---
-    report_path = os.path.join(project_dir, 'datasets', 'travel_model_evaluation.json')
+    report_path = os.path.join(script_dir, 'datasets', 'travel_model_evaluation.json')
     with open(report_path, 'w') as f:
         # Convert numpy types for JSON serialization
         exportable = {

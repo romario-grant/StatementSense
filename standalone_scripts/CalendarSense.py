@@ -11,7 +11,11 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-load_dotenv()
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+
+load_dotenv(os.path.join(SCRIPT_DIR, ".env"))
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
 # ==========================================
 # 1. GOOGLE CALENDAR READER
@@ -23,17 +27,24 @@ SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 class CalendarReader:
     """Connects to Google Calendar via OAuth2 and reads upcoming events."""
     
-    def __init__(self):
+    def __init__(self, access_token=None):
+        self.access_token = access_token
         self.service = self._authenticate()
     
     def _authenticate(self):
         """Handles OAuth2 flow — opens browser on first run, caches token after."""
         creds = None
+        if self.access_token:
+            return build('calendar', 'v3', credentials=Credentials(token=self.access_token))
         
         # Resolve credential paths relative to this script's directory
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        token_path = os.path.join(script_dir, 'token.json')
-        creds_path = os.path.join(script_dir, 'credentials.json')
+        token_path = os.path.join(SCRIPT_DIR, 'token.json')
+        creds_path = os.path.join(SCRIPT_DIR, 'credentials.json')
+        if not os.path.exists(creds_path):
+            root_creds_path = os.path.join(PROJECT_ROOT, 'credentials.json')
+            if os.path.exists(root_creds_path):
+                creds_path = root_creds_path
+                token_path = os.path.join(PROJECT_ROOT, 'token.json')
         
         if os.path.exists(token_path):
             creds = Credentials.from_authorized_user_file(token_path, SCOPES)
@@ -47,7 +58,7 @@ class CalendarReader:
                     raise FileNotFoundError(
                         "CRITICAL: credentials.json not found.\n"
                         "Download it from Google Cloud Console → APIs & Services → Credentials.\n"
-                        "Save it in your StatementSense folder."
+                        "Save it beside this script or in the StatementSense project root."
                     )
                 flow = InstalledAppFlow.from_client_secrets_file(creds_path, SCOPES)
                 creds = flow.run_local_server(port=0)
@@ -113,6 +124,9 @@ class GeminiCalendarAnalyzer:
     
     def __init__(self):
         api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+            api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("CRITICAL: GEMINI_API_KEY not found in your .env file.")
         self.client = genai.Client(api_key=api_key)

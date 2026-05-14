@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google import genai
-from Capstone.Capstone.currency_normaliser import get_rate_with_fallback
+from backend.app.shared.currency_normaliser import get_rate_with_fallback
 
 
 def _convert_cost_to_local(amount, source_currency="USD", local_currency="JMD", exchange_rate=None):

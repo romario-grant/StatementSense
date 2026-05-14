@@ -13,7 +13,7 @@ import calendar
 import time
 from datetime import datetime, timedelta
 
-from Capstone.Capstone.currency_normaliser import FALLBACK_RATE, get_rate_with_fallback
+from backend.app.shared.currency_normaliser import FALLBACK_RATE, get_rate_with_fallback
 
 try:
     from google import genai
@@ -21,11 +21,11 @@ try:
 except ImportError:
     _HAS_GEMINI = False
 
-# ── Universal extractor (capstone_revised) ─────────────────────────
+# ── Universal extractor ────────────────────────────────────────────
 # Falls back to the legacy Scotiabank-only parser if this import fails
 # (e.g. missing camelot dependency in some environments).
 try:
-    from capstone_revised.extract_transactions import extract_from_bytes as _universal_extract
+    from backend.app.extraction.extract_transactions import extract_from_bytes as _universal_extract
     _HAS_UNIVERSAL = True
 except ImportError:
     _HAS_UNIVERSAL = False
@@ -50,16 +50,16 @@ logger = logging.getLogger(__name__)
 class StatementParser:
     """Extracts transactions from bank statements (PDF + CSV).
     
-    Uses the universal extractor (capstone_revised) — works with ANY bank.
+    Uses the universal extractor — works with ANY bank.
     """
     
     @staticmethod
     def _convert_universal_to_engine_format(universal_txs):
         """
-        Convert capstone_revised output format into the dict format expected
+        Convert extraction output format into the dict format expected
         by the downstream classifier/detector pipeline.
         
-        capstone_revised outputs:
+        extraction outputs:
             {bank, date (str), description, amount (signed float), balance, currency, source_file}
         
         Engine expects:
@@ -102,14 +102,14 @@ class StatementParser:
     def parse_pdf_bytes(file_bytes):
         """
         Parse PDF from bytes (for file upload).
-        Uses the universal extractor (capstone_revised) — works with any bank.
+        Uses the universal extractor — works with any bank.
         """
         if not _HAS_UNIVERSAL:
-            logger.error("capstone_revised module not available — cannot extract transactions")
+            logger.error("Extraction module not available — cannot extract transactions")
             return []
         
         try:
-            logger.info("Using universal extractor (capstone_revised)...")
+            logger.info("Using universal extractor...")
             universal_txs = _universal_extract(file_bytes)
             if universal_txs:
                 converted = StatementParser._convert_universal_to_engine_format(universal_txs)

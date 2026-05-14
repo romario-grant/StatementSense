@@ -1,5 +1,5 @@
 """
-Transaction Extractor — main entry point for capstone_revised.
+Transaction Extractor — main entry point for StatementSense extraction.
 
 Orchestrates the full extraction pipeline:
   1. Open-source table extraction (pdfplumber + camelot)
@@ -7,7 +7,7 @@ Orchestrates the full extraction pipeline:
   3. Bridge conversion to capstone format
 
 Usage:
-    from capstone_revised.extract_transactions import extract_from_pdf
+    from backend.app.extraction.extract_transactions import extract_from_pdf
 
     transactions = extract_from_pdf("path/to/statement.pdf")
     # Returns: [{bank, date, description, amount, balance, currency, source_file}, ...]
@@ -179,4 +179,3 @@ def extract_from_bytes(file_bytes: bytes) -> List[Dict[str, Any]]:
             Path(tmp_path).unlink()
         except OSError:
             pass
-
