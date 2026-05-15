@@ -1,10 +1,11 @@
 """
-RenewalSense Engine — Pure functions for renewal risk analysis.
-Stripped of CLI code, ready for API integration.
+RenewalSense engine for renewal timing and payment-risk analysis.
+
+The module converts parsed statement transactions into salary-cycle, recurring
+expense, subscription, and renewal-risk summaries for the API layer.
 """
 
 import os
-import io
 import csv
 import re
 import logging
@@ -15,22 +16,21 @@ from datetime import datetime, timedelta
 
 from backend.app.shared.currency_normaliser import FALLBACK_RATE, get_rate_with_fallback
 
+# Gemini powers verified plan-price lookups; absence disables that feature only.
 try:
     from google import genai
     _HAS_GEMINI = True
 except ImportError:
     _HAS_GEMINI = False
 
-# ── Universal extractor ────────────────────────────────────────────
-# Falls back to the legacy Scotiabank-only parser if this import fails
-# (e.g. missing camelot dependency in some environments).
+# Universal extractor is used when available; otherwise the bank-specific parser handles the input.
 try:
     from backend.app.extraction.extract_transactions import extract_from_bytes as _universal_extract
     _HAS_UNIVERSAL = True
 except ImportError:
     _HAS_UNIVERSAL = False
 
-# ── Classmate’s subscription detection algorithm ───────────────
+# Shared statistical detector is preferred; the built-in pattern detector is used when it is missing.
 try:
     from subscription_detection_alg import (
         Transaction as DetectionTransaction,
@@ -44,40 +44,27 @@ logger = logging.getLogger(__name__)
 
 
 # ==========================================
-# 1. BANK STATEMENT PARSER (PDF + CSV)
+# 1. STATEMENT INGESTION
 # ==========================================
 
 class StatementParser:
-    """Extracts transactions from bank statements (PDF + CSV).
-    
-    Uses the universal extractor — works with ANY bank.
-    """
-    
+    """Extracts transactions from bank-statement PDFs and CSVs using the universal extractor."""
+
     @staticmethod
     def _convert_universal_to_engine_format(universal_txs):
-        """
-        Convert extraction output format into the dict format expected
-        by the downstream classifier/detector pipeline.
-        
-        extraction outputs:
-            {bank, date (str), description, amount (signed float), balance, currency, source_file}
-        
-        Engine expects:
-            {date (datetime), description, debit (float), credit (float), balance (float)}
-        """
+        """Reshape extractor output into the dict format consumed by the classifier and detectors."""
         converted = []
         for tx in universal_txs:
-            # Parse date string → datetime
             date_val = tx.get("date")
             if isinstance(date_val, str):
                 try:
                     date_val = datetime.strptime(date_val, "%Y-%m-%d")
                 except ValueError:
-                    continue  # Skip unparseable dates
+                    continue
             elif not isinstance(date_val, datetime):
                 continue
-            
-            # Split signed amount → debit / credit
+
+            # Signed amount is split into separate debit and credit fields.
             amount = tx.get("amount", 0) or 0
             if amount < 0:
                 debit = abs(amount)
@@ -85,7 +72,7 @@ class StatementParser:
             else:
                 debit = 0
                 credit = amount
-            
+
             balance = tx.get("balance") or 0
             
             converted.append({
@@ -100,14 +87,11 @@ class StatementParser:
     
     @staticmethod
     def parse_pdf_bytes(file_bytes):
-        """
-        Parse PDF from bytes (for file upload).
-        Uses the universal extractor — works with any bank.
-        """
+        """Parse uploaded PDF bytes into engine-format transaction rows."""
         if not _HAS_UNIVERSAL:
             logger.error("Extraction module not available — cannot extract transactions")
             return []
-        
+
         try:
             logger.info("Using universal extractor...")
             universal_txs = _universal_extract(file_bytes)
@@ -122,17 +106,17 @@ class StatementParser:
                 logger.warning("Universal extractor returned 0 transactions")
         except Exception as e:
             logger.error(f"Universal extractor failed: {e}")
-        
+
         return []
 
 
 
 # ==========================================
-# 2. RULE-BASED TRANSACTION CLASSIFIER
+# 2. TRANSACTION CLASSIFICATION
 # ==========================================
 
 class RuleBasedClassifier:
-    """Classifies transactions using keyword matching. No AI required."""
+    """Assigns a category, vendor name, and subscription/recurring flags to each transaction via keyword matching."""
     
     SUBSCRIPTION_KEYWORDS = {
         'netflix': 'Netflix', 'spotify': 'Spotify', 'youtube': 'YouTube',
@@ -189,17 +173,17 @@ class RuleBasedClassifier:
     }
     
     def classify(self, transactions):
-        """Classify each transaction. Returns the same list with added fields."""
+        """Annotate each transaction in place with category, vendor, and recurring flags."""
         for tx in transactions:
             desc = tx.get('description', '').upper()
             desc_lower = desc.lower()
-            
+
             category = 'other'
             is_subscription = False
             is_recurring = False
             vendor_name = tx.get('description', '')
-            
-            # Skip subscription detection for bill payments (utilities like Flow, Digicel)
+
+            # Bill payments (utilities like Flow, Digicel) share keywords with subscriptions; classify them as utilities instead.
             is_bill_payment = 'BILL PAYMENT' in desc
             if not is_bill_payment:
                 for keyword, name in self.SUBSCRIPTION_KEYWORDS.items():
@@ -209,29 +193,30 @@ class RuleBasedClassifier:
                         is_recurring = True
                         vendor_name = name
                         break
-            
+
             if not is_subscription:
                 for pattern, cat in self.TRANSACTION_PATTERNS.items():
                     if pattern in desc:
                         category = cat
                         break
-            
+
             if category in ('shopping', 'other'):
                 for keyword, cat in self.VENDOR_KEYWORDS.items():
                     if keyword in desc_lower:
                         category = cat
                         vendor_name = keyword.title()
                         break
-            
+
+            # Large unattributed credits are treated as salary deposits.
             if tx['credit'] > 0 and category in ('transfer', 'other'):
                 if tx['credit'] >= 10000:
                     category = 'salary'
                     is_recurring = True
-            
+
             if 'ABM' in desc or 'ATM' in desc:
                 category = 'atm_withdrawal'
-            
-            # Auto-flag recurring expense categories
+
+            # Fixed-bill categories are inherently recurring.
             if category in ('utilities', 'loan_payment', 'insurance', 'rent'):
                 is_recurring = True
             
@@ -1012,15 +997,14 @@ def _build_analysis(transactions, provided_subscriptions=None, price_changes=Non
     salary_info = PatternDetector.detect_salary(classified) or _coerce_manual_salary(manual_salary)
     expenses = PatternDetector.detect_expenses(classified)
     
-    # ── Subscription detection ──────────────────────────────────────
-    # Use classmate's subscription_detection_alg if available,
-    # otherwise fall back to built-in PatternDetector.
+    # Prefer the shared recurring-charge detector when available; the local
+    # detector keeps RenewalSense usable in reduced environments.
     if provided_subscriptions is not None:
         subscriptions = _coerce_subscription_rows(provided_subscriptions)
         renewal_predictions = _predict_from_provided_subscriptions(subscriptions)
     elif _HAS_DETECTION_ALG:
-        logger.info("Using classmate's subscription detection algorithm")
-        subscriptions, renewal_predictions = _run_classmate_detection(classified)
+        logger.info("Using shared subscription detection algorithm")
+        subscriptions, renewal_predictions = _run_statistical_detection(classified)
     else:
         logger.info("subscription_detection_alg not available, using built-in detector")
         subscriptions = PatternDetector.detect_subscriptions(classified)
@@ -1130,10 +1114,7 @@ def _build_analysis(transactions, provided_subscriptions=None, price_changes=Non
 
 
 def analyze_statement(file_bytes):
-    """
-    Legacy entry point: parse PDF bytes, then run renewal risk analysis.
-    The frontend now uses analyze_existing_data() to avoid re-uploading.
-    """
+    """Parse PDF or CSV bytes from an uploaded statement and run the full renewal-risk analysis pipeline."""
     transactions = StatementParser.parse_pdf_bytes(file_bytes)
     if not transactions:
         return {"error": "No transactions found in the PDF. Check the statement format."}
@@ -1141,10 +1122,7 @@ def analyze_statement(file_bytes):
 
 
 def analyze_existing_data(transactions, subscriptions, price_changes=None, manual_salary=None, year=None, month=None):
-    """
-    Run RenewalSense from the already-parsed SubscriptionSense result.
-    This skips bank parsing entirely.
-    """
+    """Run the renewal-risk analysis against transactions and subscriptions that have already been parsed elsewhere, bypassing statement ingestion."""
     return _build_analysis(
         _coerce_transaction_rows(transactions),
         provided_subscriptions=subscriptions,
@@ -1392,17 +1370,15 @@ def simulate_plan_options(
     }
 
 
-def _run_classmate_detection(classified_transactions):
+def _run_statistical_detection(classified_transactions):
     """
-    Convert engine transactions → classmate's Transaction objects,
+    Convert engine transactions into detector Transaction objects,
     run detect_subscriptions(), and map results back to the API format
     expected by the frontend (subscriptions list + renewal_predictions list).
     """
     from datetime import timedelta
 
-    # Convert to classmate's Transaction format
-    # The algorithm needs: date (date/datetime), amount (float), merchant (str)
-    # We only pass debits (outgoing money) since subscriptions are charges
+    # The detector expects debits with date, amount, and merchant fields.
     detection_txs = []
     for tx in classified_transactions:
         if tx["debit"] > 0:
@@ -1415,7 +1391,6 @@ def _run_classmate_detection(classified_transactions):
     if not detection_txs:
         return [], []
     
-    # Run classmate's detection algorithm
     detected_subs = _detect_subs(detection_txs, min_occurrences=2)
     
     # Map to the format expected by the risk engine and API
@@ -1440,7 +1415,7 @@ def _run_classmate_detection(classified_transactions):
             "fail_rate": failures / max(len(sub.transactions), 1),
         })
         
-        # Build renewal prediction from classmate's algorithm
+        # Build renewal predictions from the detected recurring cadence.
         next_due = sub.next_expected()
         if next_due is not None:
             # Ensure next_due is in the future
@@ -1454,7 +1429,7 @@ def _run_classmate_detection(classified_transactions):
             
             days_until = (next_date - today).days
             
-            # Confidence label from classmate's confidence score
+            # Confidence labels mirror the detector's recurrence score.
             if sub.confidence >= 0.8:
                 conf_label = "high"
             elif sub.confidence >= 0.5:
@@ -1478,7 +1453,7 @@ def _run_classmate_detection(classified_transactions):
                     "band_days": band,
                 },
                 "confidence_label": conf_label,
-                "method": f"classmate_alg_{sub.period or 'unknown'}",
+                "method": f"statistical_detector_{sub.period or 'unknown'}",
                 "data_points": len(sub.transactions),
                 "last_charge_date": max(t.date for t in sub.transactions).strftime("%Y-%m-%d") if sub.transactions else None,
             })
@@ -1486,5 +1461,5 @@ def _run_classmate_detection(classified_transactions):
     # Sort predictions by soonest first
     renewal_predictions.sort(key=lambda p: p["days_until_charge"])
     
-    logger.info(f"Classmate's algorithm detected {len(subscriptions)} subscription(s), {len(renewal_predictions)} prediction(s)")
+    logger.info(f"Shared detector found {len(subscriptions)} subscription(s), {len(renewal_predictions)} prediction(s)")
     return subscriptions, renewal_predictions

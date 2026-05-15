@@ -1,3 +1,5 @@
+"""Vertex AI Gemini classifier for extracting account-holder and bank-account fields from statement text. Falls back to the regex-based extractor when the Vertex AI SDK or its credentials are unavailable."""
+
 import json
 import logging
 import os
@@ -26,6 +28,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 def classify_blobs(blobs: Dict[str, str]) -> Dict[str, Any]:
+    """Classify a dictionary of statement text blobs and return the canonical extraction result. Uses Vertex AI when available; otherwise falls back to deterministic regex extraction."""
     logger.info("Starting text classification and information extraction")
     full_text = blobs.get("full_text", "")
     header_text = blobs.get("header", "")
@@ -41,27 +44,24 @@ def classify_blobs(blobs: Dict[str, str]) -> Dict[str, Any]:
     return classify_with_rules(full_text, header_text)
 
 def setup_gcp_credentials() -> Optional[str]:
-    """Setup GCP credentials from either file or Streamlit secrets"""
+    """Resolve Vertex AI credentials from the active runtime environment."""
     try:
-        # First, try to get credentials from environment variable (local development)
         credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
         if credentials_path and os.path.exists(credentials_path):
             logger.info("Using GCP credentials from file")
             return credentials_path
         
-        # If running in Streamlit Cloud, try to get from secrets
+        # Hosted notebook/demo environments can provide service-account data as secrets.
         if STREAMLIT_AVAILABLE and hasattr(st, 'secrets'):
             try:
-                # Check if we have GCP secrets in TOML format
                 gcp_secrets = st.secrets.get("gcp_service_account", {})
                 if gcp_secrets:
-                    # Create a temporary credentials file from Streamlit secrets
+                    # Vertex AI expects a file path, so materialize the secret as JSON.
                     credentials_dict = dict(gcp_secrets)
                     temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
                     json.dump(credentials_dict, temp_file, indent=2)
                     temp_file.close()
                     
-                    # Set the environment variable to point to the temp file
                     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_file.name
                     logger.info("Using GCP credentials from Streamlit secrets")
                     return temp_file.name
@@ -74,6 +74,7 @@ def setup_gcp_credentials() -> Optional[str]:
         return None
 
 def should_use_gemini_api() -> bool:
+    """Return ``True`` when Vertex AI is installed, enabled, and has valid credentials available in the current environment."""
     if not VERTEX_AI_AVAILABLE:
         logger.info("Vertex AI SDK not available")
         return False
@@ -91,8 +92,8 @@ def should_use_gemini_api() -> bool:
     return True
 
 def get_project_id_from_credentials() -> Optional[str]:
+    """Resolve the GCP project ID from Streamlit secrets, a credentials file, or the ``GOOGLE_CLOUD_PROJECT`` environment variable."""
     try:
-        # First try from Streamlit secrets
         if STREAMLIT_AVAILABLE and hasattr(st, 'secrets'):
             try:
                 gcp_secrets = st.secrets.get("gcp_service_account", {})
@@ -103,7 +104,6 @@ def get_project_id_from_credentials() -> Optional[str]:
             except Exception as e:
                 logger.warning(f"Could not get project ID from Streamlit secrets: {e}")
         
-        # Fallback to credentials file
         credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
         if credentials_path and os.path.exists(credentials_path):
             with open(credentials_path, 'r') as f:
@@ -114,12 +114,13 @@ def get_project_id_from_credentials() -> Optional[str]:
     except Exception as e:
         logger.warning(f"Could not extract project ID from credentials: {e}")
     
-    # Final fallback to environment variable
+    # Use the configured project ID when credentials do not include one.
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "dogwood-reality-469112-v9")
     logger.info(f"Using fallback project ID: {project_id}")
     return project_id
 
 def classify_with_gemini_api(blobs: Dict[str, str]) -> Dict[str, Any]:
+    """Invoke Vertex AI Gemini against the supplied statement blobs and return the parsed JSON extraction result."""
     logger.info("Using Vertex AI Gemini for classification")
     project_id = get_project_id_from_credentials()
     location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
@@ -149,6 +150,7 @@ def classify_with_gemini_api(blobs: Dict[str, str]) -> Dict[str, Any]:
     return result
 
 def classify_with_rules(full_text: str, header_text: str) -> Dict[str, Any]:
+    """Extract account-holder and bank-account fields using regex rules over the full text and header. Used as the deterministic fallback when Vertex AI is unavailable."""
     logger.info("Using rule-based extraction")
     account_holder = {**extract_account_holder_patterns(full_text), **extract_account_holder_patterns(header_text)}
     bank_account = {**extract_bank_account_patterns(full_text), **extract_bank_account_patterns(header_text)}
@@ -160,6 +162,7 @@ def classify_with_rules(full_text: str, header_text: str) -> Dict[str, Any]:
     return result
 
 def create_extraction_prompt(blobs: Dict[str, str]) -> str:
+    """Build the Gemini prompt for extracting statement fields. The prompt is extended to request transaction rows when the caller signals that table extraction did not succeed."""
     needs_transaction_extraction = "extraction_context" in blobs and "transaction" in blobs.get("extraction_context", "").lower()
     if needs_transaction_extraction:
         return f"""You are an expert at extracting structured information from Indian bank statements. 
@@ -229,6 +232,7 @@ Full Text: {blobs.get("full_text", "")[:8000]}
 Return ONLY the JSON response:"""
 
 def parse_gemini_response(response_text: str) -> Dict[str, Any]:
+    """Parse the JSON object embedded in a Gemini text response and return it. An empty result is returned when no JSON object can be located or parsed."""
     try:
         start_idx = response_text.find('{')
         end_idx = response_text.rfind('}') + 1
@@ -242,6 +246,7 @@ def parse_gemini_response(response_text: str) -> Dict[str, Any]:
         return create_empty_result()
 
 def create_empty_result(error_message: str = "No information could be extracted") -> Dict[str, Any]:
+    """Return a fully populated extraction result with empty fields, used when no information could be parsed."""
     return {
         "account_holder_details": {
             "name": "",

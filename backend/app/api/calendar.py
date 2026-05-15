@@ -1,3 +1,8 @@
+"""CalendarSense API endpoints. Exposes the calendar engine through a combined
+analysis endpoint and a set of progressive-loading endpoints that the frontend
+calls in sequence to stream results as they become available.
+"""
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List
@@ -17,41 +22,39 @@ router = APIRouter(prefix="/api/calendar", tags=["CalendarSense"])
 class SubscriptionInput(BaseModel):
     name: str
     cost: float
-    renewal_day: int | None = None  # v2: Day of month (1-31) for smart timing
+    renewal_day: int | None = None  # Day of month (1-31) used for smart timing of pause/resume suggestions.
 
 class CalendarRequest(BaseModel):
     home_location: str
     subscriptions: List[SubscriptionInput]
     access_token: str | None = None
 
-# ── Legacy monolithic endpoint (backward compatible) ──
+# Aggregated analysis endpoint
 
 @router.post("/analyze")
 async def analyze_user_calendar(request: CalendarRequest):
-    """
-    Connect to Google Calendar via OAuth, grab future travel dates, 
-    and compare against local subscriptions.
-    """
+    """Run the full calendar analysis pipeline in a single call and return travel periods matched against local subscriptions."""
     try:
         if not request.home_location:
             raise ValueError("Home location is required")
-            
+
         subs_list = [{"name": s.name, "cost": s.cost, "renewal_day": s.renewal_day} for s in request.subscriptions]
-        
-        # Run in thread pool because it's a synchronous blocking operation
+
+        # The calendar engine performs synchronous network I/O, so it is dispatched
+        # to a thread pool to keep the event loop responsive.
         loop = asyncio.get_event_loop()
         with concurrent.futures.ThreadPoolExecutor() as pool:
             result = await loop.run_in_executor(
-                pool, 
-                analyze_calendar, 
-                request.home_location, 
+                pool,
+                analyze_calendar,
+                request.home_location,
                 subs_list,
                 request.access_token
             )
-        
+
         if "error" in result:
             raise HTTPException(status_code=500, detail=result["error"])
-            
+
         return result
     except HTTPException:
         raise
@@ -59,16 +62,18 @@ async def analyze_user_calendar(request: CalendarRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Progressive Loading Endpoints — Phase 1, 2, 3, 4
-# ══════════════════════════════════════════════════════════════════════════════
+# Progressive loading endpoints
+#
+# The frontend calls these endpoints in stages so it can display partial
+# results while later, heavier stages still run. Each stage is independent
+# and accepts the output of the previous stage as input.
 
 class EventsRequest(BaseModel):
     access_token: str | None = None
 
 @router.post("/events")
 async def get_calendar_events(request: EventsRequest):
-    """Phase 1: Fetch calendar events only (~2s). Called on page load."""
+    """Return the user's upcoming Google Calendar events for downstream classification."""
     try:
         loop = asyncio.get_event_loop()
         with concurrent.futures.ThreadPoolExecutor() as pool:
@@ -91,7 +96,7 @@ class ClassifyRequest(BaseModel):
 
 @router.post("/classify")
 async def classify_subscriptions(request: ClassifyRequest):
-    """Phase 2: Classify subs + detect travel in parallel (~10s). Called on Analyze click."""
+    """Classify each subscription as local or portable and detect away-from-home travel periods in the supplied events."""
     try:
         if not request.home_location:
             raise ValueError("Home location is required")
@@ -126,7 +131,7 @@ class SavingsRequest(BaseModel):
 
 @router.post("/savings")
 async def get_savings(request: SavingsRequest):
-    """Phase 3: Smart timing + Places API alternatives (~5s). Auto-called when local subs + travel exist."""
+    """Compute potential savings and Places API alternatives for local subscriptions that overlap with travel periods."""
     try:
         loop = asyncio.get_event_loop()
         with concurrent.futures.ThreadPoolExecutor() as pool:
@@ -148,11 +153,11 @@ async def get_savings(request: SavingsRequest):
 
 class RemindersRequest(BaseModel):
     access_token: str
-    recommendations: list  # The recommendations to create reminders for
+    recommendations: list  # Recommendations to create reminders for.
 
 @router.post("/reminders")
 async def add_calendar_reminders(request: RemindersRequest):
-    """Phase 4: Create calendar reminder events for cancel/pause/restart dates."""
+    """Create Google Calendar reminder events for the cancel, pause, and restart dates in the supplied recommendations."""
     try:
         loop = asyncio.get_event_loop()
         with concurrent.futures.ThreadPoolExecutor() as pool:

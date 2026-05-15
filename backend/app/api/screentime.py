@@ -1,3 +1,5 @@
+"""ScreentimeSense API endpoints. Expose the screentime engine through single-subscription and batch analysis endpoints."""
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List
@@ -13,7 +15,7 @@ class ScreentimeRequest(BaseModel):
     cost: float
     months_subscribed: int
     billing_period: str | None = "monthly"
-    weekly_hours: List[float] # Length 4 array
+    weekly_hours: List[float]  # Hours of use for each of the last four weeks.
     user_wage: float
     style_multiplier: float = 0.10
     local_currency: str = "JMD"
@@ -38,7 +40,7 @@ def _run_analysis(
     exchange_rate,
     billing_period,
 ):
-    """Wrapper to call in thread pool."""
+    """Synchronous wrapper around ``analyze_screentime`` used by the thread-pool executor."""
     return analyze_screentime(
         app_name=app_name,
         cost=cost,
@@ -53,10 +55,7 @@ def _run_analysis(
 
 @router.post("/analyze")
 async def analyze_app_usage(request: ScreentimeRequest):
-    """
-    Analyze screen time for a SINGLE application.
-    Kept for backward compatibility.
-    """
+    """Analyze screen-time engagement for a single subscription."""
     if len(request.weekly_hours) != 4:
         raise HTTPException(status_code=400, detail="Must provide exactly 4 weeks of data")
         
@@ -82,11 +81,7 @@ async def analyze_app_usage(request: ScreentimeRequest):
 
 @router.post("/analyze-batch")
 async def analyze_batch(request: BatchScreentimeRequest):
-    """
-    Analyze screen time for MULTIPLE subscriptions in parallel.
-    All Gemini classify calls fire concurrently — whether 1 sub or 50,
-    the API latency is roughly the same (~3 seconds).
-    """
+    """Analyze screen-time engagement for multiple subscriptions concurrently. Gemini classification calls fan out in parallel so end-to-end latency is governed by the slowest request rather than the sum of all requests."""
     for sub in request.subscriptions:
         if len(sub.weekly_hours) != 4:
             raise HTTPException(
@@ -126,7 +121,7 @@ async def analyze_batch(request: BatchScreentimeRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
-    # 6.6 — Student Exam Season Advisory (runs after main analysis)
+    # Run the optional student exam-season advisory once the main analysis has succeeded.
     exam_alert = None
     if request.is_student:
         try:

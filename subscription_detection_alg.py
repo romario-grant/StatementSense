@@ -1,3 +1,5 @@
+"""Statistical subscription detector that groups transactions by merchant, validates that the charges are approximately equal, and classifies the resulting cadence into a recurring period."""
+
 import sys
 import csv
 import math
@@ -9,6 +11,8 @@ from statistics import mean, stdev
 
 
 class Transaction:
+    """Lightweight container describing a single observed charge with a date, amount, and merchant name."""
+
     def __init__(self, date, amount, merchant):
         self.date = date
         self.amount = amount
@@ -16,30 +20,39 @@ class Transaction:
 
     def __str__(self):
         return f"{self.date}\n{self.amount}\n{self.merchant}"
-        
+
 
 class Subscription:
-    def __init__(self, merchant, transactions,period, period_days,confidence,avg_amt):
-        self.merchant= merchant
-        self.transactions= transactions
-        self.period= period                 # "weekly" | "bi-weekly" | "monthly" | "yearly" | "irregular"
-        self.period_days= period_days       # average gap in days
-        self.confidence= confidence         # 0-1
+    """Detected recurring charge with its period, confidence, and average amount."""
+
+    def __init__(self, merchant, transactions, period, period_days, confidence, avg_amt):
+        self.merchant = merchant
+        self.transactions = transactions
+        # One of "weekly", "biweekly", "monthly", "quarterly", or "yearly".
+        self.period = period
+        # Mean number of days between consecutive charges.
+        self.period_days = period_days
+        # Confidence score in the range zero to one.
+        self.confidence = confidence
         self.avg_amount = avg_amt
+
     def __str__(self):
         return f"{self.merchant}\n{self.transactions}\n{self.period}\n{self.period_days}\n{self.confidence}"
 
     def next_expected(self):
+        """Return the date the next charge is expected, or ``None`` when no history is available."""
         if self.period_days is None or not self.transactions:
             return None
         last = max(t.date for t in self.transactions)
         return last + timedelta(round(self.period_days))
+
 
 def detect_subscriptions(
     transactions: list[Transaction],
     min_occurrences: int = 2,
     amount_tolerance: float = 0.05,
 ):
+    """Group transactions by merchant and return the subset whose charge histories form a consistent recurring pattern. ``min_occurrences`` controls the minimum number of charges required to consider a merchant, and ``amount_tolerance`` is the maximum allowed relative deviation from the average charge."""
     merchant_list = defaultdict(list)
     subscriptions = []
     for trans in transactions:
@@ -88,6 +101,7 @@ period_window  = {
 }
 
 def detect_period(gaps):
+    """Classify a list of inter-charge gaps into a billing period label and return it with a confidence score. Returns ``(None, 0.0)`` when the gaps fall outside the configured period windows."""
     if gaps == []:
         return None, 0.0
     
@@ -104,6 +118,7 @@ def detect_period(gaps):
     return None,0.0
 
 def print_report(subscriptions):
+    """Print a human-readable summary of detected subscriptions to stdout."""
     if not subscriptions:
         print("No subscriptions detected.")
         return
@@ -123,10 +138,12 @@ def print_report(subscriptions):
         print()
 
     print()
-#------CSV LOADER------------------------------------------------------
+
+
+# CSV loader
 
 def load_csv_path(path_str):
-
+    """Read transactions from a CSV file at ``path_str``. The file must contain ``date``, ``amount``, and ``merchant`` columns; dates are parsed against several common formats."""
     date_formats = ["%Y-%m-%d", "%m/%d/%Y", "%d-%m-%Y", "%Y/%m/%d"]
 
     def parse_date(s):
@@ -157,6 +174,7 @@ def load_csv_path(path_str):
     return transactions
 
 def main() -> None:
+    """Command-line entry point. Reads a CSV path from the first argument, runs detection, and prints a report."""
     if len(sys.argv) > 1:
         path = sys.argv[1]
         try:

@@ -1,26 +1,15 @@
 """
-Transaction Extractor — main entry point for StatementSense extraction.
+Statement extraction entry points for uploaded PDF files.
 
-Orchestrates the full extraction pipeline:
-  1. Open-source table extraction (pdfplumber + camelot)
-  2. Gemini LLM fallback (if tables not found)
-  3. Bridge conversion to capstone format
-
-Usage:
-    from backend.app.extraction.extract_transactions import extract_from_pdf
-
-    transactions = extract_from_pdf("path/to/statement.pdf")
-    # Returns: [{bank, date, description, amount, balance, currency, source_file}, ...]
+The pipeline extracts raw text, detects bank and currency metadata, converts
+structured tables when available, and uses Gemini only when table extraction
+does not produce transactions.
 """
 
-import io
 import logging
-import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
-
-# ── Logging setup ──────────────────────────────────────────────────
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,13 +17,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-# ── Import open-source modules (unchanged) ─────────────────────────
-
 from .app.extract_text import extract_text_from_pdf
 from .app.extract_tables import extract_tables_from_pdf
-
-# ── Import bridge & Gemini adapter ─────────────────────────────────
 
 from .bridge import (
     dataframe_to_capstone_format,
@@ -44,40 +28,14 @@ from .bridge import (
 )
 from .gemini_adapter import extract_transactions_with_gemini
 
-
-# ── Main extraction function ──────────────────────────────────────
-
 def extract_from_pdf(filepath: str) -> List[Dict[str, Any]]:
-    """
-    Extract transactions from any bank statement PDF.
-
-    This function does NOT require you to specify the bank name,
-    statement format, or column positions. It works with any bank.
-
-    Pipeline:
-        1. Try pdfplumber + camelot table detection (no AI needed)
-        2. If no tables found → fall back to Gemini LLM extraction
-        3. Convert to capstone-compatible format
-
-    Parameters
-    ----------
-    filepath : str
-        Path to the bank statement PDF.
-
-    Returns
-    -------
-    list[dict]
-        List of transactions in capstone format:
-        [{bank, date, description, amount, balance, currency, source_file}, ...]
-    """
+    """Extract transactions from any supported bank-statement PDF and return them in canonical StatementSense form. The pipeline first attempts structured table extraction via pdfplumber and camelot, falls back to Gemini-based extraction when no tables are detected, and finally maps every row into the standard ``{bank, date, description, amount, balance, currency, source_file}`` shape."""
     filepath = Path(filepath)
     if not filepath.exists():
         raise FileNotFoundError(f"PDF not found: {filepath}")
 
     source_file = filepath.name
-    logger.info(f"═══ Extracting transactions from: {source_file} ═══")
-
-    # ── Step 1: Extract raw text (always needed for bank/currency detection) ──
+    logger.info(f"Extracting transactions from {source_file}")
 
     logger.info("[1/4] Extracting raw text from PDF...")
     raw_text = extract_text_from_pdf(str(filepath))
@@ -86,14 +44,10 @@ def extract_from_pdf(filepath: str) -> List[Dict[str, Any]]:
         logger.error("Could not extract any text from PDF. Is it a scanned image?")
         return []
 
-    # ── Step 2: Detect bank and currency from text ──
-
     logger.info("[2/4] Detecting bank and currency...")
     bank = detect_bank(raw_text)
     currency = detect_currency(raw_text)
     logger.info(f"  Bank: {bank} | Currency: {currency}")
-
-    # ── Step 3: Try table extraction (pdfplumber + camelot) ──
 
     logger.info("[3/4] Attempting automatic table extraction...")
     all_transactions: List[Dict[str, Any]] = []
@@ -114,10 +68,8 @@ def extract_from_pdf(filepath: str) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"  Table extraction failed: {e}")
 
-    # ── Step 4: Gemini fallback if table extraction found nothing ──
-
     if not all_transactions:
-        logger.info("[4/4] No tables found — falling back to Gemini LLM extraction...")
+        logger.info("[4/4] No tables found; using Gemini extraction...")
         try:
             gemini_rows = extract_transactions_with_gemini(raw_text)
             if gemini_rows:
@@ -130,14 +82,12 @@ def extract_from_pdf(filepath: str) -> List[Dict[str, Any]]:
         except Exception as e:
             logger.error(f"  Gemini extraction also failed: {e}")
     else:
-        logger.info("[4/4] Skipping Gemini — table extraction succeeded")
+        logger.info("[4/4] Skipping Gemini; table extraction succeeded")
 
-    # ── Summary ──
-
-    logger.info(f"═══ Result: {len(all_transactions)} transactions from {source_file} ═══")
+    logger.info(f"Extracted {len(all_transactions)} transactions from {source_file}")
 
     if all_transactions:
-        # Log a preview
+        # Preview a few normalized rows for extraction diagnostics.
         for t in all_transactions[:3]:
             logger.info(f"  {t['date']} | {t['description'][:40]:<40} | {t['amount']:>12.2f} {t['currency']}")
         if len(all_transactions) > 3:
@@ -145,28 +95,13 @@ def extract_from_pdf(filepath: str) -> List[Dict[str, Any]]:
 
     return all_transactions
 
-
 def extract_from_bytes(file_bytes: bytes) -> List[Dict[str, Any]]:
-    """
-    Extract transactions from PDF bytes (for file upload endpoints).
-
-    Writes the bytes to a temp file and delegates to extract_from_pdf().
-
-    Parameters
-    ----------
-    file_bytes : bytes
-        Raw PDF file content.
-
-    Returns
-    -------
-    list[dict]
-        List of transactions in capstone format.
-    """
+    """Extract transactions from raw PDF bytes, used by HTTP upload endpoints. The bytes are written to a short-lived temporary file so the path-based extractors can read them, and the file is removed once extraction completes."""
     if not file_bytes:
         logger.error("Empty file bytes provided")
         return []
 
-    # Write bytes to a temporary PDF file
+    # pdfplumber and camelot operate on filesystem paths, so uploads are staged briefly.
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp.write(file_bytes)
         tmp_path = tmp.name
@@ -174,7 +109,7 @@ def extract_from_bytes(file_bytes: bytes) -> List[Dict[str, Any]]:
     try:
         return extract_from_pdf(tmp_path)
     finally:
-        # Clean up temp file
+        # Remove the staged file even when extraction fails.
         try:
             Path(tmp_path).unlink()
         except OSError:

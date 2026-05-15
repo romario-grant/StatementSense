@@ -1,13 +1,9 @@
 """
-SubscriptionSense Engine — Detects, classifies, and predicts subscriptions.
+SubscriptionSense engine for statement extraction and recurring-charge analysis.
 
-Integrates three team members' work:
-  1. extraction module   — Universal PDF extraction (pdfplumber + camelot + Gemini)
-  2. subscription_detection_alg — Subscription detection (statistical period analysis)
-  3. shared.trial_classifier  — Free trial detection (sklearn LogisticRegression)
-  4. shared.currency_normaliser — JMD → USD conversion (live rate + fallback)
-
-No code is copied from RenewalSense — each module is imported from its source.
+The engine converts uploaded statements into canonical transactions, classifies
+merchant activity, detects subscriptions, highlights possible trials, flags
+price changes, and normalizes currency for the API response.
 """
 
 import logging
@@ -18,28 +14,21 @@ from statistics import mean, median
 
 logger = logging.getLogger(__name__)
 
-# ── External module imports ──────────────────────────────────────────
 
-# 1. Universal PDF extraction
 from backend.app.extraction.extract_transactions import extract_from_bytes
 
-# 2. Classmate's subscription detection algorithm
-# 3. Free trial classifier (Capstone — sklearn-based)
 from backend.app.shared.trial_classifier import (
     build_synthetic_dataset,
     train_classifier,
-    extract_trial_features,
     predict_trial_intent,
 )
 
-# 4. Currency normaliser (Capstone — JMD → USD)
 from backend.app.shared.currency_normaliser import (
     normalise_amount,
     get_rate_with_fallback,
     FALLBACK_RATE,
 )
 
-# ── Train trial classifier once at module load ───────────────────────
 _X, _y = build_synthetic_dataset()
 _trial_model = train_classifier(_X, _y)
 logger.info(f"Trial classifier trained on {len(_y)} synthetic samples "
@@ -47,17 +36,11 @@ logger.info(f"Trial classifier trained on {len(_y)} synthetic samples "
 
 
 # =====================================================================
-# CUSUM Price Change Detection (standalone implementation)
+# CUSUM-based price-change detection
 # =====================================================================
 
 def _detect_price_changes(transactions: list[dict], confirmed_merchants: set[str] | None = None) -> list[dict]:
-    """
-    Detect structural price changes in recurring merchant charges
-    using Cumulative Sum (CUSUM) analysis.
-
-    Groups transactions by vendor, computes running CUSUM on the
-    charge amounts, and flags significant deviations.
-    """
+    """Detect structural price changes in recurring merchant charges using cumulative-sum (CUSUM) analysis. Charges are grouped by vendor and the running cumulative deviation from the early-history baseline is compared against a percentage threshold."""
     # Group eligible recurring merchant debits by vendor.
     vendor_charges: dict[str, list[dict]] = defaultdict(list)
     for tx in transactions:
@@ -73,23 +56,22 @@ def _detect_price_changes(transactions: list[dict], confirmed_merchants: set[str
         if len(charges) < 3:
             continue
 
-        # Sort chronologically
         sorted_charges = sorted(charges, key=lambda t: t["date"])
         if len({c["date"].date() if isinstance(c["date"], datetime) else c["date"] for c in sorted_charges}) < 3:
             continue
         amounts = [c["debit"] for c in sorted_charges]
 
-        # Compute baseline (mean of first half)
+        # Establish the baseline as the mean of the first half of the charge history.
         half = max(2, len(amounts) // 2)
         baseline = mean(amounts[:half])
 
         if baseline == 0:
             continue
 
-        # CUSUM: cumulative deviation from baseline
+        # CUSUM accumulates positive and negative deviations from the baseline until a threshold is crossed.
         cusum_pos = 0.0
         cusum_neg = 0.0
-        threshold = baseline * 0.20  # 20% cumulative deviation triggers alert
+        threshold = baseline * 0.20  # A twenty-percent cumulative deviation crosses the alert threshold.
         min_display_change_pct = 5.0
 
         for i in range(half, len(amounts)):
@@ -98,7 +80,7 @@ def _detect_price_changes(transactions: list[dict], confirmed_merchants: set[str
             cusum_neg = min(0, cusum_neg + deviation)
 
             if cusum_pos > threshold:
-                # Price increase detected
+                # Cumulative deviation has crossed the upper threshold, indicating a sustained price increase.
                 new_avg = mean(amounts[i:]) if i < len(amounts) else amounts[i]
                 change_pct = ((new_avg - baseline) / baseline) * 100
                 if change_pct < min_display_change_pct:
@@ -406,7 +388,7 @@ def _convert_to_engine_format(universal_txs: list[dict]) -> list[dict]:
 
 
 # =====================================================================
-# Subscription detection (classmate's algorithm)
+# Subscription detection
 # =====================================================================
 
 def _classify_recurring_period(charges: list[dict]) -> dict | None:
@@ -524,98 +506,6 @@ def _has_stable_amount_profile(amounts: list[float], threshold: float = 0.90) ->
     if _amount_stability(recent_window) >= threshold:
         return True
     return _amount_stability(amounts[-2:]) >= threshold
-
-
-def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict], list[dict]]:
-    """
-    Convert engine transactions → classmate's Transaction objects,
-    run detect_subscriptions(), return (subscriptions, renewal_predictions).
-    """
-    # Build Detection Transactions from eligible merchant debits only.
-    detection_txs = []
-    for tx in classified_txs:
-        if _is_subscription_candidate(tx):
-            detection_txs.append(DetectionTransaction(
-                date=tx["date"],
-                amount=tx["debit"],
-                merchant=tx.get("vendor_name") or tx["description"],
-            ))
-
-    if not detection_txs:
-        return [], []
-
-    with redirect_stdout(StringIO()):
-        detected_subs = _detect_subs(detection_txs, min_occurrences=2)
-
-    subscriptions = []
-    renewal_predictions = []
-    today = datetime.now()
-
-    for sub in detected_subs:
-        display_confidence = sub.confidence
-        if len(sub.transactions) == 2:
-            display_confidence = min(display_confidence, 0.8)
-
-        # Determine typical renewal day-of-month
-        days = [t.date.day if hasattr(t.date, "day") else t.date
-                for t in sub.transactions]
-        renewal_day = max(set(days), key=days.count) if days else 1
-
-        subscriptions.append({
-            "merchant": sub.merchant,
-            "amount": round(sub.avg_amount, 2),
-            "period": sub.period or "unknown",
-            "period_days": sub.period_days,
-            "confidence": display_confidence,
-            "charge_count": len(sub.transactions),
-            "renewal_day": renewal_day,
-            "last_charge": max(t.date for t in sub.transactions).strftime("%Y-%m-%d"),
-        })
-
-        # Renewal prediction
-        next_due = sub.next_expected()
-        if next_due is not None:
-            if isinstance(next_due, datetime):
-                next_date = next_due
-            else:
-                next_date = datetime.combine(next_due, datetime.min.time())
-
-            period_days = int(sub.period_days or 30)
-            stale_grace = timedelta(days=max(7, round(period_days * 0.5)))
-            if next_date < today - stale_grace:
-                continue
-
-            days_until = (next_date - today).days
-
-            if display_confidence >= 0.8:
-                conf_label = "high"
-            elif display_confidence >= 0.5:
-                conf_label = "medium"
-            else:
-                conf_label = "low"
-
-            band = max(2, round((1 - display_confidence) * 10))
-
-            renewal_predictions.append({
-                "subscription": sub.merchant,
-                "next_charge_date": next_date.strftime("%Y-%m-%d"),
-                "days_until_charge": days_until,
-                "period": sub.period,
-                "period_days": sub.period_days,
-                "confidence": display_confidence,
-                "confidence_label": conf_label,
-                "confidence_window": {
-                    "earliest": (next_date - timedelta(days=band)).strftime("%Y-%m-%d"),
-                    "latest": (next_date + timedelta(days=band)).strftime("%Y-%m-%d"),
-                    "band_days": band,
-                },
-                "data_points": len(sub.transactions),
-                "last_charge_date": max(t.date for t in sub.transactions).strftime("%Y-%m-%d"),
-            })
-
-    renewal_predictions.sort(key=lambda p: p["days_until_charge"])
-
-    return subscriptions, renewal_predictions
 
 
 def _run_subscription_detection(classified_txs: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -850,8 +740,8 @@ def _build_subscription_analysis(raw_transactions: list[dict], dedupe: bool = Fa
     Pipeline:
       1. Extract transactions (backend extraction module — any bank)
       2. Classify transactions (keyword matching)
-      3. Detect subscriptions (classmate's statistical algorithm)
-      4. Detect free trials (Capstone sklearn classifier)
+      3. Detect subscriptions with cadence and amount-stability rules
+      4. Detect free trials with the shared sklearn classifier
       5. Detect price changes (CUSUM)
       6. Normalize currency (JMD → USD)
     """
@@ -959,5 +849,7 @@ def analyze_subscriptions(file_bytes: bytes) -> dict:
 
 
 def analyze_extracted_subscriptions(raw_transactions: list[dict]) -> dict:
+    """Analyze pre-extracted transactions from one or more statements."""
+    return _build_subscription_analysis(raw_transactions, dedupe=True)
     """Analyze pre-extracted transactions from one or more statements."""
     return _build_subscription_analysis(raw_transactions, dedupe=True)

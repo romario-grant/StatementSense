@@ -1,6 +1,8 @@
 """
-ScreentimeSense Engine — Pure functions for screentime analysis.
-Stripped of CLI code, ready for API integration.
+ScreentimeSense engine for usage-based subscription value analysis.
+
+The module combines app metadata, usage trends, and pricing options to
+recommend whether a subscription should be kept, changed, or reviewed.
 """
 
 import os
@@ -32,7 +34,7 @@ class GeminiClassifier:
     def __init__(self):
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
-            # Fallback: load .env from project root if not already loaded
+            # Load the project .env when the key is not already in the environment.
             from dotenv import load_dotenv
             project_root = os.environ.get("STATEMENTSENSE_ROOT", "")
             if project_root:
@@ -171,7 +173,7 @@ class GeminiClassifier:
                         "pricing_tiers": {"monthly": 0, "yearly": 0, "lifetime": 0}
                     }
                 
-                # If rate limited, wait just a tiny bit (2s) to avoid UI hang while still giving quota a chance
+                # Brief back-off on quota errors before retrying.
                 if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
                     import time
                     time.sleep(2)
@@ -189,29 +191,28 @@ class SubscriptionAnalyzer:
         self.ema_alpha = 0.3
 
     def compute_value_risk_score(self, velocity, cph_value, cancel_threshold, months_subscribed, category):
-        """
-        6.6 Value Risk Score (0-100).
-        Combines Usage (U), Cost efficiency (C), Duration (D), Priority (P).
-        > 70 = Low Risk (retain), 40-70 = Medium Risk (review), < 40 = High Risk (cancel).
-        """
-        # U — Usage intensity score (0-100)
+        """Return the Value Risk Score (0-100) and risk label for a subscription. Scores above 70 are low risk (retain), 40-70 medium (review), and below 40 high risk (cancel)."""
+        # Usage intensity component scales velocity into a capped 0-100 score.
         U = min(velocity * 50, 100)
-        
-        # C — Cost efficiency score (0-100): lower CPH = higher score
+
+        # Cost-efficiency component: lower cost per hour relative to the cancel
+        # threshold yields a higher score; falls back to a neutral 50 when no
+        # threshold is available.
         C = max((1 - (cph_value / (cancel_threshold * 2))) * 100, 0) if cancel_threshold > 0 else 50
-        
-        # D — Duration bonus (0-100): 12+ months = full bonus
+
+        # Duration bonus saturates after twelve months of continued use.
         D = min(months_subscribed / 12, 1.0) * 100
-        
-        # P — Priority weight by category
+
+        # Category-specific priority multiplier applied to the weighted score.
         P = self.priority_weights.get(category, 1.0)
-        
-        # Weighted sum: U=35%, C=40%, D=10%, baseline=15%
+
+        # Weighted blend: usage 35%, cost efficiency 40%, duration 10%, plus a
+        # 15% baseline so brand-new subscriptions are not punished.
         raw_score = (0.35 * U) + (0.40 * C) + (0.10 * D) + (0.15 * 50)
         vrs = min(round(raw_score * P), 100)
         vrs = max(vrs, 0)
-        
-        # Risk label
+
+        # Map the numeric score to a coarse human-readable risk label.
         if vrs > 70:
             risk_label = "Low Risk"
         elif vrs >= 40:
@@ -414,10 +415,10 @@ class SubscriptionAnalyzer:
 
         gamma = self.gamma_map.get(category, 0.20)
         time_factor = 1.0 / max(months_subscribed, 1)
-        # V3.2: Allow growing usage (velocity > 1.0) to mildly boost break-even prob
+        # Growing usage modestly improves the break-even probability without overshooting one.
         p_be = min(min(velocity, 1.5) * math.exp(-gamma * time_factor), 1.0)
 
-        # 6.6 — Value Risk Score
+        # Value-risk score combines monetary cost, engagement velocity, and tenure into a single risk number.
         vrs, vrs_label = self.compute_value_risk_score(
             velocity, cph_value, cancel_threshold, months_subscribed, category
         )
@@ -548,18 +549,15 @@ def analyze_screentime_batch(
     local_currency: str = "JMD",
     exchange_rate: float | None = None,
 ):
-    """
-    Batch entry point for API:
-    Analyzes MULTIPLE subscriptions in parallel — all Gemini classify calls
-    fire concurrently, then evaluations (pure math) run instantly.
-    
-    Each subscription dict should have: app_name, cost, months_subscribed, weekly_hours
+    """Run the screen-time analysis for multiple subscriptions concurrently. Gemini classification calls fan out in parallel, then the deterministic per-subscription evaluation step runs over the collected results.
+
+    Each entry in ``subscriptions`` must contain ``app_name``, ``cost``, ``months_subscribed``, and ``weekly_hours`` fields.
     """
     try:
         classifier = GeminiClassifier()
         analyzer = SubscriptionAnalyzer(hourly_wage=user_wage, style_multiplier=style_multiplier)
-        
-        # --- Phase 1: Parallel Gemini classification ---
+
+        # Run Gemini classification for every subscription in parallel.
         def _classify_one(sub):
             app_name = sub["app_name"]
             cost = sub["cost"]
@@ -575,7 +573,7 @@ def analyze_screentime_batch(
                     classified.append((sub, ai_data))
                 except Exception as e:
                     sub = futures[future]
-                    # Fallback AI data if classification fails
+                    # Fall back to neutral metadata so the evaluation step can still produce a result.
                     classified.append((sub, {
                         "frequency": "monthly", "category": "entertainment", "value_mode": "time_based",
                         "engagement_type": "active", "is_multi_device": False, "has_free_tier": False,
@@ -585,7 +583,7 @@ def analyze_screentime_batch(
                         "pricing_tiers": {"monthly": 0, "yearly": 0, "lifetime": 0}
                     }))
         
-        # --- Phase 2: Evaluate all (pure math, instant) ---
+        # Run the deterministic per-subscription evaluation on the classified results.
         results = []
         for sub, ai_data in classified:
             result = analyzer.evaluate(
@@ -606,12 +604,7 @@ def analyze_screentime_batch(
 
 
 def detect_exam_season(results: list):
-    """
-    6.6 Student Exam Season Advisory.
-    Scans Google Calendar for exam/deadline keywords in the next 30 days.
-    Cross-references with entertainment/gaming subscriptions from batch results.
-    Returns an advisory alert (does NOT modify VRS scores).
-    """
+    """Scan the user's Google Calendar for exam or deadline keywords in the next thirty days and cross-reference the matches with entertainment and gaming subscriptions from a batch result. Returns an advisory payload describing the matched exams and subscriptions; the underlying value ratings are not modified."""
     from datetime import timezone
     
     EXAM_KEYWORDS = [
@@ -625,13 +618,13 @@ def detect_exam_season(results: list):
     try:
         from .calendar_engine import CalendarReader
         calendar = CalendarReader()
-        # Only look 30 days ahead for exams
+        # Limit the window to the next thirty days so only imminent exams influence the advisory.
         events = calendar.get_upcoming_events(months_ahead=1)
     except Exception as e:
         print(f"[ExamDetection] Could not access calendar: {e}")
         return None
-    
-    # Find exam-like events
+
+    # Collect events whose summary or description matches one of the exam keywords.
     exam_events = []
     for event in events:
         summary = event.get('summary', '').lower()
@@ -650,7 +643,7 @@ def detect_exam_season(results: list):
     if not exam_events:
         return None
     
-    # Find entertainment/gaming subscriptions from batch results
+    # Collect entertainment and gaming subscriptions that the user could plausibly pause during exams.
     pausable_subs = []
     total_pausable_cost = 0.0
     
@@ -688,20 +681,12 @@ def detect_exam_season(results: list):
 
 
 def analyze_portfolio(results):
-    """
-    Phase 3: Portfolio Analysis
-    
-    Groups evaluated subscriptions by category, detects saturation,
-    ranks within each category by value, and recommends consolidation.
-    
-    This is the cross-subscription intelligence that individual evaluation
-    cannot provide — e.g., "you have 4 streaming subs, drop the worst 2."
-    """
+    """Aggregate evaluated subscriptions across the user's portfolio, detect category saturation, rank subscriptions within each category by value, and recommend consolidation. Produces the cross-subscription insights that per-subscription evaluation alone cannot surface."""
     if not results or len(results) < 2:
-        return {"saturated_categories": 0, "total_potential_savings_monthly": 0, 
+        return {"saturated_categories": 0, "total_potential_savings_monthly": 0,
                 "total_potential_savings_annual": 0, "category_insights": []}
-    
-    # --- Group by category ---
+
+    # Bucket each evaluated subscription by its detected category.
     categories = {}
     for r in results:
         cat = r.get("ai_found_data", {}).get("category", "other")

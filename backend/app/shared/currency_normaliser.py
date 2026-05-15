@@ -1,15 +1,9 @@
 """
-Statement Sense — Currency Normaliser  (Feature 7.4)
-Reverse-converts JMD transaction amounts to USD so that international
-subscription charges (Netflix, Spotify, Adobe …) are stable across months
-even as the JMD/USD exchange rate drifts.
-
-Current-rate lookup
--------------------
-The old BOJ JSON endpoint used by early prototypes is not reliable, so this
-module no longer calls it. For live USD/JMD conversion, it queries a no-key
-public exchange-rate endpoint and falls back to FALLBACK_RATE when the network
-or provider is unavailable.
+Currency normalization helpers for subscription and renewal analysis.
+The engine keeps statement amounts in the original currency and adds USD
+equivalents when needed for cross-currency comparisons. Live USD/JMD lookup is
+best-effort; callers always receive a deterministic fallback rate when the
+provider is unavailable.
 """
 
 from __future__ import annotations
@@ -18,9 +12,7 @@ import json
 import urllib.error
 import urllib.request
 
-# ─────────────────────────────────────────────
 # Constants
-# ─────────────────────────────────────────────
 
 #: Approximate JMD-per-USD weighted-average sell rate, early 2026
 FALLBACK_RATE: float = 157.50
@@ -35,34 +27,10 @@ _LIVE_RATE_URL: str = 'https://open.er-api.com/v6/latest/USD'
 _LIVE_RATE_CACHE: dict[str, float | None] = {}
 
 
-# ─────────────────────────────────────────────
 # Live exchange-rate fetch
-# ─────────────────────────────────────────────
 
 def fetch_live_usd_jmd_rate() -> float | None:
-    """
-    Fetch the latest USD/JMD rate from the public exchange-rate provider.
-
-    Results are stored in the module-level live-rate cache so repeated calls in the same process do not hit the network.
-
-    Returns
-    -------
-    float   — USD/JMD rate (JMD per 1 USD) if successfully retrieved
-    None    — if the API is unavailable, returns 404, or the response cannot
-              be parsed (the current situation as of early 2026)
-
-    Expected JSON shapes (handled, for future-proofing):
-    ┌──────────────────────────────────────────────────────────────────────┐
-    │ Shape A — list of currency objects                                   │
-    │  [{"currency":"USD","date":"…","weighted_avg_sell":157.20}, …]       │
-    │                                                                      │
-    │ Shape B — dict with nested rates                                     │
-    │  {"date":"…","rates":[{"currency":"USD","sell":157.20}, …]}          │
-    │                                                                      │
-    │ Shape C — flat single-day dict                                       │
-    │  {"currency":"USD","date":"…","rate":157.20}                         │
-    └──────────────────────────────────────────────────────────────────────┘
-    """
+    """Fetch the most recent USD-to-JMD exchange rate from the public exchange-rate provider. Successful results are cached for the lifetime of the process. ``None`` is returned when the provider is unreachable, signalling to callers that ``FALLBACK_RATE`` should be used."""
     cache_key = 'USD_JMD_LATEST'
     if cache_key in _LIVE_RATE_CACHE:
         return _LIVE_RATE_CACHE[cache_key]
@@ -84,7 +52,7 @@ def fetch_live_usd_jmd_rate() -> float | None:
 
     except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError,
             TypeError, KeyError, ValueError):
-        # API unavailable (404, timeout, malformed JSON …) — degrade silently
+        # Degrade silently when the provider is unreachable, returns a non-2xx response, or returns malformed JSON.
         rate = None
 
     _LIVE_RATE_CACHE[cache_key] = rate
@@ -92,14 +60,11 @@ def fetch_live_usd_jmd_rate() -> float | None:
 
 
 def _extract_usd_rate(data: object) -> float | None:
-    """
-    Try several plausible JSON shapes to extract a JMD-per-USD rate.
-    Returns the first numeric value found, or None.
-    """
+    """Extract a JMD-per-USD rate from a JSON response that may use one of several known shapes. The first numeric value located is returned; ``None`` is returned when no recognised shape contains a USD rate."""
     candidate_keys = ('weighted_avg_sell', 'weighted_avg', 'sell', 'rate',
                       'weighted_average_sell', 'average_sell', 'avg_sell')
 
-    # Shape A: list of dicts
+    # Response is a list of currency records.
     if isinstance(data, list):
         for entry in data:
             if not isinstance(entry, dict):
@@ -110,7 +75,7 @@ def _extract_usd_rate(data: object) -> float | None:
                     if k in entry:
                         return float(entry[k])
 
-    # Shape B: dict with 'rates' list
+    # Response wraps a list of rates under a top-level key.
     if isinstance(data, dict):
         rates = data.get('rates', data.get('data', []))
         if isinstance(rates, list):
@@ -118,7 +83,7 @@ def _extract_usd_rate(data: object) -> float | None:
             if result is not None:
                 return result
 
-        # Shape C: flat dict for a single currency
+        # Response is a flat dictionary describing a single currency.
         ccy = str(data.get('currency', data.get('currency_code', ''))).upper()
         if ccy == 'USD':
             for k in candidate_keys:
@@ -128,89 +93,36 @@ def _extract_usd_rate(data: object) -> float | None:
     return None
 
 
-# ─────────────────────────────────────────────
 # Rate resolution with fallback
-# ─────────────────────────────────────────────
 
 def get_rate_with_fallback(date_str: str,
                            cache: dict[str, float]) -> float:
-    """
-    Resolve the JMD/USD rate for ``date_str``, storing the result in ``cache``.
-
-    Resolution order
-    ----------------
-    1. ``cache`` hit  — return immediately (avoids redundant API calls).
-    2. ``fetch_live_usd_jmd_rate()``  - live public exchange-rate data.
-    3. ``FALLBACK_RATE`` (157.50)  - when all else fails.
-
-    The resolved rate is stored in ``cache[date_str]`` regardless of which
-    path produced it.
-
-    Parameters
-    ----------
-    date_str : ISO date string, ``'YYYY-MM-DD'``
-    cache    : caller-supplied dict; may be pre-populated or empty
-    """
+    """Resolve the JMD-per-USD rate for ``date_str`` and store it in ``cache``. Resolution checks the cache first, then the live provider, and finally returns ``FALLBACK_RATE`` so the caller always receives a deterministic numeric value."""
     if date_str in cache:
         return cache[date_str]
 
-    # The live provider is latest-only; date_str is kept for cache/API
-    # compatibility with older callers.
+    # The live provider returns only the latest rate, so the supplied date acts purely as a caller-side cache key.
     rate = fetch_live_usd_jmd_rate()
     if rate is not None:
         cache[date_str] = rate
         return rate
 
-    # Hard fallback
     cache[date_str] = FALLBACK_RATE
     return FALLBACK_RATE
 
 
-# ─────────────────────────────────────────────
 # Amount conversion
-# ─────────────────────────────────────────────
 
 def normalise_amount(amount_jmd: float, rate: float) -> float:
-    """
-    Convert a JMD amount to USD.
-
-    Parameters
-    ----------
-    amount_jmd : signed amount (negative = debit, positive = credit)
-    rate       : JMD per 1 USD (e.g. 157.50)
-
-    Returns
-    -------
-    float rounded to 4 decimal places; sign is preserved.
-    """
+    """Convert a signed JMD amount to USD using ``rate`` (JMD per one USD). The result is rounded to four decimal places and the sign of ``amount_jmd`` is preserved."""
     return round(amount_jmd / rate, 4)
 
 
-# ─────────────────────────────────────────────
 # Transaction-level normalisation
-# ─────────────────────────────────────────────
 
 def normalise_transactions(transactions: list[dict],
                            cache: dict[str, float] | None = None) -> list[dict]:
-    """
-    Add an ``amount_usd`` field to every transaction dict.
-
-    Currency handling
-    -----------------
-    - ``currency == 'JMD'``  → convert using ``get_rate_with_fallback``.
-    - ``currency == 'USD'``  → set ``amount_usd = amount`` directly.
-    - Anything else          → treat as JMD (conservative default).
-
-    Parameters
-    ----------
-    transactions : list of transaction dicts (each needs ``date``, ``amount``,
-                   ``currency`` keys)
-    cache        : optional rate cache dict; created internally if None.
-                   Pass in a pre-populated dict to override rates (useful
-                   for tests and smoke-test reproducibility).
-
-    Returns a new list of dicts; ``transactions`` is not mutated.
-    """
+    """Annotate every transaction with an ``amount_usd`` field. JMD amounts are converted using ``get_rate_with_fallback``; USD amounts are copied directly. Any other currency code is treated as JMD as a conservative default. The input list is not mutated; a new annotated list is returned. A caller-supplied ``cache`` may be used to override or share resolved rates across calls."""
     if cache is None:
         cache = {}
 
@@ -224,54 +136,4 @@ def normalise_transactions(transactions: list[dict],
             t['amount_usd'] = normalise_amount(float(t['amount']), rate)
 
     return result
-
-
-# ─────────────────────────────────────────────
-# Smoke test
-# ─────────────────────────────────────────────
-
-if __name__ == '__main__':
-    from pdf_parsers import parse_ncb_pdf, parse_scotiabank_pdf
-    from transaction_filter import filter_transactions
-    from merchant_normaliser import cluster_merchants
-    from trial_classifier import (build_synthetic_dataset, train_classifier,
-                                   classify_all_merchants)
-
-    NCB_PATH    = (r'C:\Users\METVT\OneDrive - Ministry of Education, Technological and '
-                   r'Vocational Training\Downloads\ACCT2015\NcbStatement.pdf')
-    SCOTIA_PATH = (r'C:\Users\METVT\OneDrive - Ministry of Education, Technological and '
-                   r'Vocational Training\Downloads\ACCT2015\ScotiaStatement.pdf')
-
-    X, y = build_synthetic_dataset()
-    model = train_classifier(X, y)
-
-    # Shared rate cache — populated as transactions are processed
-    rate_cache: dict[str, float] = {}
-
-    for bank, path, parser in [
-        ('NCB',        NCB_PATH,    parse_ncb_pdf),
-        ('Scotiabank', SCOTIA_PATH, parse_scotiabank_pdf),
-    ]:
-        raw       = parser(path)
-        filtered  = filter_transactions(raw)
-        clustered = cluster_merchants(filtered)
-        scored    = classify_all_merchants(clustered, model)
-        normed    = normalise_transactions(scored, cache=rate_cache)
-
-        print(f'\n{"=" * 72}')
-        print(f'  {bank}  ({len(normed)} transactions)')
-        print(f'{"=" * 72}')
-        print(f'  {"Date":<12} {"JMD Amount":>14}  {"USD Amount":>10}  '
-              f'{"Rate":>8}  Merchant')
-        print(f'  {"-"*12} {"-"*14}  {"-"*10}  {"-"*8}  {"-"*30}')
-        for t in normed:
-            rate_used = rate_cache.get(t['date'], FALLBACK_RATE)
-            print(f'  {t["date"]:<12} {t["amount"]:>14,.2f}  '
-                  f'{t["amount_usd"]:>10.4f}  {rate_used:>8.2f}  '
-                  f'{t["merchant_id"][:35]}')
-
-    print(f'\nRate cache ({len(rate_cache)} dates):')
-    for d, r in sorted(rate_cache.items()):
-        src = 'LIVE' if r != FALLBACK_RATE else 'FALLBACK'
-        print(f'  {d}  {r:.2f}  [{src}]')
 

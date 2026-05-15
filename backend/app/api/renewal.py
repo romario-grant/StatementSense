@@ -39,41 +39,26 @@ class PlanSimulatorRequest(BaseModel):
 
 @router.post("/upload")
 async def upload_statement(file: UploadFile = File(...)):
-    """
-    Upload a bank statement PDF and get a full renewal risk analysis.
-    
-    Returns:
-    - Parsed transactions with categories
-    - Detected salary pattern
-    - Subscription risk scores
-    - 30-day paycycle map
-    - Summary statistics
-    """
-    # Validate file type
+    """Accept a bank-statement upload and return the full renewal-risk analysis, including parsed transactions, the detected salary pattern, subscription risk scores, a thirty-day pay-cycle map, and summary statistics."""
     if not file.filename.lower().endswith(('.pdf', '.csv')):
         raise HTTPException(status_code=400, detail="Only PDF and CSV files are supported.")
-    
-    # Read file bytes
+
     file_bytes = await file.read()
-    
+
     if len(file_bytes) == 0:
         raise HTTPException(status_code=400, detail="Empty file uploaded.")
-    
-    # Run analysis
+
     result = analyze_statement(file_bytes)
-    
+
     if "error" in result:
         raise HTTPException(status_code=422, detail=result["error"])
-    
+
     return result
 
 
 @router.post("/analyze-existing")
 async def analyze_existing(request: RenewalFromExistingRequest):
-    """
-    Run RenewalSense from SubscriptionSense's saved parsed transactions and
-    detected subscriptions. No statement upload or bank parsing happens here.
-    """
+    """Run the renewal-risk analysis directly against transactions and subscriptions that have already been parsed elsewhere in the application, without re-uploading a statement."""
     if not request.transactions:
         raise HTTPException(status_code=400, detail="No parsed transactions were provided.")
 
@@ -96,10 +81,7 @@ async def analyze_existing(request: RenewalFromExistingRequest):
 
 @router.post("/plan-simulator")
 async def plan_simulator(request: PlanSimulatorRequest):
-    """
-    Look up verified plan alternatives and simulate each plan on the existing
-    renewal day. This is for switching plans, not choosing a new renewal day.
-    """
+    """Resolve verified plan alternatives for a subscription and simulate each one against the user's existing renewal day so callers can compare plan switches."""
     try:
         result = simulate_plan_options(
             request.subscription,

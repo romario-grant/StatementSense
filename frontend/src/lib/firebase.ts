@@ -10,9 +10,8 @@ import {
   type User,
 } from "firebase/auth";
 
-// ── Firebase Configuration ──
-// Values loaded from NEXT_PUBLIC_ environment variables.
-// These are safe to expose client-side — Firebase Security Rules protect your data.
+// Firebase configuration sourced from public environment variables. These values are intentionally
+// exposed to the browser; access control is enforced by Firebase Security Rules on the project.
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -23,7 +22,7 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-// Prevent re-initialization in dev (HMR)
+// Reuse the existing Firebase app instance when one has already been registered so hot reloads do not initialise it twice.
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();

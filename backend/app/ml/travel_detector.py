@@ -1,19 +1,6 @@
-"""
-TravelDetector — ML-based Travel Detection for CalendarSense
-=============================================================
+"""TravelDetector classifies calendar events as travel-related using a scikit-learn pipeline that combines TF-IDF vectorization with a Random Forest classifier.
 
-Replaces the Gemini API call for detecting travel/away periods
-from calendar events. Uses a trained scikit-learn pipeline:
-
-    TF-IDF Vectorization → Random Forest Classifier
-
-Training data: backend/app/ml/datasets/calendar_travel_dataset.csv
-Trained model: backend/app/ml/saved/travel_model.joblib
-
-CRISP-DM Phases Covered:
-    - Phase 3 (Data Preparation): Text preprocessing, feature engineering
-    - Phase 4 (Modeling): TF-IDF + Random Forest pipeline
-    - Phase 5 (Evaluation): Train/test split, classification report, confusion matrix
+The training dataset is stored at ``backend/app/ml/datasets/calendar_travel_dataset.csv`` and the persisted model is written to ``backend/app/ml/saved/travel_model.joblib``. The module covers data preparation (text preprocessing and feature engineering), modelling, and evaluation (train/test split, classification report, and confusion matrix).
 """
 
 import os
@@ -33,20 +20,13 @@ from sklearn.preprocessing import LabelEncoder
 
 
 # ==========================================
-# 1. DATA PREPARATION (CRISP-DM Phase 3)
+# 1. Data preparation
 # ==========================================
 
 class TravelDataPreprocessor:
-    """
-    Prepares calendar event data for the travel detection model.
-    
-    Feature Engineering:
-        - Combines event summary, location, and description into a single text feature
-        - Extracts handcrafted features (has_airport, has_flight, has_location, etc.)
-        - Normalizes text (lowercase, remove special characters)
-    """
-    
-    # Keywords that strongly indicate travel
+    """Prepares raw calendar-event data for the travel-detection model. Combines the summary, location, and description into a single text feature, derives handcrafted boolean features (such as ``has_airport`` and ``has_flight``), and normalizes the text by lower-casing and removing special characters."""
+
+    # Keywords that strongly indicate travel.
     TRAVEL_KEYWORDS = [
         'flight', 'fly', 'flying', 'airport', 'airline', 'boarding',
         'vacation', 'holiday', 'trip', 'travel', 'cruise', 'sailing',
@@ -62,7 +42,7 @@ class TravelDataPreprocessor:
         'missionary', 'deployment', 'posting',
     ]
     
-    # Keywords that strongly indicate NON-travel (local events)
+    # Keywords that strongly indicate a local, non-travel event.
     LOCAL_KEYWORDS = [
         'meeting', 'standup', 'scrum', 'sync', 'review', 'retro',
         'appointment', 'checkup', 'cleaning', 'exam',
@@ -77,7 +57,7 @@ class TravelDataPreprocessor:
         'plumber', 'electrician', 'maintenance', 'repair',
     ]
     
-    # Known airport codes (Caribbean + major international)
+    # Known airport codes covering the Caribbean region and major international hubs.
     AIRPORT_CODES = [
         'MBJ', 'KIN', 'JFK', 'LAX', 'ORD', 'ATL', 'MIA', 'FLL',
         'YYZ', 'LHR', 'CDG', 'NRT', 'DXB', 'SIN', 'HKG',
@@ -179,37 +159,27 @@ class TravelDataPreprocessor:
 
 
 # ==========================================
-# 2. MODEL TRAINING (CRISP-DM Phase 4)
+# 2. Model training
 # ==========================================
 
 class TravelDetectionModel:
-    """
-    ML model for detecting travel events from calendar data.
-    
-    Architecture:
-        - Primary: TF-IDF (1-gram + 2-gram) → Random Forest
-        - Handcrafted features are appended to TF-IDF vectors
-    
-    The model outputs:
-        - is_travel: binary (0 or 1)
-        - travel_probability: float (0.0 to 1.0)
-    """
-    
+    """Travel-detection model for calendar events. Combines TF-IDF features (unigrams and bigrams) with handcrafted boolean and numeric features and feeds them into a Random Forest classifier. The model exposes a binary travel flag and a calibrated probability."""
+
     def __init__(self):
         self.tfidf = TfidfVectorizer(
             max_features=500,
-            ngram_range=(1, 2),      # Use unigrams and bigrams
+            ngram_range=(1, 2),      # Capture both single words and adjacent word pairs.
             stop_words='english',
-            min_df=2,                 # Ignore very rare terms
-            sublinear_tf=True         # Apply log normalization
+            min_df=2,                 # Drop terms that appear in fewer than two documents.
+            sublinear_tf=True         # Dampen the influence of very frequent terms.
         )
-        
+
         self.classifier = RandomForestClassifier(
             n_estimators=200,
             max_depth=15,
             min_samples_split=3,
             min_samples_leaf=2,
-            class_weight='balanced',  # Handle class imbalance
+            class_weight='balanced',  # Compensate for class imbalance in the training set.
             random_state=42,
             n_jobs=-1
         )
@@ -227,25 +197,14 @@ class TravelDetectionModel:
         self.evaluation_results = {}
     
     def _build_feature_matrix(self, texts, fit=False):
-        """
-        Builds the full feature matrix by combining TF-IDF + handcrafted features.
-        
-        Args:
-            texts: list of combined event text strings
-            fit: if True, fit the TF-IDF vectorizer (training mode)
-        
-        Returns:
-            numpy array of shape (n_samples, n_tfidf_features + n_handcrafted_features)
-        """
+        """Build the full feature matrix by horizontally stacking TF-IDF vectors with the handcrafted boolean and numeric features. When ``fit`` is true, the TF-IDF vectorizer is fitted in place; otherwise it is only used to transform inputs."""
         from scipy.sparse import hstack, csr_matrix
-        
-        # TF-IDF features
+
         if fit:
             tfidf_matrix = self.tfidf.fit_transform(texts)
         else:
             tfidf_matrix = self.tfidf.transform(texts)
-        
-        # Handcrafted features
+
         handcrafted = []
         for text in texts:
             features = TravelDataPreprocessor.extract_handcrafted_features(text)
@@ -264,73 +223,57 @@ class TravelDetectionModel:
             ])
         
         handcrafted_matrix = csr_matrix(np.array(handcrafted))
-        
-        # Combine both feature sets
+
         combined = hstack([tfidf_matrix, handcrafted_matrix])
-        
+
         return combined
-    
+
     def train(self, csv_path, test_size=0.2):
-        """
-        Trains the travel detection model on the labeled dataset.
-        
-        Args:
-            csv_path: path to the training CSV file
-            test_size: fraction of data to hold out for testing
-        
-        Returns:
-            dict with evaluation metrics
-        """
+        """Fit the travel-detection model on the labelled dataset at ``csv_path`` and return the evaluation metrics. ``test_size`` controls the fraction of the dataset reserved for held-out evaluation."""
         print("\n" + "=" * 55)
         print("  TRAVEL DETECTION MODEL - TRAINING PIPELINE")
         print("=" * 55)
-        
-        # --- Load Data ---
-        print("\n[Phase 3: Data Preparation]")
+
+        print("\n[Data preparation]")
         texts, labels, trigger_types, raw_rows = TravelDataPreprocessor.load_dataset(csv_path)
         print(f"  Loaded {len(texts)} samples")
         print(f"  Travel events: {sum(labels)} ({sum(labels)/len(labels)*100:.1f}%)")
         print(f"  Non-travel events: {len(labels) - sum(labels)} ({(len(labels)-sum(labels))/len(labels)*100:.1f}%)")
-        
-        # --- Train/Test Split ---
+
         X_train_text, X_test_text, y_train, y_test = train_test_split(
             texts, labels, test_size=test_size, random_state=42, stratify=labels
         )
         print(f"  Train set: {len(X_train_text)} samples")
         print(f"  Test set:  {len(X_test_text)} samples")
-        
-        # --- Build Features ---
-        print("\n[Phase 4: Model Training]")
+
+        print("\n[Model training]")
         print("  Building TF-IDF + handcrafted feature matrix...")
         X_train = self._build_feature_matrix(X_train_text, fit=True)
         X_test = self._build_feature_matrix(X_test_text, fit=False)
         print(f"  Feature dimensions: {X_train.shape[1]} features")
         print(f"    - TF-IDF features: {self.tfidf.transform(X_train_text).shape[1]}")
         print(f"    - Handcrafted features: 11")
-        
-        # --- Train Binary Classifier (is_travel) ---
+
         print("\n  Training Random Forest classifier...")
         self.classifier.fit(X_train, y_train)
-        
-        # --- Train Trigger Type Classifier (travel events only) ---
+
+        # Fit the secondary classifier that assigns a trigger type to events the primary classifier flags as travel.
         travel_texts = [t for t, l in zip(texts, labels) if l == 1]
         travel_triggers = [t for t, l in zip(trigger_types, labels) if l == 1 and t]
-        
+
         if travel_triggers:
-            # Filter out empty trigger types
             valid_pairs = [(text, trigger) for text, trigger in zip(travel_texts, travel_triggers) if trigger]
             if valid_pairs:
                 trigger_texts, trigger_labels = zip(*valid_pairs)
                 trigger_labels_encoded = self.trigger_encoder.fit_transform(trigger_labels)
-                
+
                 X_trigger = self._build_feature_matrix(list(trigger_texts), fit=False)
                 self.trigger_classifier.fit(X_trigger, trigger_labels_encoded)
                 print(f"  Trigger type classes: {list(self.trigger_encoder.classes_)}")
-        
+
         self.is_trained = True
-        
-        # --- Evaluate ---
-        print("\n[Phase 5: Evaluation]")
+
+        print("\n[Evaluation]")
         y_pred = self.classifier.predict(X_test)
         y_prob = self.classifier.predict_proba(X_test)[:, 1]
         
@@ -390,34 +333,13 @@ class TravelDetectionModel:
         return self.evaluation_results
     
     def predict(self, events):
-        """
-        Predicts travel/away periods from a list of calendar events.
-        
-        This is the DROP-IN REPLACEMENT for GeminiCalendarAnalyzer.detect_away_periods()
-        
-        Args:
-            events: list of dicts with keys: summary, start, end, location, description
-        
-        Returns:
-            list of away period dicts (same format as Gemini returned):
-            [
-                {
-                    "reason": "Flight to Miami for vacation",
-                    "departure_date": "2025-06-15",
-                    "return_date": "2025-08-20",
-                    "destination": "Miami, USA",
-                    "trigger_type": "travel",
-                    "confidence": "high"
-                }
-            ]
-        """
+        """Predict travel periods for a list of calendar events. Each input event is a dictionary containing ``summary``, ``start``, ``end``, ``location``, and ``description`` fields; the output is a list of away-period records with departure and return dates, destination, trigger type, and a confidence label."""
         if not self.is_trained:
             raise RuntimeError("Model not trained. Call train() first or load a saved model.")
-        
+
         if not events:
             return []
-        
-        # Prepare text features
+
         texts = []
         for event in events:
             combined = TravelDataPreprocessor.combine_text(
@@ -427,30 +349,25 @@ class TravelDetectionModel:
             )
             texts.append(combined)
         
-        # Predict
         X = self._build_feature_matrix(texts, fit=False)
         predictions = self.classifier.predict(X)
         probabilities = self.classifier.predict_proba(X)[:, 1]
-        
-        # Collect travel events
+
         travel_events = []
         for i, (event, is_travel, prob) in enumerate(zip(events, predictions, probabilities)):
             if is_travel == 1:
-                # Determine confidence from probability
+                # Convert the model's probability into a coarse confidence band for downstream consumers.
                 if prob >= 0.85:
                     confidence = "high"
                 elif prob >= 0.60:
                     confidence = "medium"
                 else:
                     confidence = "low"
-                
-                # Predict trigger type
+
                 trigger_type = self._predict_trigger_type(texts[i])
-                
-                # Extract destination from location/summary
+
                 destination = self._extract_destination(event)
-                
-                # Extract dates
+
                 start_date = self._parse_event_date(event.get('start', ''))
                 end_date = self._parse_event_date(event.get('end', ''))
                 
@@ -464,16 +381,16 @@ class TravelDetectionModel:
                     "ml_probability": round(prob, 4)
                 })
         
-        # Merge overlapping/consecutive travel events
+        # Collapse overlapping or consecutive travel events into single away periods.
         merged = self._merge_away_periods(travel_events)
-        
+
         return merged
-    
+
     def _predict_trigger_type(self, text):
-        """Predicts the trigger type (travel, vacation, work, study, etc.)."""
+        """Return the trigger-type label (``travel``, ``vacation``, ``work``, ``study``, ``relocation``, ``medical``, or ``other``) for an event text."""
         text_lower = text.lower()
-        
-        # Rule-based fallback (more reliable for clear cases)
+
+        # Apply deterministic keyword rules first; they are more reliable than the secondary classifier for unambiguous cases.
         if any(w in text_lower for w in ['flight', 'fly', 'airport', 'airline']):
             return 'travel'
         if any(w in text_lower for w in ['vacation', 'holiday', 'cruise', 'resort', 'honeymoon', 'getaway']):
@@ -486,8 +403,8 @@ class TravelDetectionModel:
             return 'relocation'
         if any(w in text_lower for w in ['hospital', 'surgery', 'medical', 'treatment', 'rehab']):
             return 'medical'
-        
-        # ML-based prediction as fallback
+
+        # Fall back to the trained trigger-type classifier when no keyword rule fires.
         try:
             if hasattr(self.trigger_encoder, 'classes_') and len(self.trigger_encoder.classes_) > 0:
                 X = self._build_feature_matrix([text], fit=False)
@@ -499,30 +416,30 @@ class TravelDetectionModel:
         return 'other'
     
     def _extract_destination(self, event):
-        """Extracts the travel destination from event fields."""
+        """Pick the most likely travel destination from an event's ``location``, ``summary``, and ``description`` fields. The location field is preferred when it points at a physical place; otherwise the text is scanned for ``to`` and ``in`` prepositional phrases."""
         location = event.get('location', '').strip()
         summary = event.get('summary', '').strip()
         description = event.get('description', '').strip()
-        
-        # Priority 1: Use the location field if it looks like a real place
+
+        # Use the location field directly when it does not look like a virtual-meeting placeholder.
         if location and not any(skip in location.lower() for skip in ['zoom', 'teams', 'online', 'home', 'office', 'n/a', 'email']):
             return location
-        
-        # Priority 2: Extract "to {destination}" from summary
+
+        # Match a "to <destination>" phrase in the event summary.
         to_match = re.search(r'\bto\s+([A-Z][a-zA-Z\s,]+)', summary)
         if to_match:
             destination = to_match.group(1).strip().rstrip(',')
             if len(destination) > 2:
                 return destination
-        
-        # Priority 3: Extract "in {destination}" from summary
+
+        # Match an "in <destination>" phrase in the event summary.
         in_match = re.search(r'\bin\s+([A-Z][a-zA-Z\s,]+)', summary)
         if in_match:
             destination = in_match.group(1).strip().rstrip(',')
             if len(destination) > 2:
                 return destination
-        
-        # Priority 4: Extract from description
+
+        # Fall back to scanning the description and summary for explicit destination, location, at, or visiting prefixes.
         for field in [description, summary]:
             for pattern in [r'(?:destination|location|at|visiting)\s*:?\s*([A-Z][a-zA-Z\s,]+)']:
                 match = re.search(pattern, field)
@@ -533,21 +450,19 @@ class TravelDetectionModel:
     
     @staticmethod
     def _parse_event_date(date_str):
-        """Parses various date formats from calendar events into YYYY-MM-DD."""
+        """Parse a Google Calendar date or datetime string into ``YYYY-MM-DD``. Today's date is returned when the input is empty or no format matches."""
         if not date_str:
             return datetime.now().strftime("%Y-%m-%d")
-        
+
         date_str = str(date_str).strip()
-        
-        # ISO format with timezone (2025-06-15T10:00:00-05:00)
+
+        # Strip the time component from ISO datetimes such as ``2025-06-15T10:00:00-05:00``.
         if 'T' in date_str:
             date_str = date_str.split('T')[0]
-        
-        # Already in YYYY-MM-DD
+
         if re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
             return date_str
-        
-        # Try common formats
+
         for fmt in ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d %b %Y', '%B %d, %Y']:
             try:
                 return datetime.strptime(date_str, fmt).strftime("%Y-%m-%d")
@@ -621,7 +536,7 @@ class TravelDetectionModel:
     
     @classmethod
     def load(cls, save_dir):
-        """Loads a previously trained model from disk."""
+        """Load a persisted travel-detection model from ``save_dir`` and return a populated instance."""
         model = cls()
         load_path = os.path.join(save_dir, 'travel_model.joblib')
         

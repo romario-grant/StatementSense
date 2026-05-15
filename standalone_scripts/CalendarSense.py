@@ -1,3 +1,5 @@
+"""Command-line implementation of CalendarSense. Reads upcoming Google Calendar events, classifies subscriptions against a user-supplied home location, and prints recommendations for trips that overlap with location-dependent services."""
+
 import os
 import json
 import math
@@ -18,26 +20,26 @@ load_dotenv(os.path.join(SCRIPT_DIR, ".env"))
 load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
 # ==========================================
-# 1. GOOGLE CALENDAR READER
+# 1. Google Calendar reader
 # ==========================================
 
-# Read-only access to the user's calendar
+# Read-only scope for the user's primary calendar.
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 
 class CalendarReader:
-    """Connects to Google Calendar via OAuth2 and reads upcoming events."""
-    
+    """OAuth-authenticated wrapper around the Google Calendar API used to fetch upcoming events."""
+
     def __init__(self, access_token=None):
         self.access_token = access_token
         self.service = self._authenticate()
-    
+
     def _authenticate(self):
-        """Handles OAuth2 flow — opens browser on first run, caches token after."""
+        """Authenticate against Google. When an access token is supplied it is used directly; otherwise the OAuth installed-app flow runs and caches a refresh token on disk."""
         creds = None
         if self.access_token:
             return build('calendar', 'v3', credentials=Credentials(token=self.access_token))
-        
-        # Resolve credential paths relative to this script's directory
+
+        # Look for credentials next to this script first, and fall back to the project root.
         token_path = os.path.join(SCRIPT_DIR, 'token.json')
         creds_path = os.path.join(SCRIPT_DIR, 'credentials.json')
         if not os.path.exists(creds_path):
@@ -45,11 +47,11 @@ class CalendarReader:
             if os.path.exists(root_creds_path):
                 creds_path = root_creds_path
                 token_path = os.path.join(PROJECT_ROOT, 'token.json')
-        
+
         if os.path.exists(token_path):
             creds = Credentials.from_authorized_user_file(token_path, SCOPES)
-        
-        # If no valid credentials, run the OAuth flow
+
+        # When no usable credentials are available, refresh or run the interactive OAuth flow.
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
@@ -62,15 +64,15 @@ class CalendarReader:
                     )
                 flow = InstalledAppFlow.from_client_secrets_file(creds_path, SCOPES)
                 creds = flow.run_local_server(port=0)
-            
-            # Cache the credentials for future runs
+
+            # Persist the refreshed credentials so subsequent runs can skip the interactive flow.
             with open(token_path, 'w') as token:
                 token.write(creds.to_json())
-        
+
         return build('calendar', 'v3', credentials=creds)
-    
+
     def get_upcoming_events(self, months_ahead=6):
-        """Fetches all events from now to N months in the future."""
+        """Return every event between now and ``months_ahead`` months in the future."""
         now = datetime.now(timezone.utc)
         future = now + timedelta(days=int(months_ahead * 30.44))
         
@@ -97,7 +99,7 @@ class CalendarReader:
                 start = event.get('start', {})
                 end = event.get('end', {})
                 
-                # Handle all-day events vs timed events
+                # Use ``dateTime`` when available, falling back to the date-only field for all-day events.
                 start_str = start.get('dateTime', start.get('date', ''))
                 end_str = end.get('dateTime', end.get('date', ''))
                 
@@ -116,12 +118,12 @@ class CalendarReader:
         return all_events
 
 # ==========================================
-# 2. GEMINI AI — TRAVEL & SUBSCRIPTION ANALYZER
+# 2. Gemini travel and subscription analyzer
 # ==========================================
 
 class GeminiCalendarAnalyzer:
-    """Uses Gemini to detect travel periods and classify subscriptions."""
-    
+    """Wraps Gemini calls used to detect travel periods and classify subscriptions as local or portable."""
+
     def __init__(self):
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
@@ -130,9 +132,9 @@ class GeminiCalendarAnalyzer:
         if not api_key:
             raise ValueError("CRITICAL: GEMINI_API_KEY not found in your .env file.")
         self.client = genai.Client(api_key=api_key)
-    
+
     def _call_gemini(self, prompt, use_search=False, max_retries=4):
-        """Call Gemini API with automatic retry on 429 RESOURCE_EXHAUSTED."""
+        """Submit a prompt to Gemini and return the parsed JSON response. Rate-limit responses (HTTP 429 or RESOURCE_EXHAUSTED) are retried with a short pause."""
         config = {"temperature": 0.0}
         if use_search:
             config["tools"] = [{"google_search": {}}]
@@ -161,10 +163,7 @@ class GeminiCalendarAnalyzer:
                 raise
     
     def detect_away_periods(self, events, user_home_location):
-        """
-        Sends calendar events to Gemini to identify periods 
-        where the user will be away from their home location.
-        """
+        """Identify periods during which the user will be physically away from ``user_home_location`` based on their calendar events."""
         if not events:
             return []
         
@@ -210,10 +209,7 @@ If NO away periods are found, return an empty array: []
             return []
 
     def classify_subscription(self, sub_name, sub_cost, user_home_location):
-        """
-        Uses Gemini + Google Search to determine if a subscription 
-        is local (location-dependent) or portable (works anywhere).
-        """
+        """Classify a subscription as location-dependent or portable using Gemini with Google Search grounding."""
         prompt = f"""The user lives in {user_home_location} and pays ${sub_cost} for "{sub_name}".
 
 Use Google Search to look up what "{sub_name}" is, then classify it.
@@ -251,12 +247,8 @@ CRITICAL: If you cannot find what "{sub_name}" is via search, set is_local to fa
             }
 
     def search_destination_alternatives(self, sub_name, location_type, destination):
-        """
-        When a local subscription is recommended for cancellation,
-        search for alternatives at the travel destination.
-        e.g., if canceling a gym in Jamaica, find gyms in Kansas City.
-        """
-        # Map subscription types to search terms
+        """Search Gemini for short-term alternatives to a location-dependent subscription at the given travel destination."""
+        # Map each location type to a dictionary of keyword-based search terms.
         search_map = {
             "physical": {
                 "gym": "gyms with day passes or short-term memberships",
@@ -283,7 +275,7 @@ CRITICAL: If you cannot find what "{sub_name}" is via search, set is_local to fa
             }
         }
         
-        # Find the best search term
+        # Pick the most specific search phrase by matching subscription-name keywords against the map.
         sub_lower = sub_name.lower()
         search_category = search_map.get(location_type, {})
         search_term = None
@@ -336,36 +328,32 @@ Rules:
             return None
 
 # ==========================================
-# 3. OVERLAP ENGINE — SAVINGS CALCULATOR
+# 3. Savings calculator
 # ==========================================
 
 class CalendarSenseEngine:
-    """Cross-references away periods with local subscriptions to find savings."""
-    
+    """Cross-reference detected away periods with local subscriptions to estimate savings."""
+
     @staticmethod
     def calculate_overlap_days(away_start, away_end, today=None):
-        """Calculates how many days the user will be away."""
+        """Return the number of days the user will be away, counting only days that fall in the future."""
         if today is None:
             today = datetime.now()
-        
+
         start = datetime.strptime(away_start, "%Y-%m-%d")
         end = datetime.strptime(away_end, "%Y-%m-%d")
-        
-        # Only count future days
+
         if start < today:
             start = today
-        
+
         if end <= start:
             return 0
-        
+
         return (end - start).days
-    
+
     @staticmethod
     def calculate_savings(away_periods, local_subs, min_days_away=14):
-        """
-        For each local subscription, calculates how much money
-        the user would save by canceling/pausing during away periods.
-        """
+        """For each location-dependent subscription, compute the savings achievable by pausing or cancelling during each away period. Trips shorter than ``min_days_away`` are ignored."""
         recommendations = []
         
         for sub in local_subs:
@@ -383,7 +371,7 @@ class CalendarSenseEngine:
                     away["departure_date"], away["return_date"]
                 )
                 
-                if days_away < min_days_away:  # Only recommend for extended absence
+                if days_away < min_days_away:
                     continue
                 
                 potential_savings = daily_cost * days_away
@@ -393,7 +381,7 @@ class CalendarSenseEngine:
                 if net_savings <= 0:
                     continue
                 
-                # Determine best action
+                # Choose the recommended action based on cancellation policy and net savings.
                 if sub.get("can_pause"):
                     action = "PAUSE MEMBERSHIP"
                     action_detail = "Freeze your membership during this period."
@@ -429,15 +417,15 @@ class CalendarSenseEngine:
         return recommendations
 
 # ==========================================
-# 4. INTERACTIVE CLI
+# 4. Interactive command-line entry point
 # ==========================================
 
 def run_app():
+    """Run the interactive CalendarSense workflow against the current user's Google Calendar."""
     print("=========================================")
     print("  CalendarSense — Smart Travel Savings   ")
     print("=========================================")
-    
-    # --- Step 1: Connect to Google Calendar ---
+
     print("\n[Step 1: Connecting to Google Calendar...]")
     try:
         calendar = CalendarReader()
@@ -449,7 +437,6 @@ def run_app():
         print(f"  ✗ Calendar connection failed: {e}")
         return
     
-    # --- Step 2: Initialize Gemini ---
     try:
         analyzer = GeminiCalendarAnalyzer()
         print("  ✓ Gemini AI ready")
@@ -457,13 +444,11 @@ def run_app():
         print(e)
         return
     
-    # --- Step 3: Get user's home location ---
     print("\n[Step 2: Where do you live?]")
     home_location = input("Enter your home city/country (e.g., Kingston, Jamaica): ").strip()
     if not home_location:
         home_location = "Jamaica"
     
-    # --- Step 4: Fetch calendar events ---
     print("\n[Step 3: Scanning your calendar for the next 6 months...]")
     events = calendar.get_upcoming_events(months_ahead=6)
     print(f"  Found {len(events)} upcoming events")
@@ -472,7 +457,6 @@ def run_app():
         print("  No upcoming events found. Add some events to your Google Calendar and try again.")
         return
     
-    # Show preview of events found
     print("\n  Recent upcoming events:")
     for i, event in enumerate(events[:10]):
         start = event['start'][:10] if event['start'] else '?'
@@ -480,7 +464,6 @@ def run_app():
     if len(events) > 10:
         print(f"    ... and {len(events) - 10} more")
     
-    # --- Step 5: Detect away periods ---
     print("\n[Step 4: Analyzing events for travel/away periods...]")
     away_periods = analyzer.detect_away_periods(events, home_location)
     
@@ -499,7 +482,6 @@ def run_app():
         print(f"     Duration: {days} days ({days/30:.1f} months)")
         print()
     
-    # --- Step 6: Collect subscriptions ---
     print("[Step 5: Enter your local subscriptions]")
     print("(Enter subscription name and cost. Type 'done' when finished.)\n")
     
@@ -522,7 +504,7 @@ def run_app():
         print("\nNo subscriptions entered.")
         return
     
-    # --- Parallel classification: fire all at once ---
+    # Classify every entered subscription concurrently so the user does not wait for sequential Gemini calls.
     print(f"\n[Classifying {len(subscriptions_raw)} subscription(s) in parallel...]")
     
     def _classify_one(sub):
@@ -549,7 +531,6 @@ def run_app():
                     "monthly_cost": sub["cost"], "reason": f"Classification error: {e}"
                 })
     
-    # --- Step 7: Calculate savings ---
     local_subs = [s for s in subscriptions if s.get("is_local")]
     
     if not local_subs:
@@ -571,7 +552,6 @@ def run_app():
         print("=========================================")
         return
     
-    # --- Step 8: Display recommendations ---
     total_savings = sum(r["net_savings"] for r in recommendations)
     
     print("\n=========================================")
@@ -600,7 +580,7 @@ def run_app():
         print(f"  ACTION:        {rec['action']}")
         print(f"  DETAILS:       {rec['action_detail']}")
         
-    # V2: Search for alternatives at ALL destinations in parallel
+    # Search for destination alternatives for every recommendation that targets a known city.
     recs_needing_alts = [
         rec for rec in recommendations
         if rec.get("destination", "") and rec.get("destination") != "Unknown" and rec.get("location_type") != "portable"
@@ -661,7 +641,7 @@ def run_app():
                         print(f"  No alternatives found in {rec.get('destination', '')}.")
                 except Exception as e:
                     print(f"  [Alternatives search error: {e}]")
-    
+
     print(f"\n  ─────────────────────────────────────")
     print(f"  TOTAL POTENTIAL SAVINGS: ${total_savings:.2f}")
     print(f"  ─────────────────────────────────────")

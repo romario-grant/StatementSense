@@ -1,3 +1,5 @@
+"""Structured table extraction for bank-statement PDFs using pdfplumber and camelot."""
+
 import logging
 import re
 from pathlib import Path
@@ -11,37 +13,40 @@ logger = logging.getLogger(__name__)
 
 
 def extract_tables_from_pdf(pdf_path: Union[str, Path]) -> List[pd.DataFrame]:
+    """Return cleaned transaction tables found in the PDF at ``pdf_path``."""
     pdf_path = Path(pdf_path)
-    
+
     if not pdf_path.exists():
         raise FileNotFoundError(f"PDF file not found: {pdf_path}")
-    
+
     logger.info(f"Extracting tables from PDF: {pdf_path}")
-    
+
     return extract_tables_locally(pdf_path)
 
 
 def extract_tables_locally(pdf_path: Path) -> List[pd.DataFrame]:
+    """Run pdfplumber and camelot table extraction in sequence, de-duplicate, and return the cleaned tables."""
     logger.info("Using local extraction methods")
     tables = []
-    
+
     tables.extend(_extract_with_pdfplumber(pdf_path))
-    
+
     camelot_tables = _extract_with_camelot(pdf_path)
     for table in camelot_tables:
         if not _is_duplicate_table(table, tables):
             tables.append(table)
-    
+
     cleaned_tables = [
-        cleaned for table in tables 
+        cleaned for table in tables
         if (cleaned := _clean_table(table)) is not None
     ]
-    
+
     logger.info(f"Successfully extracted {len(cleaned_tables)} valid tables")
     return cleaned_tables
 
 
 def _extract_with_pdfplumber(pdf_path: Path) -> List[pd.DataFrame]:
+    """Extract tables page by page using pdfplumber."""
     tables = []
     
     try:
@@ -65,8 +70,9 @@ def _extract_with_pdfplumber(pdf_path: Path) -> List[pd.DataFrame]:
 
 
 def _extract_with_camelot(pdf_path: Path) -> List[pd.DataFrame]:
+    """Extract tables using camelot, trying both the lattice and stream flavours."""
     tables = []
-    
+
     try:
         for flavor in ['lattice', 'stream']:
             camelot_tables = camelot.read_pdf(str(pdf_path), flavor=flavor)
@@ -89,6 +95,7 @@ def _extract_with_camelot(pdf_path: Path) -> List[pd.DataFrame]:
 
 
 def _clean_table(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+    """Drop blank rows and columns, normalize column headers, and rename recognized transaction columns. Returns ``None`` when the table is empty or too short to contain transactions."""
     if df is None or df.empty:
         return None
     
@@ -119,6 +126,7 @@ def _clean_table(df: pd.DataFrame) -> Optional[pd.DataFrame]:
 
 
 def _is_transaction_table(df: pd.DataFrame) -> bool:
+    """Heuristically determine whether a DataFrame looks like a transaction table by checking column headers and the presence of date- and amount-like values in the first few rows."""
     if df.empty or len(df) < 2:
         return False
     
@@ -135,6 +143,7 @@ def _is_transaction_table(df: pd.DataFrame) -> bool:
 
 
 def _format_transaction_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Rename heterogeneous column headers to a canonical ``Date``, ``Description``, ``Debit``, ``Credit``, ``Balance``, and ``Reference`` schema when matches are found."""
     column_mapping = {}
     
     for col in df.columns:
@@ -152,27 +161,28 @@ def _format_transaction_table(df: pd.DataFrame) -> pd.DataFrame:
             column_mapping[col] = 'Balance'
         elif any(keyword in col_lower for keyword in ['reference', 'ref', 'cheque']):
             column_mapping[col] = 'Reference'
-    
+
     return df.rename(columns=column_mapping) if column_mapping else df
 
 
 def _is_duplicate_table(new_table: pd.DataFrame, existing_tables: List[pd.DataFrame]) -> bool:
+    """Return ``True`` when ``new_table`` is similar in size and content to a table already collected, used to suppress duplicate detections from the two underlying extractors."""
     if not existing_tables or new_table.empty:
         return False
-    
+
     for existing_table in existing_tables:
         if abs(len(new_table) - len(existing_table)) <= 2:
             try:
                 new_sample = set(str(new_table.head(3).values).split())
                 existing_sample = set(str(existing_table.head(3).values).split())
-                
+
                 similarity = len(new_sample & existing_sample) / max(
                     len(new_sample), len(existing_sample), 1
                 )
-                
+
                 if similarity > 0.7:
                     return True
             except Exception:
                 continue
-    
+
     return False

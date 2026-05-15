@@ -1,3 +1,5 @@
+// Persistent storage of cross-page user preferences such as the budgeting style, student flag, and monthly subscription cap.
+
 export type BudgetingStyle = "strict" | "balanced" | "lenient";
 
 export type UserPreferences = {

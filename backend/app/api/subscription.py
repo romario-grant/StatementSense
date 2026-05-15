@@ -18,27 +18,15 @@ logger = logging.getLogger(__name__)
 
 @router.post("/upload")
 async def upload_statement(file: UploadFile = File(...)):
-    """
-    Upload a bank statement PDF and get a full subscription analysis.
-
-    Returns:
-    - Detected subscriptions with billing periods and confidence scores
-    - Renewal predictions with next charge dates
-    - Free trial detection alerts
-    - Price change detection (CUSUM)
-    - Currency normalization (JMD → USD)
-    """
-    # Validate file type
+    """Accept a single bank-statement upload and return the full subscription analysis, including detected recurring charges, renewal predictions, trial alerts, CUSUM-based price-change detection, and normalized currency values."""
     if not file.filename.lower().endswith(('.pdf', '.csv')):
         raise HTTPException(status_code=400, detail="Only PDF and CSV files are supported.")
 
-    # Read file bytes
     file_bytes = await file.read()
 
     if len(file_bytes) == 0:
         raise HTTPException(status_code=400, detail="Empty file uploaded.")
 
-    # Run analysis
     try:
         result = analyze_subscriptions(file_bytes)
     except Exception as exc:
@@ -56,12 +44,7 @@ async def upload_statement(file: UploadFile = File(...)):
 
 @router.post("/upload-multiple")
 async def upload_multiple_statements(files: list[UploadFile] = File(...)):
-    """
-    Upload up to three successive bank statements and analyze them together.
-
-    Each statement is extracted concurrently so slow Gemini fallbacks wait
-    roughly for the slowest statement instead of the sum of all statements.
-    """
+    """Accept up to three consecutive bank statements and analyze them as a single dataset. Extraction is run concurrently for each statement, so end-to-end latency is governed by the slowest statement rather than the sum of all statements."""
     if not files:
         raise HTTPException(status_code=400, detail="Upload at least one statement.")
     if len(files) > 3:

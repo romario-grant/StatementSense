@@ -45,7 +45,7 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
   }, []);
 
-  // Prevent flash of wrong theme
+  // Avoid rendering until the persisted theme has been applied so the initial paint matches the user's preference.
   if (!mounted) return null;
 
   return (

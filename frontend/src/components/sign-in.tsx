@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 
-// --- HELPER COMPONENTS (ICONS) ---
+// Inline icon components used inside the sign-in form.
 
 const GoogleIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 48 48">
@@ -13,7 +13,7 @@ const GoogleIcon = () => (
 );
 
 
-// --- TYPE DEFINITIONS ---
+// Public types describing the props accepted by ``SignInPage`` and the testimonial cards it renders.
 
 export interface Testimonial {
   avatarSrc: string;
@@ -33,7 +33,7 @@ interface SignInPageProps {
   onCreateAccount?: () => void;
 }
 
-// --- SUB-COMPONENTS ---
+// Presentational sub-components used by the sign-in page layout.
 
 const GlassInputWrapper = ({ children }: { children: React.ReactNode }) => (
   <div className="rounded-2xl border border-border bg-foreground/5 backdrop-blur-sm transition-colors focus-within:border-violet-400/70 focus-within:bg-violet-500/10">
@@ -52,7 +52,7 @@ const TestimonialCard = ({ testimonial, delay }: { testimonial: Testimonial, del
   </div>
 );
 
-// --- MAIN COMPONENT ---
+// Two-column sign-in page with form controls on the left and a hero panel on the right.
 
 export const SignInPage: React.FC<SignInPageProps> = ({
   title = <span className="font-light text-foreground tracking-tighter">Welcome</span>,

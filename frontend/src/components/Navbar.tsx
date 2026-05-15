@@ -32,14 +32,14 @@ export default function Navbar() {
     : "bg-background/95 border-b border-border/60 shadow-sm backdrop-blur-md";
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Close mobile menu on route change
+  // Dismiss the mobile drawer whenever the user navigates to a new route.
   /* eslint-disable react-hooks/set-state-in-effect -- Route changes should dismiss the mobile drawer immediately. */
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Prevent body scroll when mobile menu is open
+  // Lock body scrolling while the mobile menu overlay is open.
   useEffect(() => {
     if (mobileOpen) {
       document.body.style.overflow = "hidden";

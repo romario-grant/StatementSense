@@ -1,6 +1,8 @@
 """
-CalendarSense Engine — Pure functions for calendar travel analysis.
-Stripped of CLI code, ready for API integration.
+CalendarSense engine for travel-aware subscription recommendations.
+
+The module fetches Google Calendar events, classifies location-dependent
+subscriptions, evaluates travel overlap, and prepares reminder payloads.
 """
 
 import os
@@ -12,9 +14,6 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google import genai
 from backend.app.shared.currency_normaliser import get_rate_with_fallback
-# NOTE: Google Calendar OAuth imports (google_auth_oauthlib, googleapiclient)
-# are loaded lazily inside CalendarReader._authenticate() to prevent
-# the container from crashing on startup when credentials are missing.
 
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 
@@ -38,7 +37,8 @@ class CalendarReader:
         self.service = self._authenticate()
     
     def _authenticate(self):
-        # Lazy imports — only load when calendar is actually needed
+        # Google Calendar clients are imported only when calendar access is used,
+        # keeping unrelated API routes independent from OAuth dependencies.
         from google_auth_oauthlib.flow import InstalledAppFlow
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
@@ -46,19 +46,18 @@ class CalendarReader:
         
         creds = None
         
-        # 1. Serverless web flow: Use the access token passed from the frontend
+        # Browser sessions pass an OAuth access token from Firebase sign-in.
         if self.access_token:
             creds = Credentials(token=self.access_token)
             return build('calendar', 'v3', credentials=creds)
 
-        # 2. Local CLI flow: Fallback to token.json / credentials.json
-        # Use the project root set by main.py to find credential files
+        # Local runs can reuse token.json and credentials.json from the project root.
         project_root = os.environ.get("STATEMENTSENSE_ROOT", "")
         if project_root:
             token_path = os.path.join(project_root, 'token.json')
             creds_path = os.path.join(project_root, 'credentials.json')
         else:
-            # Fallback: try current directory, then parent
+            # Standalone scripts may be launched from the repository or script folder.
             token_path = 'token.json'
             creds_path = 'credentials.json'
             if not os.path.exists(creds_path) and os.path.exists('../credentials.json'):
@@ -75,11 +74,11 @@ class CalendarReader:
                 if not os.path.exists(creds_path):
                     raise FileNotFoundError(
                         f"CRITICAL: {creds_path} not found.\n"
-                        "Download it from Google Cloud Console → APIs & Services → Credentials.\n"
+                        "Download it from Google Cloud Console > APIs & Services > Credentials.\n"
                         "Note: For web usage, please log in via the frontend."
                     )
                 flow = InstalledAppFlow.from_client_secrets_file(creds_path, SCOPES)
-                # This will open a local browser window to authenticate
+                # Local OAuth uses a browser-based consent flow.
                 creds = flow.run_local_server(port=0)
             
             with open(token_path, 'w') as token:
@@ -131,7 +130,7 @@ class CalendarReader:
                     break
         except Exception as e:
             print(f"[CalendarSense] Google Calendar API Error: {e}")
-            # Return empty list rather than crashing
+            # CalendarSense can still render manual subscription inputs without events.
             return []
             
         return all_events
@@ -141,7 +140,7 @@ class GeminiCalendarAnalyzer:
     def __init__(self):
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
-            # Fallback: try loading from project root .env
+            # Load secrets from the project root when the process environment has not already provided them.
             from dotenv import load_dotenv
             project_root = os.environ.get("STATEMENTSENSE_ROOT", "")
             if project_root:
@@ -155,7 +154,7 @@ class GeminiCalendarAnalyzer:
         self.client = genai.Client(api_key=api_key)
     
     def _call_gemini(self, prompt, use_search=False, max_retries=4):
-        """Call Gemini API. Search enabled for accuracy as per user request."""
+        """Call Gemini with JSON parsing and optional grounded search."""
         config = {"temperature": 0.0}
         if use_search:
             config["tools"] = [{"google_search": {}}]
@@ -182,7 +181,7 @@ class GeminiCalendarAnalyzer:
                 try:
                     return json.loads(raw_text)
                 except json.JSONDecodeError:
-                    # Robust fallback: extract first {} or [] block if Gemini added conversational text
+                    # Gemini can wrap JSON in explanatory text; recover the first JSON block.
                     import re
                     match = re.search(r'(\{.*\}|\[.*\])', raw_text, re.DOTALL)
                     if match:
@@ -194,7 +193,7 @@ class GeminiCalendarAnalyzer:
                 if attempt == max_retries - 1:
                     raise
                 
-                # If rate limited, wait 2s
+                # Back off briefly on rate limits before retrying.
                 if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
                     import time
                     time.sleep(2)
@@ -426,32 +425,25 @@ estimated_trip_cost and estimated_monthly_equivalent must be in estimated_curren
 
 
 class SmartTimingEngine:
-    """
-    Context-aware subscription timing analyzer (v2).
-    
-    Instead of simplistic "days_away > 14 → cancel" logic, this engine
-    analyzes the actual renewal cycle relative to travel dates to produce
-    intelligent, actionable recommendations.
-    """
+    """Context-aware subscription-timing analyzer that aligns each subscription's renewal cycle with the user's travel dates to produce actionable cancel, pause, or keep recommendations."""
 
-    # Minimum trip length to consider any subscription action
+    # Minimum trip length, in days, for any subscription action to be considered worthwhile.
     MIN_TRIP_DAYS = 14
-    # If the user departs within this many days after renewal, don't recommend cancel
+    # Skip cancellation recommendations when departure falls within this many days after the most recent renewal.
     RECENTLY_RENEWED_WINDOW = 5
 
     @staticmethod
     def _next_renewal_date(renewal_day: int, after_date: datetime) -> datetime:
-        """Calculate the next renewal date on or after `after_date`."""
-        # Try the renewal day in the current month
+        """Return the next calendar date on or after ``after_date`` that falls on the supplied renewal day."""
         year, month = after_date.year, after_date.month
-        # Clamp to valid day for the month
         import calendar as cal_mod
+        # Clamp the renewal day to the actual number of days in the month.
         max_day = cal_mod.monthrange(year, month)[1]
         day = min(renewal_day, max_day)
         candidate = datetime(year, month, day)
         if candidate >= after_date:
             return candidate
-        # Otherwise, try next month
+        # The current month's renewal has already passed; advance to the following month.
         if month == 12:
             year += 1
             month = 1
@@ -463,11 +455,11 @@ class SmartTimingEngine:
 
     @staticmethod
     def _count_renewals_during_travel(renewal_day: int, depart: datetime, return_dt: datetime) -> int:
-        """Count how many renewal cycles fall within the travel period."""
+        """Count the number of renewal cycles that occur between the supplied departure and return dates."""
         import calendar as cal_mod
         count = 0
         year, month = depart.year, depart.month
-        # Iterate month by month from departure to return
+        # Step through each month between departure and return, counting renewals that land inside the travel window.
         while True:
             max_day = cal_mod.monthrange(year, month)[1]
             day = min(renewal_day, max_day)
@@ -476,7 +468,6 @@ class SmartTimingEngine:
                 break
             if renewal >= depart:
                 count += 1
-            # Advance to next month
             if month == 12:
                 year += 1
                 month = 1
@@ -485,20 +476,16 @@ class SmartTimingEngine:
         return count
 
     def analyze(self, subscription: dict, away_period: dict, today: datetime | None = None) -> dict | None:
-        """
-        Analyze a single subscription against a single away period.
+        """Evaluate a single subscription against a single away period and return a recommendation, or ``None`` when no action is warranted.
 
-        Returns a recommendation dict, or None if no action is needed.
-
-        Decision logic:
-        1. Trip < MIN_TRIP_DAYS → KEEP (not worth the hassle)
-        2. Subscription just renewed (within RECENTLY_RENEWED_WINDOW before departure)
-           AND trip < 30 days → KEEP (already paid, short trip)
-        3. Renewal falls during travel → CANCEL BEFORE or PAUSE
-        4. Can pause → PAUSE (always preferred over cancel)
-        5. Can cancel+rejoin with no penalty → CANCEL before next renewal
-        6. Penalty exists but savings > 2x penalty → CANCEL WITH NOTE
-        7. Otherwise → KEEP with advisory
+        The decision logic, in order, is:
+        1. Trips shorter than ``MIN_TRIP_DAYS`` keep the subscription.
+        2. A subscription renewed within ``RECENTLY_RENEWED_WINDOW`` before a trip under thirty days is kept.
+        3. When a renewal falls inside the travel window the subscription is cancelled in advance or paused.
+        4. Pausing is preferred whenever the provider supports it.
+        5. Cancel-and-rejoin is used when no penalty applies.
+        6. When a penalty exists, the recommendation cancels only if projected savings exceed twice the penalty.
+        7. When no other rule fires, the subscription is kept with an advisory.
         """
         if today is None:
             today = datetime.now()
@@ -524,11 +511,9 @@ class SmartTimingEngine:
         can_pause = subscription.get("can_pause", False)
         can_cancel = subscription.get("can_cancel_and_rejoin", False)
 
-        # ── Rule 1: Short trips aren't worth the hassle ──
         if days_away < self.MIN_TRIP_DAYS:
             return None
 
-        # ── Timing analysis ──
         if renewal_day:
             next_renewal = self._next_renewal_date(renewal_day, today)
             renewals_during_travel = self._count_renewals_during_travel(
@@ -547,13 +532,11 @@ class SmartTimingEngine:
             wasted_months = months_away
             potential_savings = daily_cost * days_away
 
-        # ── Rule 2: Recently renewed + short trip → KEEP ──
         if (renewal_day and days_renewal_to_depart is not None
                 and -self.RECENTLY_RENEWED_WINDOW <= days_renewal_to_depart <= 0
                 and days_away < 30):
             return None  # Already paid, trip is short
 
-        # ── Rule 3+4+5+6: Determine action ──
         net_savings = potential_savings - penalty
 
         if net_savings <= 0:
@@ -590,7 +573,6 @@ class SmartTimingEngine:
         else:
             timing_context = "Renewal day unknown — estimated from daily cost."
 
-        # ── Decision matrix ──
         if can_pause:
             action = "PAUSE"
             detail = f"Pause your membership before {action_date}. Resume on {restart_date}."
@@ -640,7 +622,7 @@ class SmartTimingEngine:
 
 
 class CalendarSenseEngine:
-    """Thin wrapper around SmartTimingEngine for backward compatibility."""
+    """Public coordinator that combines overlap calculations with the smart-timing recommendation engine."""
 
     @staticmethod
     def calculate_overlap_days(away_start, away_end, today=None):
@@ -654,7 +636,7 @@ class CalendarSenseEngine:
 
     @staticmethod
     def calculate_savings(away_periods, local_subs):
-        """Generate recommendations using SmartTimingEngine."""
+        """Generate a recommendation for every (location-based subscription, travel period) pair using the smart-timing engine."""
         engine = SmartTimingEngine()
         recommendations = []
         for sub in local_subs:
@@ -670,7 +652,7 @@ class CalendarSenseEngine:
 
     @staticmethod
     def _build_keep_advisory(subscription: dict, away_period: dict) -> dict | None:
-        """Return a non-actionable local-alternatives card when cancellation is not worth it."""
+        """Return an advisory record describing the trip and local alternatives when the engine determines that no cancellation or pause is warranted."""
         monthly_cost = float(subscription.get("monthly_cost", 0))
         if monthly_cost <= 0:
             return None
@@ -723,10 +705,7 @@ class CalendarSenseEngine:
 import traceback
 
 def analyze_calendar(home_location: str, subscriptions_list: list, access_token: str | None = None):
-    """
-    Main entry point for API.
-    Connects to calendar, fetches events, queries Gemini, returns savings recommendations.
-    """
+    """Run the full CalendarSense pipeline in a single call: fetch upcoming events, classify each subscription, detect travel windows, and return savings recommendations."""
     try:
         try:
             calendar = CalendarReader(access_token)
@@ -742,9 +721,9 @@ def analyze_calendar(home_location: str, subscriptions_list: list, access_token:
             
         events = calendar.get_upcoming_events(months_ahead=6)
         print(f"[CalendarSense] Fetched {len(events)} events.")
-        # Build event preview for frontend display (like the CLI shows)
+        # Provide a small preview of upcoming events for display by the client.
         events_preview = []
-        for ev in events[:15]:  # Show first 15 events
+        for ev in events[:15]:
             start_str = ev.get('start', '')[:10] if ev.get('start') else '?'
             events_preview.append({
                 "date": start_str,
@@ -753,8 +732,8 @@ def analyze_calendar(home_location: str, subscriptions_list: list, access_token:
             })
         
         away_periods = analyzer.detect_away_periods(events, home_location)
-        
-        # --- Parallel classification: fire all at once ---
+
+        # Classify every subscription concurrently so the total latency is bounded by the slowest Gemini call.
         def _classify_one(sub):
             sub_name = sub.get("name")
             sub_cost = float(sub.get("cost", 0))
@@ -781,8 +760,8 @@ def analyze_calendar(home_location: str, subscriptions_list: list, access_token:
         if local_subs and away_periods:
             engine = CalendarSenseEngine()
             recommendations = engine.calculate_savings(away_periods, local_subs)
-            
-            # --- Parallel alternatives search: fire all at once ---
+
+            # Search for destination alternatives for every recommendation in parallel.
             def _search_one(rec):
                 dest = rec.get("destination", "")
                 loc_type = rec.get("location_type", "")
@@ -827,15 +806,10 @@ def analyze_calendar(home_location: str, subscriptions_list: list, access_token:
         return {"error": f"Internal Engine Error: {str(e)}"}
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Progressive Loading API — composable functions for phased frontend loading
-# ══════════════════════════════════════════════════════════════════════════════
+# Progressive-loading API: composable stages that the frontend calls in sequence so partial results can be displayed before the slower stages finish.
 
 def fetch_events(access_token: str | None = None):
-    """
-    Phase 1: Fetch calendar events only. Fast (~2s).
-    Returns events list + preview for immediate display.
-    """
+    """Fetch the user's upcoming Google Calendar events and return them along with a short preview for the client."""
     try:
         calendar = CalendarReader(access_token)
         events = calendar.get_upcoming_events(months_ahead=6)
@@ -862,10 +836,7 @@ def fetch_events(access_token: str | None = None):
 
 
 def classify_and_detect(events: list, home_location: str, subscriptions_list: list):
-    """
-    Phase 2: Classify subscriptions + detect travel periods in parallel.
-    Receives the raw events from Phase 1.
-    """
+    """Classify every subscription as local or portable and detect away-from-home travel periods in the supplied events. Classification and travel detection are dispatched concurrently."""
     try:
         analyzer = GeminiCalendarAnalyzer()
     except Exception as e:
@@ -880,7 +851,7 @@ def classify_and_detect(events: list, home_location: str, subscriptions_list: li
     def _classify_one(sub):
         sub_name = sub.get("name")
         sub_cost = float(sub.get("cost", 0))
-        renewal_day = sub.get("renewal_day")  # v2: carry through for SmartTimingEngine
+        renewal_day = sub.get("renewal_day")  # Preserve the renewal day so SmartTimingEngine can reason about renewal cycles.
         classification = analyzer.classify_subscription(sub_name, sub_cost, home_location)
         classification["name"] = sub_name
         if renewal_day is not None:
@@ -889,20 +860,16 @@ def classify_and_detect(events: list, home_location: str, subscriptions_list: li
 
     try:
         with ThreadPoolExecutor(max_workers=min(len(subscriptions_list) + 1, 100)) as pool:
-            # Submit travel detection
             travel_future = pool.submit(_detect_travel)
 
-            # Submit all subscription classifications
             classify_futures = {pool.submit(_classify_one, sub): sub for sub in subscriptions_list}
 
-            # Collect travel results
             try:
                 results["away_periods"] = travel_future.result()
             except Exception as e:
                 print(f"[CalendarSense:Phase2] Travel detection failed: {e}")
                 results["away_periods"] = []
 
-            # Collect classification results
             processed_subs = []
             for future in as_completed(classify_futures):
                 try:
@@ -936,10 +903,7 @@ def compute_savings(
     local_currency: str = "JMD",
     exchange_rate: float | None = None,
 ):
-    """
-    Phase 3: Calculate savings + search destination alternatives via Places API.
-    Only called when local subs AND away periods exist.
-    """
+    """Compute savings recommendations and query the Google Places API for destination alternatives. Returns empty results when no local subscriptions or no travel periods are supplied."""
     from .places_service import PlacesService
 
     local_currency = (local_currency or "JMD").upper()
@@ -954,7 +918,7 @@ def compute_savings(
     engine = CalendarSenseEngine()
     recommendations = engine.calculate_savings(away_periods, local_subs)
 
-    # Initialize Places API service (falls back gracefully if key missing)
+    # The Places client is optional; the engine still returns recommendations when the API key is unavailable.
     places = None
     try:
         places = PlacesService()
@@ -967,7 +931,7 @@ def compute_savings(
     except Exception as e:
         print(f"[CalendarSense:Phase3] Gemini query planner not available: {e}")
 
-    # Parallel alternatives search via Google Places API
+    # Search the Places API for alternatives for every recommendation in parallel.
     def _search_one(rec):
         dest = rec.get("destination", "")
         loc_type = rec.get("location_type", "")
@@ -1035,15 +999,7 @@ def compute_savings(
 
 
 def create_reminders(access_token: str, recommendations: list) -> dict:
-    """
-    Phase 4: Create Google Calendar reminder events for actionable recommendations.
-
-    For each recommendation with action != 'KEEP', creates:
-    1. An action event (cancel/pause) on the optimal action date
-    2. A restart event on the return date
-
-    Requires calendar.events scope (read+write).
-    """
+    """Create Google Calendar reminder events for every actionable recommendation. Each recommendation with a non-``KEEP`` action produces an event on the optimal action date and a restart event on the return date. The supplied OAuth token must include the ``calendar.events`` read/write scope."""
     from google.oauth2.credentials import Credentials
     from googleapiclient.discovery import build
 
@@ -1069,7 +1025,6 @@ def create_reminders(access_token: str, recommendations: list) -> dict:
         destination = rec.get("destination", "")
         net_savings = rec.get("net_savings", 0)
 
-        # ── Event 1: Action reminder (cancel/pause) ──
         if action_date:
             action_verb = "Pause" if action == "PAUSE" else "Cancel"
             action_event = {
@@ -1088,8 +1043,8 @@ def create_reminders(access_token: str, recommendations: list) -> dict:
                 "reminders": {
                     "useDefault": False,
                     "overrides": [
-                        {"method": "popup", "minutes": 24 * 60},  # 1 day before
-                        {"method": "popup", "minutes": 60},        # 1 hour before
+                        {"method": "popup", "minutes": 24 * 60},  # One day before the event.
+                        {"method": "popup", "minutes": 60},        # One hour before the event.
                     ],
                 },
             }
@@ -1114,7 +1069,6 @@ def create_reminders(access_token: str, recommendations: list) -> dict:
                     "error": str(e),
                 })
 
-        # ── Event 2: Restart reminder ──
         if restart_date and action != "KEEP":
             restart_event = {
                 "summary": f"🔄 Restart {sub_name}",

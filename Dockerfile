@@ -1,7 +1,5 @@
-# ═══════════════════════════════════════════════════════════
 # StatementSense — FastAPI Backend Dockerfile
 # For deployment to Google Cloud Run
-# ═══════════════════════════════════════════════════════════
 
 FROM python:3.12-slim
 

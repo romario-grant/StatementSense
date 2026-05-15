@@ -1,5 +1,7 @@
 "use client";
 
+// Background coordinator that, after a SubscriptionSense analysis completes, automatically pre-warms RenewalSense and CalendarSense data so the corresponding pages can render instantly when the user navigates to them.
+
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { readPageSession, savePageSession } from "@/lib/pageSessionStore";

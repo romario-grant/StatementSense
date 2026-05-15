@@ -14,7 +14,7 @@ import {
 } from "@/lib/subscriptionStore";
 import { readPageSession, savePageSession } from "@/lib/pageSessionStore";
 
-// Lazy-load map component (requires browser APIs)
+// The map component relies on browser-only APIs, so it is loaded only on the client.
 const PlacesMap = dynamic(() => import("./PlacesMap"), { ssr: false });
 
 interface SubInput { id: number; name: string; cost: string; renewalDay: string; }
@@ -49,7 +49,7 @@ export default function CalendarSensePage() {
   const [showAddSubscription, setShowAddSubscription] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Phase 1: Calendar events (fetched on mount)
+  // Calendar events fetched on mount.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [events, setEvents] = useState<any[] | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -57,22 +57,22 @@ export default function CalendarSensePage() {
   const [eventsCount, setEventsCount] = useState(0);
   const [eventsLoading, setEventsLoading] = useState(false);
 
-  // Phase 2: Classification + Travel detection
+  // Subscription classification and travel-period detection results.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [classifyResult, setClassifyResult] = useState<any>(null);
   const [classifyLoading, setClassifyLoading] = useState(false);
 
-  // Phase 3: Savings + Alternatives (Places API)
+  // Savings recommendations and Places API alternatives.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [savingsResult, setSavingsResult] = useState<any>(null);
   const [savingsLoading, setSavingsLoading] = useState(false);
 
-  // Phase 4: Calendar reminders
+  // Result of creating Google Calendar reminder events.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [remindersResult, setRemindersResult] = useState<any>(null);
   const [remindersLoading, setRemindersLoading] = useState(false);
 
-  // Legacy compat: build a combined result object for the render code
+  // Aggregate the progressive-loading stage results into a single object the render tree consumes.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result: any = classifyResult ? {
     events_scanned: eventsCount,
@@ -175,7 +175,7 @@ export default function CalendarSensePage() {
     subscriptions,
   ]);
 
-  // ── Phase 1: Auto-fetch calendar events on mount ──
+  // Fetch the user's upcoming calendar events as soon as the page hydrates and an OAuth token is available.
   useEffect(() => {
     if (!hydrated || events) return;
     const token = localStorage.getItem("google_access_token") || "";
@@ -210,13 +210,13 @@ export default function CalendarSensePage() {
         setEventsCount(data.events_scanned || 0);
       })
       .catch(err => {
-        console.error("Phase 1 Error:", err);
+        console.error("Calendar event fetch failed:", err);
         setError(err.message);
       })
       .finally(() => setEventsLoading(false));
   }, [events, hydrated]);
 
-  // ── Phase 3: Auto-fire when Phase 2 reveals local subs + travel ──
+  // Trigger the savings computation automatically once classification surfaces at least one local subscription and one travel period.
   useEffect(() => {
     if (!classifyResult || phase3Fired.current) return;
     const hasLocal = (classifyResult.local_count || 0) > 0;
@@ -258,7 +258,7 @@ export default function CalendarSensePage() {
   const handleRemoveSub = (id: number) => setSubscriptions(subscriptions.filter(s => s.id !== id));
   const handleChangeSub = (id: number, field: string, value: string) => setSubscriptions(subscriptions.map(s => s.id === id ? { ...s, [field]: value } : s));
 
-  // ── Phase 2: Classify + Detect (on Analyze click) ──
+  // Run subscription classification and travel detection when the user submits the form.
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!homeLocation) return setError("Home location is required");
@@ -287,7 +287,7 @@ export default function CalendarSensePage() {
     finally { setClassifyLoading(false); }
   };
 
-  // ── Phase 4: Add reminders to calendar ──
+  // Create Google Calendar reminder events for every actionable recommendation.
   const handleAddReminders = async () => {
     if (!savingsResult?.recommendations?.length) return;
     const token = localStorage.getItem("google_access_token");

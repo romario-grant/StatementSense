@@ -1,11 +1,9 @@
 """
-PlacesService — Google Places API (New) integration for CalendarSense v2.
+Google Places enrichment for CalendarSense travel destinations.
 
-Replaces the Gemini-powered alternative search with real Google Places data,
-including coordinates for interactive map rendering on the frontend.
-
-Uses the Places API (New) Text Search endpoint via REST:
-  POST https://places.googleapis.com/v1/places:searchText
+Calls the Places API (New) Text Search endpoint to find real merchants at a
+destination and returns structured results with coordinates so the frontend can
+plot them on a map.
 """
 
 import os
@@ -13,7 +11,7 @@ import requests
 from typing import Optional
 
 
-# ── Subscription type → search query mapping ──────────────────────────
+# Search query templates keyed by subscription type and keyword.
 
 SEARCH_TEMPLATES = {
     "physical": {
@@ -42,14 +40,14 @@ SEARCH_TEMPLATES = {
     "location_locked_digital": {},
 }
 
-# Fallback queries when no keyword matches
+# Generic queries used when no subscription keyword matches a template above.
 FALLBACK_QUERIES = {
     "physical":                "alternatives to {sub} in {dest}",
     "regional_service":        "mobile carrier stores and SIM card shops in {dest}",
     "location_locked_digital": "internet cafes in {dest}",
 }
 
-# Google Places API field mask — only request what we need to minimize billing
+# Field mask restricting the Places response to billed fields the frontend renders.
 FIELD_MASK = ",".join([
     "places.id",
     "places.displayName",
@@ -66,12 +64,7 @@ FIELD_MASK = ",".join([
 
 
 class PlacesService:
-    """
-    Google Places API (New) integration.
-    
-    Searches for real business alternatives at a travel destination,
-    returning structured data with coordinates for map markers.
-    """
+    """Search the Google Places API for merchants near a travel destination and return structured results with coordinates for map markers."""
 
     TEXT_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 
@@ -91,34 +84,7 @@ class PlacesService:
         max_results: int = 5,
         search_query: str | None = None,
     ) -> dict:
-        """
-        Search for real alternatives to a local subscription at the travel
-        destination using Google Places API Text Search (New).
-
-        Returns:
-            {
-                "alternatives_found": bool,
-                "destination": str,
-                "destination_center": {"lat": float, "lng": float},
-                "options": [
-                    {
-                        "place_id": str,
-                        "name": str,
-                        "address": str,
-                        "lat": float,
-                        "lng": float,
-                        "rating": float | None,
-                        "rating_count": int | None,
-                        "price_level": str | None,
-                        "phone": str | None,
-                        "website": str | None,
-                        "google_maps_url": str,
-                        "opening_hours": list[str] | None,
-                    }
-                ],
-                "search_query": str,
-            }
-        """
+        """Return alternative merchants for a subscription at the destination using Places Text Search. The result includes a map center, per-place metadata, and the query that was issued."""
         query = (search_query or "").strip() or self._build_search_query(
             subscription_name, location_type, destination
         )
@@ -150,7 +116,6 @@ class PlacesService:
                 print(f"[PlacesService] No results for query: \"{query}\"")
                 return self._empty_result(destination, query)
 
-            # Parse results
             options = []
             center_lat, center_lng = None, None
 
@@ -159,7 +124,7 @@ class PlacesService:
                 lat = loc.get("latitude")
                 lng = loc.get("longitude")
 
-                # Use the first result's location as map center
+                # The first place with coordinates anchors the map view.
                 if center_lat is None and lat is not None:
                     center_lat = lat
                     center_lng = lng
@@ -203,7 +168,7 @@ class PlacesService:
             return self._empty_result(destination, query)
 
     def _build_search_query(self, sub_name: str, location_type: str, destination: str) -> str:
-        """Map subscription type + name to an effective Places API search query."""
+        """Pick a Places Text Search query for a subscription, matching keyword templates first and falling back to a generic query."""
         sub_lower = sub_name.lower()
         templates = SEARCH_TEMPLATES.get(location_type, {})
 
@@ -211,13 +176,12 @@ class PlacesService:
             if keyword in sub_lower:
                 return template.format(dest=destination)
 
-        # Use fallback query
         fallback = FALLBACK_QUERIES.get(location_type, "alternatives to {sub} in {dest}")
         return fallback.format(sub=sub_name, dest=destination)
 
     @staticmethod
     def _format_price_level(level: str | None) -> str | None:
-        """Convert API price level enum to display string."""
+        """Render the Places price-level enum as a dollar-sign string for the UI."""
         mapping = {
             "PRICE_LEVEL_FREE": "Free",
             "PRICE_LEVEL_INEXPENSIVE": "$",

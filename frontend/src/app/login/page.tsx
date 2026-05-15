@@ -101,8 +101,7 @@ export default function LoginPage() {
         onSignIn={handleSignIn}
         onGoogleSignIn={handleGoogleSignIn}
         onResetPassword={() => {
-          // TODO: implement password reset
-          alert("Password reset coming soon!");
+          setError("Password reset is not available yet. Please sign in with Google or create a new account.");
         }}
         onCreateAccount={() => {
           setMode(mode === "login" ? "signup" : "login");

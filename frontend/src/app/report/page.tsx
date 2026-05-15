@@ -33,7 +33,7 @@ import {
   type SenseSyncStatus,
 } from "@/lib/senseSyncStore";
 
-// ─── Types (mirrors existing codebase shapes) ────────────────────────────────
+// Shared type definitions describing the shape of data returned by the SubscriptionSense, RenewalSense, and CalendarSense engines.
 
 type SubscriptionResult = {
   merchant: string;
@@ -152,7 +152,7 @@ type PlanSimulatorState = {
 
 type PlanSimulatorMap = Record<string, PlanSimulatorState>;
 
-// ─── Intelligence helpers ────────────────────────────────────────────────────
+// Insight-generation helpers that consolidate signals from the underlying engines into prioritised user-facing recommendations.
 
 const STREAMING_NAMES = new Set([
   "netflix", "disney+", "hulu", "hbo max", "max", "amazon prime",
@@ -183,7 +183,7 @@ function deriveInsights(
 
   const subs = analysis.subscriptions ?? [];
 
-  // ── Trial alerts → cancel recommendation ──
+  // Convert each trial-conversion alert into a critical-priority cancellation recommendation.
   (analysis.trial_alerts ?? []).forEach((t) => {
     insights.push({
       type: "trial",
@@ -195,7 +195,7 @@ function deriveInsights(
     });
   });
 
-  // ── Price increases ──
+  // Surface every detected price increase as a high-priority review recommendation.
   (analysis.price_changes ?? [])
     .filter((c) => c.type === "price_increase")
     .forEach((c) => {
@@ -210,7 +210,7 @@ function deriveInsights(
       });
     });
 
-  // ── Streaming consolidation ──
+  // Detect over-subscription to streaming services and recommend consolidation when more than one is active.
   const streamingSubs = subs.filter((s) =>
     STREAMING_NAMES.has(s.merchant.toLowerCase().replace(/\s*\(.*\)/, "").trim())
   );
@@ -313,7 +313,7 @@ function deriveInsights(
     });
   });
 
-  // ── High renewal risk ──
+  // Promote subscriptions flagged as high renewal risk into the report's recommendations.
   renewalSubs
     .filter((r) => r.risk_level === "high")
     .forEach((r) => {
@@ -327,7 +327,7 @@ function deriveInsights(
       });
     });
 
-  // ── Calendar travel recommendations ──
+  // Promote actionable CalendarSense travel recommendations alongside the financial insights.
   calendarRecs
     .filter((r) => r.action !== "KEEP")
     .forEach((r) => {
@@ -341,13 +341,13 @@ function deriveInsights(
       });
     });
 
-  // Sort: critical → high → medium → low
+  // Order insights from most to least urgent so the report leads with the highest-priority items.
   const order = { critical: 0, high: 1, medium: 2, low: 3 };
   insights.sort((a, b) => order[a.priority] - order[b.priority]);
   return insights;
 }
 
-// ─── Visual helpers ──────────────────────────────────────────────────────────
+// Tailwind class lookups that map an insight's priority to its accent colour and badge style.
 
 const priorityColors: Record<string, { border: string; bg: string; badge: "danger" | "warn" | "info" | "safe" }> = {
   critical: { border: "border-l-red-500", bg: "bg-red-500/5", badge: "danger" },
@@ -357,7 +357,7 @@ const priorityColors: Record<string, { border: string; bg: string; badge: "dange
 };
 
 
-// ─── PDF Generation (loads jsPDF from CDN at runtime — no npm package needed) ─
+// PDF generation. The jsPDF dependency is loaded from a CDN the first time the report is exported.
 
 async function generatePDF(
   analysis: SubscriptionAnalysis,
@@ -647,7 +647,7 @@ async function generatePDF(
   doc.save(`StatementSense_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
-// ─── Main Component ──────────────────────────────────────────────────────────
+// Main page component for the consolidated StatementSense report.
 
 export default function ReportPage() {
   const [analysis, setAnalysis] = useState<SubscriptionAnalysis | null>(null);

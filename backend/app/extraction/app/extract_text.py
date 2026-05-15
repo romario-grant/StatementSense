@@ -1,3 +1,5 @@
+"""Raw text extraction from bank-statement PDFs using pdfplumber."""
+
 import logging
 from pathlib import Path
 from typing import Union
@@ -9,6 +11,7 @@ from .utils import clean_text
 logger = logging.getLogger(__name__)
 
 def extract_text_from_pdf(pdf_path: Union[str, Path]) -> str:
+    """Return the cleaned raw text contained in the PDF at ``pdf_path``, or an empty string when extraction yields no usable content."""
     pdf_path = Path(pdf_path)
     if not pdf_path.exists():
         raise FileNotFoundError(f"PDF file not found: {pdf_path}")
@@ -24,6 +27,7 @@ def extract_text_from_pdf(pdf_path: Union[str, Path]) -> str:
     return ""
 
 def extract_with_pdfplumber(pdf_path: Path) -> str:
+    """Iterate over every page of the PDF and concatenate the extracted text with a per-page header for downstream parsing."""
     text_parts = []
     with pdfplumber.open(pdf_path) as pdf:
         logger.info(f"PDF has {len(pdf.pages)} pages")

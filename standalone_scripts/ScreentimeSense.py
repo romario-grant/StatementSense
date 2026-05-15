@@ -1,3 +1,5 @@
+"""Command-line implementation of ScreentimeSense. Collects per-app usage information from the user, classifies each subscription via Gemini, and prints engagement-based value recommendations."""
+
 import os
 import math
 import json
@@ -31,19 +33,19 @@ def _convert_cost_to_local(amount, source_currency="USD", local_currency="JMD", 
     return value
 
 # ==========================================
-# 1. GEMINI AI CLASSIFIER (SEARCH ENABLED)
+# 1. Gemini classifier with Google Search grounding
 # ==========================================
 class GeminiClassifier:
+    """Classify a subscription via Gemini and return structured metadata, including verified pricing tiers when available."""
+
     def __init__(self):
-        # Securely fetch the key from the .env file
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("CRITICAL: GEMINI_API_KEY not found in your .env file.")
-            
+
         self.client = genai.Client(api_key=api_key)
-        
-        # V3 UPGRADE: Now requests actual pricing tiers for NPV comparison
-        # V3.1: Added pricing_verified hallucination guard
+
+        # The prompt asks Gemini to return verified pricing tiers and to flag when verification was not possible.
         self.system_rules = """
         You are a financial data classifier with internet access.
         IMPORTANT: You MUST use Google Search to look up the App Name to find out what it actually does and what its official subscription pricing tiers are. 
@@ -103,7 +105,7 @@ class GeminiClassifier:
                     contents=prompt
                 )
                 
-                # --- THE PARSER FIX ---
+                # Extract JSON from fenced Gemini responses before parsing.
                 raw_text = response.text.strip()
                 if raw_text.startswith("```json"): 
                     raw_text = raw_text[7:]
@@ -115,9 +117,7 @@ class GeminiClassifier:
                 
                 result = json.loads(raw_text.strip())
                 
-                # --- V3.1: HALLUCINATION GUARD ---
-                # Cross-check: if Gemini says pricing is verified, validate that
-                # the user's reported cost actually matches one of the returned tiers.
+                # Verified pricing must agree with the submitted bill before plan optimization uses it.
                 pricing = result.get("pricing_tiers", {})
                 verified = result.get("pricing_verified", False)
                 pricing_currency = str(result.get("pricing_currency") or "USD").upper()
@@ -131,7 +131,7 @@ class GeminiClassifier:
                 tier_values = [v for v in pricing.values() if v and v > 0]
                 
                 if verified and tier_values:
-                    # Check if user's cost is close to any returned tier (within 20% tolerance)
+                    # Allow a tolerance for tax, currency conversion, and plan-specific billing differences.
                     cost_float = float(cost)
                     matches_any_tier = any(
                         abs(cost_float - tier) / max(tier, 0.01) < 0.20 
@@ -167,7 +167,7 @@ class GeminiClassifier:
             }
  
 # ==========================================
-# 2. THE MATHEMATICAL ENGINE (V3)
+# 2. Subscription value engine
 # ==========================================
 
 class SubscriptionAnalyzer:
@@ -175,27 +175,25 @@ class SubscriptionAnalyzer:
         self.hourly_wage = hourly_wage
         
         # ---------------------------------------------------------
-        # DERIVATION 1: The Discretionary Time Threshold
+        # Cost-per-hour limit derived from the user's wage and budgeting style.
         # CPH limit = hourly_wage × style_multiplier
         # Strict (7%), Balanced (10%), Lenient (15%)
         # ---------------------------------------------------------
         self.base_cancel_threshold_cph = hourly_wage * style_multiplier 
         
-        # ---------------------------------------------------------
-        # DERIVATION 2: SaaS Churn Rate (Gamma Map) — V3: NOW WIRED TO BREAK-EVEN
-        # Represents the base exponential decay (churn probability) by software sector.
-        # Lower gamma = more "sticky" (user less likely to churn).
-        # ---------------------------------------------------------
+        # Category-specific churn rates feeding the break-even probability model.
+        # The values represent the base exponential decay (churn probability) by software sector;
+        # lower gamma indicates a stickier category where the user is less likely to cancel.
         self.gamma_map = {"utility": 0.05, "productivity": 0.10, "entertainment": 0.20, "gaming": 0.35}
         
         # ---------------------------------------------------------
-        # DERIVATION 3: Time Normalization (Duration Map)
+        # Billing-cycle multipliers normalize every plan to monthly cost.
         # Converts all billing cycles into a flat Monthly Cost (Base 1.0).
         # ---------------------------------------------------------
         self.duration_map = {"weekly": 0.23, "monthly": 1.0, "quarterly": 3.0, "biannual": 6.0, "yearly": 12.0}
         
         # ---------------------------------------------------------
-        # DERIVATION 4: Cognitive Load Theory (Engagement Weights)
+        # Engagement weights translate usage hours into value-adjusted hours.
         # - Passive (0.33): "Multitasking Divisor" — 100% / 3 concurrent tasks.
         # - Active (1.00): Control Group. 1 hour = 1 hour of utility.
         # - Generative (1.50): "ROI Premium". Generative tools create compounding assets.
@@ -203,14 +201,14 @@ class SubscriptionAnalyzer:
         self.engagement_weights = {"passive": 0.33, "active": 1.0, "generative": 1.5}
 
         # ---------------------------------------------------------
-        # V3: EMA Smoothing Factor
+        # EMA smoothing balances stability with recent usage changes.
         # Alpha controls how much weight recent data gets.
         # 0.3 = balanced between stability and reactivity.
         # ---------------------------------------------------------
         self.ema_alpha = 0.3
 
     # ==================================================================
-    # V3 NEW: Exponential Moving Average (replaces crude 2-half velocity)
+    # Exponential moving average for usage trend analysis.
     # ==================================================================
     def compute_ema(self, data_points):
         """
@@ -240,7 +238,7 @@ class SubscriptionAnalyzer:
         return ema / avg if avg > 0 else 1.0
 
     # ==================================================================
-    # V3 NEW: CUSUM Change-Point Detection
+    # CUSUM change-point detection.
     # Detects sudden, significant shifts in usage patterns.
     # ==================================================================
     def detect_cusum_shift(self, data_points, threshold_factor=1.5):
@@ -286,7 +284,7 @@ class SubscriptionAnalyzer:
         return False, None, 0.0
 
     # ==================================================================
-    # V3 NEW: Statistical Binge Detection (replaces arbitrary 70% cutoff)
+    # Statistical binge detection based on concentration and z-score.
     # ==================================================================
     def detect_binge(self, data_points):
         """
@@ -296,7 +294,7 @@ class SubscriptionAnalyzer:
         1. The peak week has a z-score > 1.5 (statistically unusual)
         2. The peak week accounts for > 40% of total usage (concentrated)
         
-        This is more robust than the old "70% of total" rule because it adapts
+        This adapts
         to the distribution of the data rather than using a fixed cutoff.
         """
         if not data_points or sum(data_points) == 0:
@@ -315,7 +313,7 @@ class SubscriptionAnalyzer:
         return z_score > 1.5 and concentration > 0.40
 
     # ==================================================================
-    # V3 NEW: Lifetime Breakeven Calculator (Net Present Value)
+    # Lifetime breakeven calculator using net present value.
     # ==================================================================
     def compute_plan_recommendation(self, pricing_tiers, months_subscribed, velocity, discount_rate=0.005):
         """
@@ -403,7 +401,7 @@ class SubscriptionAnalyzer:
 
     def get_household_divisor(self, app_name, ai_shared_flag):
         # ---------------------------------------------------------
-        # DERIVATION 5: The "Conservative Floor" for Shared Plans
+        # Shared-plan divisors use a conservative floor to avoid overstating savings.
         # ---------------------------------------------------------
         name_lower = app_name.lower()
         if "duo" in name_lower or "couple" in name_lower: return 2
@@ -417,7 +415,7 @@ class SubscriptionAnalyzer:
         is_outcome_based = (ai_data.get("value_mode") == "outcome_based")
         category = ai_data.get("category", "entertainment")
 
-        # --- 1. Universal Normalization & Cost Amortization ---
+        # Normalize recurring cost into the user's local monthly currency.
         freq = ai_data.get("frequency", "monthly").lower()
         time_multiplier = self.duration_map.get(freq, 1.0)
         normalized_monthly_cost = float(raw_cost) / time_multiplier
@@ -425,7 +423,7 @@ class SubscriptionAnalyzer:
         household_divisor = self.get_household_divisor(name, ai_data.get("is_shared_plan"))
         personal_burden_cost = normalized_monthly_cost / household_divisor
 
-        # --- 2. Cognitive Load Weighing & VALUE MODES ---
+        # Convert usage into value-adjusted hours based on app category.
         weight = self.engagement_weights.get(ai_data.get("engagement_type", "active"), 1.0)
         
         if is_presence_based:
@@ -436,11 +434,10 @@ class SubscriptionAnalyzer:
             cancel_threshold = self.base_cancel_threshold_cph * 1.5
         elif is_outcome_based:
             # ---------------------------------------------------------
-            # V3.2: Outcome-Based Value Mode (Adobe, Figma, etc.)
+            # Outcome-based tools are valued by output, not raw screen time.
             # Creative/professional tools derive value from OUTPUT, not TIME.
             # A 2-hour Figma session can produce a $500 design.
-            # We force generative weight (1.5) and relax the cancel threshold
-            # to avoid penalizing low-hour but high-value usage.
+            # A higher value weight avoids penalizing low-hour, high-output tools.
             # ---------------------------------------------------------
             weight = max(weight, 1.5)  # Ensure at least generative-level weight
             total_eff_hours = total_raw_hours * weight
@@ -451,18 +448,18 @@ class SubscriptionAnalyzer:
             total_eff_hours = total_raw_hours * weight
             cph_value = personal_burden_cost / total_eff_hours if total_eff_hours > 0 else float('inf')
             
-            # V3: EMA-based velocity (replaces crude front-half / back-half split)
+            # EMA-based velocity captures recent usage direction.
             velocity = self.compute_velocity_ema(weekly_hours)
             
             cancel_threshold = self.base_cancel_threshold_cph
 
-        # --- 3. V3: CUSUM Change-Point Detection ---
+        # Detect abrupt usage shifts.
         has_shift, shift_direction, shift_magnitude = self.detect_cusum_shift(weekly_hours)
 
-        # --- 4. V3: Statistical Binge Detection (replaces 70% arbitrary cutoff) ---
+        # Detect concentrated usage patterns.
         is_binge = self.detect_binge(weekly_hours)
 
-        # --- 5. Confidence Score ---
+        # Confidence reflects data quality and app metadata coverage.
         confidence = 1.0
 
         if ai_data.get("is_multi_device"):
@@ -472,7 +469,7 @@ class SubscriptionAnalyzer:
         if velocity < 0.2 or velocity > 2.0:
             confidence -= 0.1
         if len(weekly_hours) < 4:
-            confidence -= 0.15  # V3: Penalize very short data windows
+            confidence -= 0.15  # Penalise short data windows that cannot support a confident decision.
 
         confidence = max(0.3, confidence)
 
@@ -483,26 +480,21 @@ class SubscriptionAnalyzer:
         else:
             confidence_label = "LOW"
 
-        # ---------------------------------------------------------
-        # DERIVATION 6: V3 FIX — Category-Aware Break-Even Probability
-        # 
-        # BUG #1 FIX: gamma_map is now USED here.
-        # BUG #2 FIX: The decay constant scales by category AND subscription age.
+        # Category-aware break-even probability.
         #
-        # Formula: p_be = min(velocity, 1.0) × e^(−γ / months)
+        # Formula: p_be = min(velocity, 1.0) × e^(-gamma / months)
         #
-        # - γ (gamma) = category-specific churn rate from gamma_map
-        # - months = how long the user has been subscribed
-        # - Longer subscriptions → smaller exponent → higher p_be (more likely to keep)
-        # - Gaming (γ=0.35) decays much faster than Utility (γ=0.05)
-        # ---------------------------------------------------------
+        # - gamma is the category-specific churn rate sourced from ``gamma_map``.
+        # - months is the subscription age in months.
+        # - Longer subscriptions reduce the exponent and raise p_be (more likely to break even).
+        # - Gaming churns markedly faster than utility, so the gaming gamma is far higher.
         gamma = self.gamma_map.get(category, 0.20)
         time_factor = 1.0 / max(months_subscribed, 1)
-        # V3.2: Allow growing usage (velocity > 1.0) to mildly boost break-even prob
+        # Growing usage modestly improves the likelihood of reaching break-even.
         p_be = min(min(velocity, 1.5) * math.exp(-gamma * time_factor), 1.0)
 
         # ---------------------------------------------------------
-        # V3: Plan Optimization using NPV (replaces 20% annual guess)
+        # Plan optimization compares net present value across available tiers.
         # ---------------------------------------------------------
         pricing_tiers = ai_data.get("pricing_tiers", {"monthly": 0, "yearly": 0, "lifetime": 0})
         best_plan, plan_costs, breakeven_info = self.compute_plan_recommendation(
@@ -515,9 +507,7 @@ class SubscriptionAnalyzer:
         metrics = (normalized_monthly_cost, household_divisor, personal_burden_cost, 
                    total_raw_hours, weight, total_eff_hours, cph_value, velocity)
 
-        # ==========================================
-        # THE LOGIC GATES (V3 Enhanced)
-        # ==========================================
+        # Decision gates: each block returns a recommendation as soon as its condition is met.
 
         # Gate 0: Dead Weight
         if total_raw_hours == 0 and not is_presence_based:
@@ -531,7 +521,7 @@ class SubscriptionAnalyzer:
                 "VERIFY USAGE", "Low confidence in screen-time data. Verify actual usage before canceling.",
                 *metrics, confidence_label, is_presence_based, best_plan, breakeven_info)
 
-        # Gate 2 (V3 NEW): CUSUM Cliff Drop Detector
+        # Gate 2: abrupt usage drop.
         if has_shift and shift_direction == "drop" and shift_magnitude > 2.0 and not is_presence_based:
             return self._format_return(
                 "WARNING: USAGE CLIFF",
@@ -539,7 +529,7 @@ class SubscriptionAnalyzer:
                 f"Monitor closely — this may indicate you're about to stop using {name}.",
                 *metrics, confidence_label, is_presence_based, best_plan, breakeven_info)
 
-        # Gate 3: Binge Catcher (V3: now statistical z-score + concentration)
+        # Gate 3: concentrated usage pattern.
         if is_binge and freq == "monthly" and category in ("entertainment", "gaming"):
             return self._format_return(
                 "SUBSCRIBE & CHURN",
@@ -554,9 +544,9 @@ class SubscriptionAnalyzer:
                 f"Mobile CPH is high (${cph_value:.2f}/hr), but {name} is a TV/desktop app. Verify total household time.",
                 *metrics, confidence_label, is_presence_based, best_plan, breakeven_info)
 
-        # Gate 5 (V3 NEW): Lifetime Plan Optimizer — THE LAMPA USE CASE
-        if (best_plan == "lifetime" 
-            and pricing_tiers.get("lifetime", 0) > 0 
+        # Gate 5: recommend switching to a lifetime plan when the user is close to its NPV break-even point.
+        if (best_plan == "lifetime"
+            and pricing_tiers.get("lifetime", 0) > 0
             and velocity >= 0.8):
             
             lifetime_price = pricing_tiers["lifetime"]
@@ -571,7 +561,7 @@ class SubscriptionAnalyzer:
                     f"NPV analysis confirms this is the cheapest long-term option.",
                     *metrics, confidence_label, is_presence_based, best_plan, breakeven_info)
 
-        # Gate 6 (V3 UPGRADED): Annual Upgrade using REAL pricing from Gemini
+        # Gate 6: annual plan comparison using verified pricing.
         yearly_price = pricing_tiers.get("yearly", 0)
         monthly_price = pricing_tiers.get("monthly", 0)
         
@@ -606,7 +596,7 @@ class SubscriptionAnalyzer:
                 f"Cost (${cph_value:.2f}/{unit}) exceeds your personal threshold (${cancel_threshold:.2f}).",
                 *metrics, confidence_label, is_presence_based, best_plan, breakeven_info)
 
-        # Gate 9: Habit Decay (V3: uses EMA-based velocity)
+        # Gate 9: habit decay from EMA velocity.
         if velocity < 0.50 and not is_presence_based:
             return self._format_return(
                 f"WATCH {freq.upper()} (DECAYING)",
@@ -641,7 +631,7 @@ class SubscriptionAnalyzer:
 
     def _format_return(self, action, reason, nmc, div, pbc, raw_hrs, wgt, eff_hrs, cph_val, vel, 
                        confidence_label, is_presence, best_plan, breakeven_info):
-        """Standardized response format — V3 includes plan optimization data."""
+        """Build the response payload that every decision gate returns, including plan-optimization data."""
         return {
             "action": action, 
             "reason": reason, 
@@ -662,12 +652,12 @@ class SubscriptionAnalyzer:
         }
     
 # ==========================================
-# 3. INTERACTIVE CLI (V3)
+# 3. Interactive command-line entry point
 # ==========================================
 
 def run_app():
     print("=========================================")
-    print("   StatementSense Active Terminal (V3)   ")
+    print("       StatementSense Active Terminal    ")
     print("=========================================")
     
     try: 
@@ -676,7 +666,7 @@ def run_app():
         print(e)
         return
 
-    # V2 Feature: Global Preference Onboarding
+    # Collect global preferences before analyzing app usage.
     print("\nBefore we begin, StatementSense needs your baseline.")
     while True:
         try:
@@ -717,7 +707,7 @@ def run_app():
         try:
             cost = float(input(f"Enter the price you paid for {app_name} (e.g., 14.99): $"))
             
-            # V3: Ask how long they've been subscribed (for NPV breakeven)
+            # Subscription age helps estimate lifetime-plan breakeven.
             months_sub = int(input(f"How many months have you been subscribed to {app_name}? "))
             
             print("Enter screen time (in hours) for the last 4 weeks:")
@@ -733,12 +723,12 @@ def run_app():
         if any(h < 0 for h in weekly_hours):
             print("  ⚠ Negative hours detected — clamped to 0.")
             weekly_hours = [max(0, h) for h in weekly_hours]
-        print("\n[StatementSense V3 is analyzing...]")
+        print("\n[StatementSense is analyzing...]")
         
-        # Step 1: Gemini fetches real-world data + pricing tiers via Google Search
+        # Fetch app metadata and verified pricing tiers.
         ai_data = classifier.analyze_app(app_name, cost, local_currency, exchange_rate)
         
-        # Step 2: Mathematical Analysis (V3 Engine)
+        # Run the subscription value model.
         result = analyzer.evaluate(app_name, cost, weekly_hours, months_sub, ai_data)
         m = result["math"]
         
@@ -754,7 +744,7 @@ def run_app():
             print(f"2. Engagement:    {m['raw_hours']:.1f} Total Hrs x {m['weight']} weight = {m['eff_hours']:.1f} Eff. Hours")
             print(f"3. Value Score:   Calculated Cost Per Hour is ${m['cph']:.2f}/hr")
         
-        # V3: Show EMA velocity
+        # Show EMA velocity.
         vel = m['velocity']
         if vel > 1.05:
             trend_label = "↑ INCREASING"
@@ -764,7 +754,7 @@ def run_app():
             trend_label = "→ STABLE"
         print(f"4. EMA Velocity:  {vel:.2f} ({trend_label})")
         
-        # V3: Show Plan Optimization (NPV) if pricing data exists AND is verified
+        # Display the plan-optimisation NPV breakdown when verified pricing data is available.
         breakeven = result.get("breakeven_info", {})
         best = result.get("best_plan")
         pricing_verified = ai_data.get("pricing_verified", False)

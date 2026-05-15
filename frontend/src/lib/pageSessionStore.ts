@@ -1,3 +1,5 @@
+// Helpers for persisting and restoring per-page session state in ``localStorage`` so users can resume work after navigating away.
+
 const keyFor = (name: string) => `statementsense.${name}.session`;
 
 export const readPageSession = <T>(name: string): T | null => {

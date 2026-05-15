@@ -23,8 +23,7 @@ import { clearAllPageSessions } from "@/lib/pageSessionStore";
 import { clearSubscriptionSession } from "@/lib/subscriptionStore";
 import { clearUserPreferences } from "@/lib/userPreferenceStore";
 
-/* ── Types ── */
-
+// Auth context interface exposed to the rest of the application.
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
@@ -35,8 +34,7 @@ interface AuthContextValue {
   deleteAccount: () => Promise<void>;
 }
 
-/* ── Context ── */
-
+// Default auth context used until the provider hydrates the real value.
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   loading: true,
@@ -51,7 +49,7 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
-/* ── Public Routes ── */
+// Routes that do not require authentication.
 const PUBLIC_ROUTES = ["/login"];
 
 const clearLocalUserData = () => {
@@ -67,15 +65,14 @@ const clearLocalUserData = () => {
   clearUserPreferences();
 };
 
-/* ── Provider ── */
-
+// Provider component that exposes authentication state and actions to its descendants.
 export default function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const pathname = usePathname();
   const router = useRouter();
 
-  /* Listen for auth state changes */
+  // Mirror Firebase's auth state into local state and clear the loading flag once it has been observed.
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
@@ -84,22 +81,20 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  /* Route guard — redirect logic */
+  // Route guard: redirect unauthenticated users to the login page and authenticated users away from it.
   useEffect(() => {
     if (loading) return;
 
     const isPublicRoute = PUBLIC_ROUTES.includes(pathname);
 
     if (!user && !isPublicRoute) {
-      // Not logged in → send to login
       router.replace("/login");
     } else if (user && isPublicRoute) {
-      // Already logged in → send to dashboard
       router.replace("/");
     }
   }, [user, loading, pathname, router]);
 
-  /* ── Auth Actions ── */
+  // Authentication actions exposed through the context.
 
   const login = useCallback(async (email: string, password: string) => {
     await signInWithEmailAndPassword(auth, email, password);
@@ -114,7 +109,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const loginWithGoogle = useCallback(async () => {
     const result = await signInWithPopup(auth, googleProvider);
     clearLocalUserData();
-    // Extract the OAuth access token to use for Google Calendar API
+    // Persist the OAuth access token so CalendarSense can call the Google Calendar API on the user's behalf.
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (credential?.accessToken) {
       localStorage.setItem("google_access_token", credential.accessToken);
@@ -144,7 +139,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user, router]);
 
-  /* ── Loading Screen ── */
+  // Render a centred loading indicator until Firebase has reported the initial auth state.
   if (loading) {
     return (
       <div
@@ -170,7 +165,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  /* While redirecting, show nothing for protected pages */
+  // While the router is redirecting between protected and public routes, render nothing to avoid flashing the previous page.
   const isPublicRoute = PUBLIC_ROUTES.includes(pathname);
   if (!user && !isPublicRoute) return null;
   if (user && isPublicRoute) return null;

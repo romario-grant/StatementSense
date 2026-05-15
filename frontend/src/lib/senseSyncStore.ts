@@ -1,3 +1,5 @@
+// Shared cross-page status describing how the SubscriptionSense source flows into RenewalSense and CalendarSense. Components subscribe to the dispatched custom events to react to source changes and sync progress.
+
 export const SUBSCRIPTION_SOURCE_CHANGED_EVENT = "statementsense:subscription-source-changed";
 export const SENSE_SYNC_UPDATED_EVENT = "statementsense:sense-sync-updated";
 

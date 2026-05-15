@@ -1,3 +1,5 @@
+"""Regex-driven helpers for extracting account holder and bank metadata from raw statement text."""
+
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -6,6 +8,7 @@ import pandas as pd
 
 
 def clean_text(text: str) -> str:
+    """Collapse whitespace and remove characters that do not appear in normal statement text, returning a sanitised single-line representation."""
     if not text:
         return ""
     text = re.sub(r'\s+', ' ', text.strip())
@@ -14,6 +17,7 @@ def clean_text(text: str) -> str:
 
 
 def extract_account_holder_patterns(text: str) -> Dict[str, str]:
+    """Find the account holder's name, address, contact number, and email in the supplied text and return them as a string dictionary. Missing fields are returned as empty strings."""
     patterns = {
         "name": [
             r'(?:account\s*holder|customer\s*name|name)[:\s]*([A-Za-z][A-Za-z\s\.\'-]{2,50})',
@@ -57,6 +61,7 @@ def extract_account_holder_patterns(text: str) -> Dict[str, str]:
 
 
 def extract_bank_account_patterns(text: str) -> Dict[str, str]:
+    """Find the account number, IFSC code, branch address, and bank name in the supplied text and return them as a string dictionary. Missing fields are returned as empty strings."""
     patterns = {
         "account_number": [
             r'(?:account\s*(?:no\.?|number|#|num|a/c|a\/c|ac)\s*[:\-]?\s*)(\d{8,20})',
@@ -134,6 +139,7 @@ def extract_bank_account_patterns(text: str) -> Dict[str, str]:
 
 
 def detect_table_patterns(text: str) -> List[str]:
+    """Return the subset of lines in ``text`` that look like transaction rows, based on the presence of date, amount, and credit/debit cues."""
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     table_lines = []
 
@@ -165,6 +171,7 @@ def detect_table_patterns(text: str) -> List[str]:
 
 
 def format_extracted_data(account_holder: Dict, bank_account: Dict, transactions: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+    """Combine account-holder and bank-account dictionaries with transaction metadata into the canonical extraction response shape."""
     result = {
         "account_holder_details": {
             "name": account_holder.get("name", ""),
@@ -181,26 +188,27 @@ def format_extracted_data(account_holder: Dict, bank_account: Dict, transactions
         "has_transaction_table": transactions is not None and len(transactions) > 0,
         "transaction_count": len(transactions) if transactions is not None else 0
     }
-    
+
     return result
 
 
 def validate_extracted_data(data: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    """Validate a formatted extraction result and return a ``(is_valid, warnings)`` pair listing missing or malformed fields."""
     warnings = []
-    
+
     ah_details = data.get("account_holder_details", {})
     if not ah_details.get("name"):
         warnings.append("Account holder name not found")
-    
+
     ba_details = data.get("bank_account_details", {})
     if not ba_details.get("bank_account_nr"):
         warnings.append("Bank account number not found")
     if not ba_details.get("ifsc_code"):
         warnings.append("IFSC code not found")
-    
+
     ifsc = ba_details.get("ifsc_code", "")
     if ifsc and not re.match(r'^[A-Z]{4}0[A-Z0-9]{6}$', ifsc):
         warnings.append("IFSC code format appears invalid")
-    
+
     is_valid = len(warnings) == 0
     return is_valid, warnings

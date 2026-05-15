@@ -1,9 +1,10 @@
+"""Command-line implementation of RenewalSense. Parses a bank statement, infers the pay cycle, detects recurring expenses, and prints a renewal-risk report."""
+
 import os
 import math
-import json
 import csv
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from dotenv import load_dotenv
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -13,34 +14,18 @@ load_dotenv(os.path.join(SCRIPT_DIR, ".env"))
 load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
 # ==========================================
-# 1. BANK STATEMENT PARSER (PDF + CSV)
+# 1. Bank statement parser
 # ==========================================
 
 class StatementParser:
-    """
-    Extracts transactions from bank statements.
-    Supports PDF (via pdfplumber) and CSV formats.
-    
-    PDF parsing currently supports:
-    - Scotia Bank Jamaica format (DDMON Description J$ Amount +/-)
-    
-    CSV parsing supports:
-    - Any CSV with Date, Description, Debit/Credit columns
-    """
+    """Parse bank statements supplied as either PDF or CSV. PDF parsing delegates to the shared backend extraction pipeline so the CLI and API produce identical transaction shapes."""
     
     @staticmethod
     def parse_pdf(file_path):
-        """
-        Extracts transactions from a PDF bank statement.
-        Uses the project extractor when available, then falls back to the
-        standalone Scotia-oriented parser below.
-        
-        Scotia format: "DDMON DESCRIPTION J$ AMOUNT +/- [J$ BALANCE]"
-        """
-        import pdfplumber
+        """Extract transactions from a PDF bank statement via the shared extractor."""
         
         if not os.path.exists(file_path):
-            print(f"  ✗ File not found: {file_path}")
+            print(f"  File not found: {file_path}")
             return []
         
         try:
@@ -54,112 +39,9 @@ class StatementParser:
             if converted:
                 return converted
         except Exception as e:
-            print(f"  Universal extractor unavailable; using standalone parser. ({e})")
+            print(f"  PDF extraction error: {e}")
 
-        transactions = []
-        
-        # Determine statement year from the file
-        statement_year = datetime.now().year
-        
-        try:
-            with pdfplumber.open(file_path) as pdf:
-                # First pass: try to find statement period for year
-                first_page_text = pdf.pages[0].extract_text() or ""
-                year_match = re.search(r'Statement Period:.*?(\d{2}[A-Z]{3})(\d{2})\s+to\s+(\d{2}[A-Z]{3})(\d{2})', first_page_text)
-                if year_match:
-                    end_year_short = year_match.group(4)
-                    statement_year = 2000 + int(end_year_short)
-                
-                # Extract text from all pages and parse transactions
-                for page in pdf.pages:
-                    text = page.extract_text()
-                    if not text:
-                        continue
-                    
-                    lines = text.split('\n')
-                    i = 0
-                    while i < len(lines):
-                        line = lines[i].strip()
-                        
-                        # Scotia format: "DDMON DESCRIPTION J$ AMOUNT +/- [J$ BALANCE]"
-                        # Match lines starting with DDMON (e.g., 10NOV, 08JAN, 24DEC)
-                        tx_match = re.match(
-                            r'^(\d{2})([A-Z]{3})\s+(.+?)\s+J\$\s+([\d,]+\.\d{2})\s*([+\-])',
-                            line
-                        )
-                        
-                        if tx_match:
-                            day = int(tx_match.group(1))
-                            month_str = tx_match.group(2)
-                            description = tx_match.group(3).strip()
-                            amount = float(tx_match.group(4).replace(',', ''))
-                            direction = tx_match.group(5)
-                            
-                            # Parse the balance if present at end of line
-                            balance = 0
-                            balance_match = re.search(r'J\$\s+([\d,]+\.\d{2})\s*$', line)
-                            if balance_match and direction in ['+', '-']:
-                                # Check if the balance amount is different from the transaction amount
-                                bal_amount = float(balance_match.group(1).replace(',', ''))
-                                if bal_amount != amount:
-                                    balance = bal_amount
-                            
-                            # Convert month abbreviation to number
-                            month_map = {
-                                'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4,
-                                'MAY': 5, 'JUN': 6, 'JUL': 7, 'AUG': 8,
-                                'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
-                            }
-                            month_num = month_map.get(month_str, 1)
-                            
-                            # Determine year (handle statement spanning two years)
-                            tx_year = statement_year
-                            if month_num > 9 and statement_year > 2000:
-                                # If month is Oct-Dec and statement ends in next year,
-                                # the transaction is from the previous year
-                                if year_match:
-                                    start_month_str = year_match.group(1)[2:5]
-                                    start_month = month_map.get(start_month_str, 1)
-                                    if start_month >= 10 and month_num >= start_month:
-                                        tx_year = statement_year - 1
-                            
-                            try:
-                                tx_date = datetime(tx_year, month_num, day)
-                            except ValueError:
-                                i += 1
-                                continue
-                            
-                            # Look ahead for description continuation (next line without a date)
-                            if i + 1 < len(lines):
-                                next_line = lines[i + 1].strip()
-                                if next_line and not re.match(r'^\d{2}[A-Z]{3}\s', next_line):
-                                    # Skip known non-transaction lines
-                                    if not next_line.startswith('*') and not next_line.startswith('Page '):
-                                        if 'SERVICE CHARGE' not in description and 'GCT' not in description:
-                                            description += " | " + next_line
-                            
-                            # Skip service charges and GCT tax entries
-                            if any(skip in description for skip in ['SERVICE CHARGE', 'GCT/GOVT TAX', 'GCT TAX']):
-                                i += 1
-                                continue
-                            
-                            credit = amount if direction == '+' else 0
-                            debit = amount if direction == '-' else 0
-                            
-                            transactions.append({
-                                "date": tx_date,
-                                "description": description,
-                                "debit": debit,
-                                "credit": credit,
-                                "balance": balance
-                            })
-                        
-                        i += 1
-        
-        except Exception as e:
-            print(f"  ✗ PDF parsing error: {e}")
-        
-        return transactions
+        return []
 
     @staticmethod
     def _convert_universal_rows(rows):
@@ -187,7 +69,7 @@ class StatementParser:
     def parse_csv(file_path):
         """Parses a CSV bank statement."""
         if not os.path.exists(file_path):
-            print(f"  ✗ File not found: {file_path}")
+            print(f"  File not found: {file_path}")
             return []
         
         transactions = []
@@ -197,18 +79,15 @@ class StatementParser:
                 reader = csv.DictReader(f)
                 
                 for row in reader:
-                    # Normalize column names (case-insensitive)
+                    # Match common bank-export columns without depending on header casing.
                     normalized = {k.lower().strip(): v.strip() for k, v in row.items() if v}
                     
-                    # Find date
                     date_str = (normalized.get('date') or normalized.get('transaction date') 
                                 or normalized.get('post date') or normalized.get('value date') or "")
                     
-                    # Find description
                     desc = (normalized.get('description') or normalized.get('details') 
                             or normalized.get('narrative') or normalized.get('particulars') or "")
                     
-                    # Find amounts
                     debit = StatementParser._parse_amount(
                         normalized.get('debit') or normalized.get('withdrawal') 
                         or normalized.get('dr') or ""
@@ -218,7 +97,7 @@ class StatementParser:
                         or normalized.get('cr') or ""
                     )
                     
-                    # Some CSVs have a single "amount" column (negative = debit)
+                    # Single-amount exports encode debits as negative values.
                     if debit == 0 and credit == 0:
                         amount_str = normalized.get('amount', '')
                         amount = StatementParser._parse_amount(amount_str)
@@ -243,86 +122,9 @@ class StatementParser:
                         })
         
         except Exception as e:
-            print(f"  ✗ CSV parsing error: {e}")
+            print(f"  CSV parsing error: {e}")
         
         return transactions
-    
-    @staticmethod
-    def _parse_row(cells):
-        """Tries to parse a table row as a transaction."""
-        # Look for a cell that contains a date
-        date_val = None
-        desc_val = ""
-        debit_val = 0
-        credit_val = 0
-        
-        for cell in cells:
-            if not cell:
-                continue
-            
-            # Try to find a date
-            if not date_val:
-                parsed = StatementParser._parse_date(cell)
-                if parsed:
-                    date_val = parsed
-                    continue
-            
-            # Try to find amounts (numeric values)
-            amount = StatementParser._parse_amount(cell)
-            if amount > 0 and not desc_val:
-                # Could be an amount, but if we haven't found a description yet,
-                # this might be the description (e.g., a reference number)
-                if len(cell) > 10 and not cell.replace(',', '').replace('.', '').isdigit():
-                    desc_val = cell
-                elif debit_val == 0:
-                    debit_val = amount
-                else:
-                    credit_val = amount
-            elif len(cell) > 3 and not desc_val:
-                desc_val = cell
-        
-        if date_val and (debit_val > 0 or credit_val > 0):
-            return {
-                "date": date_val,
-                "description": desc_val,
-                "debit": debit_val,
-                "credit": credit_val,
-                "balance": 0
-            }
-        return None
-    
-    @staticmethod
-    def _parse_text_line(line):
-        """Tries to parse a text line as a transaction."""
-        # Common pattern: DATE    DESCRIPTION    AMOUNT
-        date_patterns = [
-            r'(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})',
-            r'(\d{1,2}\s+\w{3}\s+\d{2,4})',
-        ]
-        
-        for pattern in date_patterns:
-            match = re.search(pattern, line)
-            if match:
-                date_str = match.group(1)
-                parsed_date = StatementParser._parse_date(date_str)
-                if parsed_date:
-                    # Find amounts in the rest of the line
-                    amounts = re.findall(r'[\d,]+\.\d{2}', line)
-                    if amounts:
-                        desc = line[match.end():].strip()
-                        # Remove amounts from description  
-                        for amt in amounts:
-                            desc = desc.replace(amt, '').strip()
-                        desc = re.sub(r'\s+', ' ', desc).strip()
-                        
-                        return {
-                            "date": parsed_date,
-                            "description": desc,
-                            "debit": float(amounts[0].replace(',', '')) if len(amounts) >= 1 else 0,
-                            "credit": float(amounts[1].replace(',', '')) if len(amounts) >= 2 else 0,
-                            "balance": float(amounts[-1].replace(',', '')) if len(amounts) >= 3 else 0
-                        }
-        return None
     
     @staticmethod
     def _parse_date(date_str):
@@ -350,7 +152,7 @@ class StatementParser:
         if not amount_str:
             return 0
         
-        # Remove currency symbols and spaces
+        # Remove currency symbols before numeric conversion.
         cleaned = re.sub(r'[^0-9.,\-]', '', str(amount_str))
         cleaned = cleaned.replace(',', '')
         
@@ -360,16 +162,13 @@ class StatementParser:
             return 0
 
 # ==========================================
-# 2. RULE-BASED TRANSACTION CLASSIFIER
+# 2. Rule-based transaction classifier
 # ==========================================
 
 class RuleBasedClassifier:
-    """
-    Classifies bank transactions using keyword matching.
-    No AI required — pure pattern recognition.
-    """
-    
-    # Known subscription services (matched against transaction description)
+    """Classify bank transactions into categories using keyword matching against a curated dictionary of well-known subscription and vendor names."""
+
+    # Known subscription services keyed by case-insensitive description substrings.
     SUBSCRIPTION_KEYWORDS = {
         # Streaming
         'netflix': 'Netflix', 'spotify': 'Spotify', 'youtube': 'YouTube',
@@ -404,7 +203,7 @@ class RuleBasedClassifier:
         'lampa': 'Lampa',
     }
     
-    # Transaction type patterns (from Scotia Bank format)
+    # Common statement descriptors used to identify transfer and bill rows.
     TRANSACTION_PATTERNS = {
         'POS PURCHASE': 'shopping',
         'ABM WITHDRAWAL': 'atm_withdrawal',
@@ -526,17 +325,11 @@ class RuleBasedClassifier:
         return transactions
 
 # ==========================================
-# 3. PATTERN DETECTOR
+# 3. Pattern detector
 # ==========================================
 
 class PatternDetector:
-    """
-    Analyzes classified transactions across multiple statements 
-    to auto-detect:
-    - Salary: day, amount, frequency
-    - Subscriptions: name, amount, renewal day, failure rate
-    - Recurring expenses: name, amount, day
-    """
+    """Analyze classified transactions to infer salary cadence, recurring subscriptions, and recurring non-subscription expenses such as rent and utilities."""
     
     @staticmethod
     def detect_salary(transactions):
@@ -693,7 +486,7 @@ class PatternDetector:
         return detected
 
 # ==========================================
-# 4. SALARY CYCLE TRACKER
+# 4. Salary cycle tracker
 # ==========================================
 
 class SalaryCycleTracker:
@@ -727,16 +520,16 @@ class SalaryCycleTracker:
     def get_zone(self, day_of_month):
         position = self.paycycle_position(day_of_month)
         if position <= 0.3:
-            return "SAFE ZONE", "🟢"
+            return "SAFE ZONE", "ðŸŸ¢"
         elif position <= 0.6:
-            return "MID-CYCLE", "🟡"
+            return "MID-CYCLE", "ðŸŸ¡"
         elif position <= 0.8:
-            return "CAUTION ZONE", "🟠"
+            return "CAUTION ZONE", "ðŸŸ "
         else:
-            return "DANGER ZONE", "🔴"
+            return "DANGER ZONE", "ðŸ”´"
 
 # ==========================================
-# 5. EXPENSE PROFILER
+# 5. Expense profiler
 # ==========================================
 
 class ExpenseProfiler:
@@ -768,15 +561,15 @@ class ExpenseProfiler:
         return min(spent / salary_amount, 1.0) if salary_amount > 0 else 0.5
 
 # ==========================================
-# 6. RISK SCORE ENGINE
+# 6. Risk score engine
 # ==========================================
 
 class RiskScoreEngine:
     """
     Combines 4 signals into a Risk Score (0.0 to 1.0):
     
-    Risk = w₁ × PaycycleFactor + w₂ × ClusterPenalty 
-         + w₃ × HistoricalFailRate + w₄ × ExpenseLoadFactor
+    Risk = wâ‚ x PaycycleFactor + wâ‚‚ x ClusterPenalty 
+         + wâ‚ƒ x HistoricalFailRate + wâ‚„ x ExpenseLoadFactor
     """
     
     def __init__(self):
@@ -809,17 +602,17 @@ class RiskScoreEngine:
         risk_score = round(risk_score, 2)
         
         if risk_score <= 0.30:
-            risk_label, risk_icon = "LOW", "🟢"
+            risk_label, risk_icon = "LOW", "ðŸŸ¢"
             advice = "Your renewal should go through fine."
         elif risk_score <= 0.55:
-            risk_label, risk_icon = "MODERATE", "🟡"
+            risk_label, risk_icon = "MODERATE", "ðŸŸ¡"
             advice = "Check your balance a day before renewal."
         elif risk_score <= 0.75:
-            risk_label, risk_icon = "HIGH", "🟠"
-            advice = "⚠ High risk of insufficient funds. Transfer money to your card."
+            risk_label, risk_icon = "HIGH", "ðŸŸ "
+            advice = "âš  High risk of insufficient funds. Transfer money to your card."
         else:
-            risk_label, risk_icon = "CRITICAL", "🔴"
-            advice = "🚨 This renewal will likely fail. Add funds immediately."
+            risk_label, risk_icon = "CRITICAL", "ðŸ”´"
+            advice = "ðŸš¨ This renewal will likely fail. Add funds immediately."
         
         zone_label, zone_icon = salary_tracker.get_zone(renewal_day)
         
@@ -846,14 +639,14 @@ class RiskScoreEngine:
         }
 
 # ==========================================
-# 7. PAYCYCLE VISUALIZER
+# 7. Pay-cycle visualiser
 # ==========================================
 
 def draw_paycycle_bar(salary_tracker, subscriptions):
     """Draws a visual 30-day bar showing payday, zones, and renewal positions."""
     pay_day = salary_tracker.pay_day
     
-    print(f"\n  ┌─ 30-DAY PAYCYCLE MAP (Payday: Day {pay_day}) ─────────┐")
+    print(f"\n  â”Œâ”€ 30-DAY PAYCYCLE MAP (Payday: Day {pay_day}) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”")
     
     bar = [" "] * 30
     bar[pay_day - 1] = "$"
@@ -872,47 +665,47 @@ def draw_paycycle_bar(salary_tracker, subscriptions):
         pos = salary_tracker.paycycle_position(actual_day)
         char = bar[d]
         if char == "$":
-            zone_bar += "💰"
+            zone_bar += "ðŸ’°"
         elif char != " ":
             zone_bar += f"[{char}]"
         else:
             if pos <= 0.3:
-                zone_bar += "█"
+                zone_bar += "â–ˆ"
             elif pos <= 0.6:
-                zone_bar += "▓"
+                zone_bar += "â–“"
             elif pos <= 0.8:
-                zone_bar += "▒"
+                zone_bar += "â–’"
             else:
-                zone_bar += "░"
+                zone_bar += "â–‘"
     
-    print(f"  │ {zone_bar}")
-    print(f"  │ █ Safe  ▓ Mid  ▒ Caution  ░ Danger  💰 Payday")
+    print(f"  â”‚ {zone_bar}")
+    print(f"  â”‚ â–ˆ Safe  â–“ Mid  â–’ Caution  â–‘ Danger  ðŸ’° Payday")
     
     for marker, name in sub_markers.items():
-        print(f"  │ [{marker}] = {name}")
+        print(f"  â”‚ [{marker}] = {name}")
     
-    print(f"  └{'─' * 48}┘")
+    print(f"  â””{'â”€' * 48}â”˜")
 
 # ==========================================
-# 8. INTERACTIVE CLI
+# 8. Interactive command-line entry point
 # ==========================================
 
 def run_app():
     print("=========================================")
-    print("  RenewalSense — Smart Renewal Alerts    ")
+    print("  RenewalSense - Smart Renewal Alerts    ")
     print("=========================================")
     run_statement_mode()
 
 def run_statement_mode():
-    """Statement upload mode — parses PDFs/CSVs and auto-detects everything."""
+    """Statement upload mode - parses PDFs/CSVs and auto-detects everything."""
     
     # Initialize rule-based classifier (no AI needed)
     classifier = RuleBasedClassifier()
-    print("  ✓ Rule-based classifier ready (no AI required)")
+    print("  OK Rule-based classifier ready (no AI required)")
     
     # --- Collect Statement Files via Windows File Picker ---
     print("\n[Step 1: Select your bank statements]")
-    print("  A file picker will open — select 1-4 PDF or CSV bank statements.\n")
+    print("  A file picker will open - select 1-4 PDF or CSV bank statements.\n")
     
     import tkinter as tk
     from tkinter import filedialog
@@ -935,7 +728,7 @@ def run_statement_mode():
     root.destroy()
     
     if not file_paths:
-        print("  ✗ No files selected.")
+        print("  x No files selected.")
         return
     
     # Limit to 4 files
@@ -946,7 +739,7 @@ def run_statement_mode():
     
     for file_path in file_paths:
         if not os.path.exists(file_path):
-            print(f"  ✗ File not found: {file_path}")
+            print(f"  x File not found: {file_path}")
             continue
         
         # Parse based on extension
@@ -960,15 +753,15 @@ def run_statement_mode():
             print(f"  [Parsing {file_name}...]")
             txs = StatementParser.parse_csv(file_path)
         else:
-            print(f"  ✗ Unsupported format: {ext}. Use PDF or CSV.")
+            print(f"  x Unsupported format: {ext}. Use PDF or CSV.")
             continue
         
         if txs:
             all_transactions.extend(txs)
             file_count += 1
-            print(f"  ✓ Parsed {len(txs)} transactions from {file_name}")
+            print(f"  OK Parsed {len(txs)} transactions from {file_name}")
         else:
-            print(f"  ✗ No transactions found in {file_name}.")
+            print(f"  x No transactions found in {file_name}.")
     
     if not all_transactions:
         print("\n  No transactions parsed. Check your statement format.")
@@ -984,7 +777,7 @@ def run_statement_mode():
         cat = tx.get("category", "other")
         categories[cat] = categories.get(cat, 0) + 1
     
-    print("  ✓ Classification complete:")
+    print("  OK Classification complete:")
     for cat, count in sorted(categories.items(), key=lambda x: -x[1]):
         print(f"    {cat.replace('_', ' ').title():20s} {count} transactions")
     
@@ -994,12 +787,12 @@ def run_statement_mode():
     # Detect salary
     salary_info = PatternDetector.detect_salary(classified)
     if salary_info:
-        print(f"  ✓ Salary detected: ${salary_info['amount']:,.2f} on day {salary_info['pay_day']} ({salary_info['frequency']})")
+        print(f"  OK Salary detected: ${salary_info['amount']:,.2f} on day {salary_info['pay_day']} ({salary_info['frequency']})")
         salary_tracker = SalaryCycleTracker(
             salary_info['amount'], salary_info['pay_day'], salary_info['frequency']
         )
     else:
-        print("  ✗ Could not auto-detect salary. Please enter manually:")
+        print("  x Could not auto-detect salary. Please enter manually:")
         salary_amount = float(input("    Monthly salary: $"))
         pay_day = int(input("    Payday (day of month): "))
         salary_tracker = SalaryCycleTracker(salary_amount, pay_day)
@@ -1007,24 +800,24 @@ def run_statement_mode():
     # Detect subscriptions  
     subs = PatternDetector.detect_subscriptions(classified)
     if subs:
-        print(f"\n  ✓ Detected {len(subs)} subscription(s):")
+        print(f"\n  OK Detected {len(subs)} subscription(s):")
         for s in subs:
             fail_str = f" ({s['past_failures']} failed)" if s['past_failures'] > 0 else ""
-            print(f"    • {s['name']} — ${s['amount']:.2f}/mo on day {s['renewal_day']}{fail_str}")
+            print(f"    â€¢ {s['name']} - ${s['amount']:.2f}/mo on day {s['renewal_day']}{fail_str}")
     else:
-        print("  ✗ No subscriptions auto-detected.")
+        print("  x No subscriptions auto-detected.")
         return
     
     # Detect expenses
     expenses = PatternDetector.detect_expenses(classified)
     expense_profiler = ExpenseProfiler()
     if expenses:
-        print(f"\n  ✓ Detected {len(expenses)} recurring expense(s):")
+        print(f"\n  OK Detected {len(expenses)} recurring expense(s):")
         for e in expenses:
             expense_profiler.add_expense(e['name'], e['amount'], e['day'])
-            print(f"    • {e['name']} — ${e['amount']:,.2f} on day {e['day']}")
+            print(f"    â€¢ {e['name']} - ${e['amount']:,.2f} on day {e['day']}")
     else:
-        print("  ℹ No major recurring expenses detected.")
+        print("  â„¹ No major recurring expenses detected.")
     
     # --- Run Risk Analysis ---
     run_risk_analysis(salary_tracker, expense_profiler, subs)
@@ -1067,35 +860,35 @@ def run_risk_analysis(salary_tracker, expense_profiler, subscriptions):
         
         print(f"\n  Risk Breakdown:")
         print(f"    Paycycle:    {bd['days_since_payday']} days after payday, {bd['days_until_payday']} days until next ({bd['paycycle_factor']:.0%})")
-        print(f"    Clustering:  ${bd['cluster_amount']:.2f} in expenses within ±3 days ({bd['cluster_factor']:.0%})")
+        print(f"    Clustering:  ${bd['cluster_amount']:.2f} in expenses within Â±3 days ({bd['cluster_factor']:.0%})")
         print(f"    Load:        {bd['load_factor']:.0%} of salary consumed by day {res['renewal_day']}")
         print(f"    History:     {bd['fail_rate']:.0%} failure rate")
         
         if res['risk_label'] in ['HIGH', 'CRITICAL']:
             high_risk_count += 1
-            print(f"\n  ⚡ ALERT: {res['advice']}")
+            print(f"\n  âš¡ ALERT: {res['advice']}")
         else:
-            print(f"\n  ℹ  {res['advice']}")
+            print(f"\n  â„¹  {res['advice']}")
         
-        print(f"  {'─' * 40}")
+        print(f"  {'â”€' * 40}")
     
     # --- Summary ---
     total_expenses = expense_profiler.total_monthly_expenses()
     total_sub_cost = sum(r["amount"] for r in results)
     
-    print(f"\n  ═══════════════════════════════════════")
+    print(f"\n  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•")
     print(f"  SUMMARY")
-    print(f"  ═══════════════════════════════════════")
+    print(f"  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•")
     print(f"  Total subscriptions:   {len(results)}")
     print(f"  High-risk renewals:    {high_risk_count}")
     print(f"  Total sub spending:    ${total_sub_cost:,.2f}/mo")
     print(f"  Income remaining:      ${salary_tracker.salary_amount - total_expenses - total_sub_cost:,.2f}/mo (after expenses + subs)")
     
     if high_risk_count > 0:
-        print(f"\n  🚨 You have {high_risk_count} high-risk renewal(s).")
+        print(f"\n  ðŸš¨ You have {high_risk_count} high-risk renewal(s).")
         print(f"  Set reminders to check your balance the day before.")
     else:
-        print(f"\n  ✅ All renewals are in a safe zone. You're good!")
+        print(f"\n  âœ… All renewals are in a safe zone. You're good!")
     
     print()
 

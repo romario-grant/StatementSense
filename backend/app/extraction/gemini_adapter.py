@@ -1,10 +1,4 @@
-"""
-Gemini Adapter — lightweight LLM-based transaction extraction.
-
-Uses the google.genai SDK (the current supported Gemini Python SDK)
-as an alternative to the open-source project's Vertex AI integration.
-This is called when pdfplumber/camelot table detection fails.
-"""
+"""Gemini-based transaction extractor used when structured table extraction does not yield results. Wraps the ``google.genai`` client and returns a list of transaction dictionaries parsed from the model's JSON output."""
 
 import json
 import logging
@@ -17,8 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-# ── Initialise Gemini ──────────────────────────────────────────────
-
+# Lazily constructed Gemini client; instantiated on the first call.
 _client = None
 
 def _get_client():
@@ -34,8 +27,7 @@ def _get_client():
     return _client
 
 
-# ── Extraction prompt ──────────────────────────────────────────────
-
+# Prompt used to request structured transaction extraction from Gemini.
 _EXTRACTION_PROMPT = """You are an expert at extracting structured transaction data from bank statements.
 
 Given the raw text from a bank statement PDF, extract EVERY transaction into a JSON array.
@@ -62,19 +54,7 @@ BANK STATEMENT TEXT:
 
 
 def extract_transactions_with_gemini(raw_text: str) -> Optional[List[Dict[str, Any]]]:
-    """
-    Send raw PDF text to Gemini and get back structured transactions.
-
-    Parameters
-    ----------
-    raw_text : str
-        The full text extracted from the bank statement PDF.
-
-    Returns
-    -------
-    list[dict] or None
-        A list of transaction dicts, or None if extraction failed.
-    """
+    """Submit the raw text of a bank statement to Gemini and return the parsed transaction array, or ``None`` when extraction fails."""
     if not raw_text or len(raw_text.strip()) < 50:
         logger.warning("Text too short for Gemini extraction")
         return None
@@ -82,7 +62,7 @@ def extract_transactions_with_gemini(raw_text: str) -> Optional[List[Dict[str, A
     try:
         client = _get_client()
 
-        # Truncate to ~30k chars to stay within token limits
+        # Cap the prompt length so the request stays within the model's input-token budget.
         truncated = raw_text[:30000]
 
         response = client.models.generate_content(
@@ -99,17 +79,16 @@ def extract_transactions_with_gemini(raw_text: str) -> Optional[List[Dict[str, A
             logger.error("Empty response from Gemini")
             return None
 
-        # Parse JSON from response — strip markdown fences if present
+        # Strip optional Markdown fences that Gemini sometimes wraps around JSON responses.
         text = response.text.strip()
         if text.startswith("```"):
-            text = text.split("\n", 1)[1]  # remove ```json line
-            text = text.rsplit("```", 1)[0]  # remove closing ```
+            text = text.split("\n", 1)[1]
+            text = text.rsplit("```", 1)[0]
 
         try:
             transactions = json.loads(text)
         except json.JSONDecodeError:
-            # Gemini may have been truncated — try to recover partial array
-            # by closing any open brackets/braces
+            # The response may have been truncated mid-array; attempt to recover the prefix that does parse.
             recovered = _try_recover_partial_json(text)
             if recovered is not None:
                 transactions = recovered
@@ -131,17 +110,17 @@ def extract_transactions_with_gemini(raw_text: str) -> Optional[List[Dict[str, A
 
 
 def _try_recover_partial_json(text: str):
-    """Attempt to recover a partial JSON array from a truncated response."""
+    """Recover a usable prefix from a truncated JSON array response by closing the array after the last complete object. Returns the parsed list when recovery succeeds, otherwise ``None``."""
     text = text.strip()
     if not text.startswith("["):
         return None
-    
-    # Find the last complete object (ends with })
+
+    # Locate the closing brace of the most recent complete object.
     last_brace = text.rfind("}")
     if last_brace == -1:
         return None
-    
-    # Truncate to last complete object and close the array
+
+    # Trim trailing punctuation and close the array so the prefix parses as valid JSON.
     truncated = text[:last_brace + 1].rstrip(",").rstrip() + "]"
     
     try:

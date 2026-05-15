@@ -1,3 +1,5 @@
+// Persistent storage helpers for the list of detected subscriptions and the raw SubscriptionSense analysis. The shared subscription list is consumed by every sense page so the user does not have to re-enter data after running SubscriptionSense.
+
 import { notifySubscriptionSourceChanged } from "./senseSyncStore";
 
 export type SharedSubscription = {

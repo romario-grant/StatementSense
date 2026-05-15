@@ -111,7 +111,7 @@ export default function FileUpload({
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        whileHover={{ borderColor: "hsl(var(--foreground))" }} // Neutral hover
+        whileHover={{ borderColor: "hsl(var(--foreground))" }}
         className={`flex flex-col items-center justify-center py-10 px-6 rounded-xl border-2 border-dashed cursor-pointer transition-colors text-center ${
           dragOver 
             ? "border-border bg-primary/10" 
